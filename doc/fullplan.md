@@ -195,7 +195,7 @@ Do not implement a generic plugin loader, dynamic code loading, a message bus, o
 
 Verifier may query its local index, rerank, read downloaded filings/exhibits, compare passages, return exact support/contradiction, identify missing evidence, and recommend document types. It may not search web/social/news, download filings, choose a company, switch ticker, or expand an investigation.
 
-The verifier's natural-language assessment uses a local-only Ollama runtime through a narrow injected assessor seam, adapting Ara's local model connection rather than copying its full RAG application. The adapter accepts only an explicit loopback host (`127.0.0.1` or `localhost`) and a manually pre-pulled local model name; model pulling/downloading, cloud/remote hosts, hosted-model fallback, and web tools are prohibited at verifier runtime. Local loopback inference is permitted because “no internet” means no external network access; the adapter must reject every non-loopback endpoint. JSON-schema-constrained output and post-generation receipt validation are both required: schema compliance does not authorize the model to invent citations.
+The verifier's natural-language assessment uses OpenRouter as the initial hosted, OpenAI-compatible model provider through a narrow injected assessor seam. No Ollama runtime, local model download, or always-running local model server is required. The assessor receives only the claim and retrieved case-local SEC chunks, and the application sends no tool definitions, MCP servers, web-search capability, download capability, filing paths, or unrelated research context with that call. “No internet” for the verifier therefore means **no external retrieval or application tools**; the retrieved excerpts are intentionally sent to the approved model provider for inference. JSON-schema-constrained output and post-generation receipt validation are both required: schema compliance does not authorize the model to invent citations. Provider, model identifier, and inference time must be recorded with the case so this data-handling boundary is auditable.
 
 ```python
 class SECVerification(BaseModel):
@@ -344,7 +344,7 @@ All repository donors used by the project stay unmodified in `reference/`; packa
 1. Inspect donors; write component/reuse/licensing/compatibility map.
 2. Define schemas, case storage, contracts, methodology, state/control tests.
 3. Implement `list_sec_filings` and `pull_sec_filings` with Edgartools and case-local sources.
-4. Build local-only ingestion/retrieval/`verify_sec_claim`; test no verifier path has network access.
+4. Build case-local ingestion/retrieval/`verify_sec_claim`; test the verifier has no external retrieval or application-tool path, while allowing its approved inference-provider call.
 5. Add normalized Reddit/ApeWisdom plus deterministic metrics.
 6. Add normalized professional article search/read tools with RSS/GDELT/Trafilatura, paywall-safe behavior, and provider failure handling.
 7. Add market and general-web adapters with provider failure handling.
@@ -366,7 +366,7 @@ All repository donors used by the project stay unmodified in `reference/`; packa
 ## Implementation-start acceptance criteria
 
 - Every donor has documented reuse, license, dependencies, adaptation, exclusion, and compatibility assessment.
-- MVP has one outer agent and one local-only SEC verifier capability-agent; later capability-agents must appear as normalized tools under the extension boundary, never as a specialist-agent hierarchy.
+- MVP has one outer agent and one case-local SEC verifier capability-agent; later capability-agents must appear as normalized tools under the extension boundary, never as a specialist-agent hierarchy.
 - Professional article search and article reading are normalized live tools; publishers are not separate agent tools.
 - Tool contracts and case-local storage are agreed.
 - Verifier network isolation has a testable boundary.

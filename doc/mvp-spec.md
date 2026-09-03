@@ -78,7 +78,7 @@ Every returned evidence item includes accession, form, filing date, document/exh
 
 Retrieval design is case-local hybrid retrieval: BM25 plus dense FAISS results, reciprocal-rank fusion, CrossEncoder reranking, then constrained verification. The verifier has no fallback web-search node.
 
-The local assessor adapts Ara's local Ollama model connection behind a narrow adapter. It may connect only to an explicit loopback Ollama host and a manually pre-pulled local model; it rejects cloud/remote hosts, model pulls/downloads at runtime, hosted-model fallback, and tool use. Loopback inference does not relax the verifier's no-internet rule: the adapter has no external endpoint. It emits a JSON-schema-constrained proposed assessment, while the verifier continues to validate every returned chunk ID and constructs SEC citations from immutable local receipts.
+The SEC assessor uses OpenRouter as the initial hosted, OpenAI-compatible model provider behind a narrow adapter. It requires no Ollama runtime or locally downloaded model. The adapter sends only the claim and retrieved case-local SEC chunks; it sends no tool definitions, MCP servers, web-search capability, download capability, filing paths, or unrelated research context. This changes the verifier boundary precisely: it has no external retrieval or application tools, while the presented excerpts are intentionally sent to the approved model provider for inference. The adapter emits a JSON-schema-constrained proposed assessment and records provider, model identifier, and inference time; the verifier continues to validate every returned chunk ID and constructs SEC citations from immutable local receipts.
 
 ## Source interpretation policy
 
