@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Meme Market Forensics — Planned Architecture",
+    "quality_profile": "showcase",
+    "viewBox": [1115, 600],
+    "views": [
+      {
+        "id": "investigation-loop",
+        "label": "Investigation loop",
+        "focus": ["researcher", "state", "tools", "sources", "memo"],
+        "note": "Outer model selects next evidence-gathering action from compact case state."
+      },
+      {
+        "id": "sec-verification",
+        "label": "SEC verification boundary",
+        "focus": ["researcher", "sec-tool", "case-files", "sec-verifier"],
+        "note": "Verifier retrieves only case-local SEC documents and cannot access network sources."
+      }
+    ]
+  },
+  "components": [
+    { "id": "trigger", "type": "external", "label": "Research trigger", "sublabel": "Ticker or unusual social signal", "pos": [25, 185], "size": [145, 70] },
+    { "id": "researcher", "type": "backend", "label": "Outer research model", "sublabel": "Chooses next question and tool", "pos": [215, 185], "size": [165, 70], "tag": "one agent" },
+    { "id": "state", "type": "database", "label": "Case state", "sublabel": "Claims, evidence, open questions", "pos": [215, 45], "size": [165, 70], "tag": "compact context" },
+    { "id": "tools", "type": "backend", "label": "Research tools", "sublabel": "Social, articles, web, market, SEC", "pos": [450, 185], "size": [170, 70] },
+    { "id": "sources", "type": "external", "label": "Live information sources", "sublabel": "Web, social, news, market, SEC", "pos": [685, 185], "size": [175, 70] },
+    { "id": "sec-tool", "type": "backend", "label": "SEC corpus tool", "sublabel": "Lists and pulls relevant filings", "pos": [450, 330], "size": [170, 70] },
+    { "id": "case-files", "type": "database", "label": "Case-local files", "sublabel": "SEC documents, manifest, index", "pos": [685, 330], "size": [175, 70], "tag": "filesystem only" },
+    { "id": "sec-verifier", "type": "security", "label": "Local SEC verifier", "sublabel": "Hybrid RAG and cited verdict", "pos": [685, 460], "size": [175, 70], "tag": "no network" },
+    { "id": "memo", "type": "external", "label": "Forensic memo", "sublabel": "Citations and uncertainty", "pos": [880, 185], "size": [195, 70] }
+  ],
+  "boundaries": [
+    { "kind": "security-group", "label": "Offline evidence boundary", "wraps": ["case-files", "sec-verifier"], "pad": 28 }
+  ],
+  "connections": [
+    { "id": "trigger-to-researcher", "from": "trigger", "to": "researcher", "label": "start case", "variant": "emphasis", "labelDy": -29 },
+    { "id": "researcher-to-state", "from": "researcher", "to": "state", "label": "read / update", "fromSide": "top", "toSide": "bottom", "labelDx": -110 },
+    { "id": "researcher-to-tools", "from": "researcher", "to": "tools", "label": "choose next call", "variant": "emphasis", "labelDy": 59 },
+    { "id": "tools-to-sources", "from": "tools", "to": "sources", "label": "targeted retrieval", "labelDy": 59 },
+    { "id": "sources-to-tools", "from": "sources", "to": "tools", "label": "normalized evidence", "variant": "dashed", "fromSide": "bottom", "toSide": "bottom", "via": [[772.5, 305], [535, 305]] },
+    { "id": "tools-to-sec-tool", "from": "tools", "to": "sec-tool", "label": "pull filing corpus", "fromSide": "bottom", "toSide": "top", "labelDy": 169 },
+    { "id": "sec-tool-to-case-files", "from": "sec-tool", "to": "case-files", "label": "save documents", "labelDy": 59 },
+    { "id": "case-files-to-sec-verifier", "from": "case-files", "to": "sec-verifier", "label": "local retrieval only", "variant": "security", "fromSide": "bottom", "toSide": "top", "labelDy": 24 },
+    { "id": "sec-verifier-to-researcher", "from": "sec-verifier", "to": "researcher", "label": "cited verdict", "variant": "security", "fromSide": "left", "toSide": "bottom", "via": [[635, 495], [405, 495], [405, 290], [297.5, 290]] },
+    { "id": "researcher-to-memo", "from": "researcher", "to": "memo", "label": "finish when material questions resolved", "variant": "emphasis", "fromSide": "top", "toSide": "left", "via": [[297.5, 135], [870, 135], [870, 220]] }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Outer model", "items": ["Gets compact state, not every document", "Selects next question and tool", "Treats social posts as hypotheses"] },
+    { "dot": "emerald", "title": "Evidence", "items": ["Live tools fetch current context", "SEC corpus is stored under one case", "Memo records sources and uncertainty"] },
+    { "dot": "rose", "title": "SEC boundary", "items": ["Verifier cannot browse or download", "Verdicts require citations from local filings", "GraphRAG is future optional case-local retrieval"] }
+  ]
+}

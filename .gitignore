@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+.env
+
+# Reference repositories (external codebases)
+reference/
+
+# Output and temp files
+output/
+dist/
+node_modules/
+.DS_Store
