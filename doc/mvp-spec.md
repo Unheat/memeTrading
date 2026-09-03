@@ -78,7 +78,7 @@ Every returned evidence item includes accession, form, filing date, document/exh
 
 Retrieval design is case-local hybrid retrieval: BM25 plus dense FAISS results, reciprocal-rank fusion, CrossEncoder reranking, then constrained verification. The verifier has no fallback web-search node.
 
-The local assessor is an in-process `llama-cpp-python` adapter over a manually provisioned GGUF model outside the repository. It loads only an explicit existing file path and emits a JSON-schema-constrained proposed assessment; it cannot use a hosted model, a local HTTP inference server, automatic model downloads, or Hugging Face shortcuts. The verifier continues to validate every returned chunk ID and constructs SEC citations from immutable local receipts.
+The local assessor adapts Ara's local Ollama model connection behind a narrow adapter. It may connect only to an explicit loopback Ollama host and a manually pre-pulled local model; it rejects cloud/remote hosts, model pulls/downloads at runtime, hosted-model fallback, and tool use. Loopback inference does not relax the verifier's no-internet rule: the adapter has no external endpoint. It emits a JSON-schema-constrained proposed assessment, while the verifier continues to validate every returned chunk ID and constructs SEC citations from immutable local receipts.
 
 ## Source interpretation policy
 
