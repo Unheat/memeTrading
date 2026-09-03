@@ -82,6 +82,15 @@ class VerificationResult:
             raise ValueError("verification result is invalid")
 
 
+class AssessorUnavailableError(Exception):
+    """Signal a retryable injected-assessor availability failure.
+
+    This exception deliberately carries no provider detail. It lets a bounded
+    assessor report an unavailable model without changing the verifier's
+    citation-validation contract.
+    """
+
+
 Assessor = Callable[[str, Sequence[RetrievedSecChunk]], Mapping[str, Any]]
 
 
@@ -224,13 +233,13 @@ def verify_sec_claim(
     assessor: Assessor | None,
     reranker: Callable[[str, Sequence[Any]], Sequence[tuple[str, float]]] | None = None,
 ) -> VerificationResult:
-    """Assess one claim using only a case-local SEC corpus and local assessor.
+    """Assess one claim using a case-local SEC corpus and injected assessor.
 
     Args:
         case_directory: Existing prepared and indexed local case directory.
         claim: Narrow claim for SEC-only verification.
         embed_query: Injected local query embedding callable.
-        assessor: Injected local-only structured claim assessor.
+        assessor: Injected structured claim assessor with no retrieval access.
         reranker: Optional injected local retrieval reranker.
 
     Returns:
@@ -239,7 +248,7 @@ def verify_sec_claim(
     if not isinstance(claim, str) or not claim.strip() or len(claim) > MAX_CLAIM_CHARACTERS:
         return VerificationResult(error=_failure("INVALID_INPUT", "SEC verification claim is invalid.", False))
     if assessor is None:
-        return VerificationResult(error=_failure("ASSESSOR_UNAVAILABLE", "No approved local SEC assessor is configured.", True))
+        return VerificationResult(error=_failure("ASSESSOR_UNAVAILABLE", "No approved SEC assessor is configured.", True))
     retrieval = search_sec_corpus(Path(case_directory), claim, embed_query, reranker)
     if retrieval.error is not None:
         return VerificationResult(error=_failure("RETRIEVAL_FAILED", "Local SEC evidence retrieval is unavailable.", retrieval.error.retryable))
@@ -247,6 +256,8 @@ def verify_sec_claim(
         assessment = assessor(claim, retrieval.results)
         verification = _verification_from_assessment(claim, retrieval.results, assessment)
         return VerificationResult(verification=verification)
+    except AssessorUnavailableError:
+        return VerificationResult(error=_failure("ASSESSOR_UNAVAILABLE", "Approved SEC assessment is temporarily unavailable.", True))
     except (KeyError, TypeError, ValueError):
         return VerificationResult(error=_failure("INVALID_ASSESSMENT", "Local SEC assessment did not satisfy the evidence contract.", False))
     except Exception:

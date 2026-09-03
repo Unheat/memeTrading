@@ -223,6 +223,41 @@ def test_verifier_rejects_unknown_citations_and_unavailable_assessor(tmp_path: P
     assert unavailable.error is not None and unavailable.error.code == "ASSESSOR_UNAVAILABLE"
 
 
+def test_verifier_maps_assessor_availability_failure_safely(tmp_path: Path) -> None:
+    """Return a retryable safe error when the injected provider is unavailable.
+
+    Args:
+        tmp_path: Pytest-managed temporary filesystem root.
+
+    Returns:
+        None. Assertions verify provider details do not escape.
+    """
+    from app.sec.verifier import AssessorUnavailableError, verify_sec_claim
+
+    directory = _case(tmp_path / "cases")
+
+    def unavailable(_: str, __):
+        """Simulate an opaque temporary provider failure.
+
+        Args:
+            _: Ignored claim.
+            __: Ignored retrieved chunks.
+
+        Returns:
+            Never returns.
+
+        Raises:
+            AssessorUnavailableError: Always, to test the public error mapping.
+        """
+        raise AssessorUnavailableError()
+
+    result = verify_sec_claim(directory, "Revenue increased.", lambda query: _embed([query])[0], unavailable)
+
+    assert result.error is not None
+    assert result.error.code == "ASSESSOR_UNAVAILABLE"
+    assert result.error.retryable is True
+
+
 def test_verifier_rejects_malformed_assessment_and_invalid_claim(tmp_path: Path) -> None:
     """Return safe errors for malformed assessor output and unusable claims.
 

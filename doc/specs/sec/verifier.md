@@ -6,7 +6,7 @@ Completed on 2026-09-02. Four red tests ran before this module was created.
 
 ## Responsibility
 
-Assess one narrow claim against one indexed, case-local SEC corpus. The verifier reuses Plan-05 retrieval, gives only retrieved local chunks to an injected local assessor, validates every proposed citation, and returns a complete `SECVerification` with normal explanatory context. It does not investigate, retrieve external data, select filings, download documents, or make network calls.
+Assess one narrow claim against one indexed, case-local SEC corpus. The verifier reuses Plan-05 retrieval, gives only retrieved local chunks to an injected assessor, validates every proposed citation, and returns a complete `SECVerification` with normal explanatory context. It does not investigate, retrieve external data, select filings, download documents, or call application tools. The injected assessor may make its one approved hosted-model inference request.
 
 ## Public contracts
 
@@ -43,11 +43,11 @@ The verifier calls `search_sec_corpus` with the claim. On success it gives the a
 
 ## Constraints
 
-- No HTTP client, model provider SDK, MCP client, download, web/social/article/company/market call, or generic agent loop.
+- No HTTP client, model provider SDK, MCP client, download, web/social/article/company/market call, or generic agent loop belongs in this module.
 - No query rewriting or retrieval fallback. A retrieval failure becomes `RETRIEVAL_FAILED`.
 - An absent assessor becomes `ASSESSOR_UNAVAILABLE`; do not make a keyword-only verdict or a network/model-download fallback.
 - Input claim, candidate count, cited chunk IDs, explanation, missing-evidence entries, and suggested document types use named limits.
-- The public boundary must run with networking disabled.
+- The public boundary must run with no retrieval or application-tool network path. An injected assessor may make only its documented approved-provider inference call.
 
 ## Donor code provenance
 
@@ -63,4 +63,4 @@ The verifier calls `search_sec_corpus` with the claim. On success it gives the a
 
 Initial red run: `pytest tests/sec/test_verifier.py -q` failed with five expected import failures because `app.sec.verifier` did not exist. The completed module exposes `verify_sec_claim` with an injected assessor seam; it never loads or downloads a model. It maps assessor-selected retrieved chunk IDs into immutable `SecEvidence` records and rejects unknown, duplicate, cross-sided, malformed, or incomplete assessment fields before constructing `SECVerification`.
 
-Final verification: 5 verifier tests passed, 38 project tests passed, and `python3 -m compileall -q app` passed. The graph impact check found only the new verifier tests as callers; the only production dependency is the existing local `search_sec_corpus` function.
+Final verification: 6 verifier tests passed, 45 project tests passed, and `python3 -m compileall -q app` passed. The graph impact check found only verifier tests as callers; the only production dependency remains the existing local `search_sec_corpus` function. `AssessorUnavailableError` was added as a neutral injected-assessor error so a hosted provider failure can become the existing safe retryable `ASSESSOR_UNAVAILABLE` result without exposing provider details.

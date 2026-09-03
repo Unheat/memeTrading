@@ -77,3 +77,7 @@ requirements.txt
 ## Done checkpoint
 
 With a configured approved OpenAI-compatible provider, API key, and structured-output-compatible model, the system can create a deterministic, JSON-schema-constrained proposed SEC assessment without hosting Ollama. With no provider/key/model configured or provider call failure, it fails safely. In both cases, the existing verifier remains the only component that can produce cited `SECVerification` output.
+
+## Execution record
+
+Completed on 2026-09-03. Seven targeted tests failed in the expected red phase because the adapter and neutral availability error were absent. The implemented module uses the OpenAI Python SDK 2.54.0 as a black-box dependency, accepts only an explicit allowlisted HTTPS provider URL, sends no tools, and uses injected fake clients for all automated tests. Targeted tests and the full suite passed: 45 tests total, plus successful Python compilation. No real provider request was made because no deployment credential or model was supplied.
