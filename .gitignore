@@ -16,3 +16,7 @@ output/
 dist/
 node_modules/
 .DS_Store
+
+# Local coding-agent caches and session artifacts
+.codebase-memory/
+.zcode/
