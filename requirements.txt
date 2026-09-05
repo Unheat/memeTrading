@@ -1,5 +1,8 @@
 edgartools>=5.55,<6
 faiss-cpu>=1.13,<2
+feedparser>=6,<7
+gdeltdoc>=1.12,<2
 numpy>=2.0,<3
 openai>=1.0,<3
 rank-bm25>=0.2,<1
+trafilatura>=1.12,<2
