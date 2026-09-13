@@ -15,6 +15,7 @@ from app.social.metrics import (
 )
 from app.social.providers.apewisdom import ApeWisdomClient
 from app.social.providers.reddit import RedditProvider
+from app.social.providers.stocktwits import StockTwitsClient
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,18 @@ def search_social(
         except Exception as exc:
             logger.warning("ApeWisdom provider error during search_social: %s", exc)
 
-    # 2. Query Reddit
+    # 2. Query StockTwits if ticker is provided
+    if clean_ticker:
+        try:
+            st_client = StockTwitsClient()
+            st_posts = st_client.get_symbol_stream(clean_ticker, limit=25)
+            if st_posts:
+                all_posts.extend(st_posts)
+                source_summary["stocktwits"] = len(st_posts)
+        except Exception as exc:
+            logger.warning("StockTwits provider error during search_social: %s", exc)
+
+    # 3. Query Reddit
     try:
         reddit_provider = RedditProvider()
         reddit_posts = reddit_provider.search(query=search_term or "", limit=25)

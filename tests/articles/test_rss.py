@@ -1,4 +1,5 @@
 """Tests for RSS and GDELT article providers. All offline; fixtures + mocks."""
+from datetime import datetime, timezone
 import time
 from unittest.mock import patch, MagicMock
 import pytest
@@ -21,7 +22,7 @@ def _entry(title="NVDA beats earnings", link="https://www.cnbc.com/a.html", publ
         "summary": summary,
     }
     if published is not None:
-        entry["published_parsed"] = time.struct_time((2026, 9, 5, 10, 0, 0, 5, 248, 0))
+        entry["published_parsed"] = datetime.now(timezone.utc).timetuple()
     return entry
 
 

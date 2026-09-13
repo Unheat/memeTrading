@@ -41,14 +41,32 @@ def test_search_social_ticker_query_orchestration():
         flair="AggregateMetrics",
     )
 
+    mock_stocktwits_post = SocialPost(
+        post_id="stocktwits_999",
+        source="stocktwits",
+        author="trader_bob",
+        created_utc="2026-09-05T12:05:00Z",
+        title="$NVDA on StockTwits: breaking resistance",
+        text="$NVDA breaking resistance",
+        score=25,
+        num_comments=5,
+        upvote_ratio=None,
+        url="https://stocktwits.com/message/999",
+        flair="Bullish",
+    )
+
     with patch("app.social.search.RedditProvider") as MockReddit, \
-         patch("app.social.search.ApeWisdomClient") as MockApe:
+         patch("app.social.search.ApeWisdomClient") as MockApe, \
+         patch("app.social.search.StockTwitsClient") as MockST:
         
         mock_reddit_inst = MockReddit.return_value
         mock_reddit_inst.search.return_value = mock_reddit_posts
         
         mock_ape_inst = MockApe.return_value
         mock_ape_inst.get_ticker_data.return_value = (mock_ape_post, 350.0)
+
+        mock_st_inst = MockST.return_value
+        mock_st_inst.get_symbol_stream.return_value = [mock_stocktwits_post]
 
         res = search_social(ticker="NVDA", time_window="24h")
 
@@ -59,17 +77,22 @@ def test_search_social_ticker_query_orchestration():
         assert res.metrics.mention_velocity_24h == 350.0
         assert res.source_summary.get("reddit") == 2
         assert res.source_summary.get("apewisdom") == 1
+        assert res.source_summary.get("stocktwits") == 1
         assert len(res.representative_posts) > 0
 
 def test_search_social_graceful_on_provider_failures():
     with patch("app.social.search.RedditProvider") as MockReddit, \
-         patch("app.social.search.ApeWisdomClient") as MockApe:
+         patch("app.social.search.ApeWisdomClient") as MockApe, \
+         patch("app.social.search.StockTwitsClient") as MockST:
         
         mock_reddit_inst = MockReddit.return_value
         mock_reddit_inst.search.side_effect = Exception("Reddit down")
         
         mock_ape_inst = MockApe.return_value
         mock_ape_inst.get_ticker_data.side_effect = Exception("ApeWisdom down")
+
+        mock_st_inst = MockST.return_value
+        mock_st_inst.get_symbol_stream.side_effect = Exception("StockTwits down")
 
         # Must not raise an unhandled crash; returns structured empty/degraded result
         res = search_social(ticker="UNKNOWN")
