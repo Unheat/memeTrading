@@ -2,21 +2,31 @@
 
 ## Product goal
 
-Build a research and analysis system for noisy, meme-driven equities. It detects unusual public attention, investigates a narrative autonomously, tests material company claims against authoritative SEC filings, and writes a concise evidence-backed forensic memo. It is not an automated trading or brokerage-execution system.
+Build a research and analysis system for narrative-driven public equities. It detects unusual public attention and grassroots demand signals, investigates the narrative autonomously, tests material company claims against authoritative SEC filings, audits management execution, measures the gap between ground reality and Wall Street expectations, and writes a concise evidence-backed forensic research memo. It is not an automated trading or brokerage-execution system.
 
-Example: social posts say `$XYZ signed a $500M Nvidia partnership and is going to squeeze.` The system determines whether attention is unusual, traces the claim, tests company and counterparty evidence, establishes whether an agreement is binding and its value real, then assesses financing, dilution, warrant, and insider-risk evidence.
+The system follows a **Scuttlebutt & Expectations Investing** strategy (Philip Fisher's scuttlebutt method, Peter Lynch's ground-reality check, and Michael Mauboussin's expectations investing):
+
+1. **Social signal discovery**: forums and social platforms (Reddit, ApeWisdom, StockTwits) reveal what consumers, developers, and retail participants suddenly care about — for example, reports that DDR5 RAM is out of stock at local retailers, cloud GPU wait times jumping, or pharmacy backorders for a new drug.
+2. **Supply-chain beneficiary tracing**: the agent maps the grassroots signal to the direct public-company beneficiaries (e.g. a RAM shortage points to Micron, SanDisk, Western Digital) — real investable companies, not penny stocks.
+3. **SEC execution audit**: strong demand only creates shareholder value if management executes. The agent tests, against filings, whether the company is reacting correctly: rising average selling prices and gross margins (10-Q/10-K income statement), inventory drawdown (balance sheet), CapEx expansion for capacity (cash-flow statement), binding customer contracts (8-K), and honest insider behavior (Form 4). A company with rising demand but bad leadership — no price increases, no capacity expansion, dilutive financing — fails this audit even when the demand signal is real.
+4. **Wall Street expectations benchmark**: a stock price already embeds consensus expectations. The agent compares ground reality and filing evidence against analyst consensus estimates, price targets, and revision trends to compute the expectation gap: a real catalyst that Wall Street has not priced is opportunity; one already priced is risk.
+
+Example: social posts report DDR5 RAM shortages and surging aftermarket prices. The system determines whether the attention signal is unusual, traces it to memory-industry beneficiaries, tests through SEC filings whether those companies are expanding margins and capacity, and compares the emerging reality against Wall Street consensus to establish whether the market has already priced the shortage.
 
 ```text
-noisy market narrative
+grassroots demand signal
   -> autonomous investigation
-  -> authoritative SEC verification
+  -> authoritative SEC verification + execution audit
+  -> Wall Street expectations comparison
   -> forensic explanation with receipts
 ```
 
 ## Architectural principles
 
 - One outer market-research agent. MVP has one isolated SEC RAG capability-agent exposed as a tool; do not build a specialist-agent hierarchy.
-- Deterministic code calculates/retrieves measurable facts: provider normalization, trend metrics, market statistics, filing acquisition, Form 4 XML parsing, deduplication, quotas, and storage.
+- Deterministic code calculates/retrieves measurable facts: provider normalization, trend metrics, market statistics, consensus estimates, filing acquisition, Form 4 XML parsing, deduplication, quotas, and storage.
+- Demand-shift investigations follow one standard arc: social signal -> beneficiary tracing -> SEC execution audit -> expectation-gap benchmark. The arc is a checklist of questions to resolve, never a mandatory tool sequence.
+- Wall Street consensus data (estimates, targets, ratings) is secondary research context used only for the expectation-gap comparison; it is never authoritative proof of a material claim.
 - One SEC RAG verifier assesses specific claims against already downloaded local documents.
 - The outer agent chooses the next action from evidence; it does not follow a fixed `social -> SEC -> web -> report` sequence.
 - The SEC verifier has no internet, web-search, download, ticker-switching, or investigation-expansion authority.
@@ -34,13 +44,15 @@ noisy market narrative
           |                        |                       |
           v                        v                       v
    search_social()         search_articles()      get_market_data()
- Reddit, ApeWisdom,        professional news,      Yahoo / fallback
- Bluesky optional          analyst commentary
+   Reddit, ApeWisdom,      professional news,     Yahoo / fallback
+   StockTwits              analyst commentary
           |                        |                       |
           +------------------------+-----------------------+
                                    |
-                    read_article() / search_web()
-                 cleaned articles / primary sources
+                    read_article() / search_web() /
+                    get_company_research()
+                 cleaned articles / primary sources /
+                 Wall Street consensus benchmark
                                    |
                                    |
                             claim discovered
@@ -87,6 +99,16 @@ Social creates hypotheses; it never proves material claims. Professional article
 
 Actively seek contradiction. For example: detect `XYZ` on Reddit, read professional coverage, examine primary sources, pull an 8-K plus exhibits, ask whether the agreement is binding, then trace the claimed $500M origin if filing evidence does not establish it. The agent may return to social, articles, or web research after SEC verification.
 
+### Scuttlebutt and expectations methodology
+
+For demand-shift and leading-indicator investigations the agent applies three institutional lenses in addition to forensic verification:
+
+1. **Scuttlebutt ground-reality check (Philip Fisher / Peter Lynch)**: trace the grassroots signal (consumer complaints, developer chatter, retail stockouts, wait times) to the direct public-company beneficiaries. A RAM shortage points to memory makers; GPU wait times point to hyperscalers and accelerator vendors. The beneficiary may be several steps removed from where the signal originated.
+2. **Management-execution audit**: rising demand creates shareholder value only if leadership converts it into pricing power and capacity. Compare the signal against income-statement trajectory (average selling prices, gross margin expansion), balance-sheet inventory drawdown, cash-flow CapEx deployment for capacity, and financing behavior. A company with real demand but no price increases, no capacity expansion, or dilutive financing fails the audit even though the signal is genuine.
+3. **Expectation-gap benchmark (Michael Mauboussin)**: a price already embeds consensus expectations. Call `get_company_research` to read what Wall Street currently models (consensus EPS/revenue estimates, price-target range, revision trend, ratings) and compare it against the verified ground reality and filing evidence. A real catalyst Wall Street has not priced is the opportunity; the same catalyst already priced is risk.
+
+The five-step causal chain remains the audit spine: `signal -> demand or bottleneck -> beneficiary -> financial mechanism -> expectation gap`. The expectation-gap step is now explicitly benchmarked against Wall Street consensus rather than judged only from price action.
+
 ### Invocation and automation boundary
 
 Every investigation starts from one `ResearchRequest`: the user's natural-language direction plus optional ticker, company, theme, mandate, time boundary, and budget. The request is the outer agent's direction; the agent explores freely only within that direction and its declared tool/safety limits.
@@ -95,7 +117,7 @@ Interactive use passes the user's request directly to the shared research runner
 
 ## Outer-agent tools
 
-The MVP model receives eight tools only. Internal provider classes are not agent tools.
+The MVP model receives nine tools only. Internal provider classes are not agent tools.
 
 ### `search_social`
 
@@ -104,7 +126,7 @@ search_social(query: str | None = None, ticker: str | None = None,
               time_window: str | None = None) -> SocialSearchResult
 ```
 
-MVP providers: Reddit and ApeWisdom. Bluesky is optional. X is on-demand/later, not a continuous firehose. Instagram, TikTok, Discord, Telegram, and StockTwits are not MVP dependencies.
+MVP providers: Reddit, ApeWisdom, and StockTwits. Reddit and ApeWisdom were the first two; StockTwits was added from the `HalcyonVector/Stock-Market-Intelligence` donor adapter (unauthenticated public symbol stream, bullish/bearish tags, rate-limit-safe). X/Twitter is optional on-demand through the keyed Apify adapter (see keyed free-tier provider policy below), never a continuous firehose. Instagram, TikTok, Discord, and Telegram are not MVP dependencies.
 
 Normalize ticker, source, timestamp, text, engagement, author identifier when available, cashtags, links, representative posts, mention counts, and calculated trend features. Code calculates mention velocity, rolling baseline, z-score, unique-author ratio, engagement acceleration, duplicate/repost filtering, and mention-price divergence. The model interprets features; it does not receive thousands of raw posts or perform raw statistics.
 
@@ -146,6 +168,14 @@ This remains the one market-context tool; do not add a separate technical-analys
 
 Deterministic code derives only the compact context set needed to assess whether a catalyst may already be priced in: 1-day, 5-day, 1-month, and 3-month returns; volume divided by its 20-trading-day average; return relative to a supplied or default sector/index benchmark; 50-day and 200-day simple-moving-average trend status; and a 14-day volatility measure such as ATR. Each derived field declares its lookback, benchmark when applicable, calculation status, provider, and as-of timestamp. The tool never returns a buy/sell signal or treats a technical indicator as evidence of business demand. RSI, MACD, and Bollinger Bands are deferred until a real research question demonstrates that the compact set is insufficient.
 
+### `get_company_research`
+
+```python
+get_company_research(ticker: str) -> CompanyResearchResult
+```
+
+One Wall Street consensus benchmark tool; do not add separate analyst, estimate, or earnings-calendar tools. Returns normalized secondary research data: analyst price-target range (low, mean, high), consensus ratings (buy/hold/sell counts and trend), forward EPS and revenue estimates with revision direction, earnings calendar and next-earnings date. Every field declares its provider, as-of timestamp, and availability status; micro-caps and companies without institutional coverage return an explicit `unavailable` status per field rather than zeros. Provider abstraction: `yfinance` first (no key required); Finnhub optional when `FINNHUB_API_KEY` is configured (see keyed free-tier provider policy). The tool never produces a recommendation; the outer agent uses it only for the expectation-gap comparison against verified ground reality and SEC evidence.
+
 ### `list_sec_filings`
 
 ```python
@@ -171,6 +201,16 @@ verify_sec_claim(corpus_id: str, claim: str) -> SECVerification
 ```
 
 Verifier is a black-box local-evidence tool. Internals may use BM25, vectors, reranking, or corrective retrieval, but never a web-search fallback.
+
+### Keyed free-tier provider policy
+
+The system must run fully keyless: every default provider (Reddit PRAW, ApeWisdom, StockTwits, DuckDuckGo, RSS/GDELT, edgartools, yfinance) works without any account. Three keyed providers are approved as optional enhancements with graceful degradation. Each is a black-box HTTPS API dependency recorded in the dependency boundary — no repository clone and no donor code copying. A missing, invalid, or rate-limited key degrades that provider only; it must never crash the research loop or fail the run.
+
+1. **Finnhub** (`FINNHUB_API_KEY`; free tier 60 requests/minute): structured insider transactions (pre-parsed Form 4 transaction codes and net share changes) and analyst consensus/revision data. Used by `get_company_research` as an optional provider and as a structured Form 4 supplement to the verifier's local corpus; yfinance and local RAG remain the keyless defaults.
+2. **Apify** (`APIFY_API_TOKEN`; recurring free credit): on-demand Twitter/X cashtag search through hosted scraper actors when the agent needs X specifically. Results map into normalized `SocialPost` records with `source="twitter"`. Absent token means social search covers Reddit, ApeWisdom, and StockTwits only.
+3. **FRED** (`FRED_API_KEY`; free tier 120 requests/minute): macro series (10-year Treasury yield, semiconductor PPI, credit spreads) read only when a research question genuinely needs macro context, such as rate-sensitive demand or cyclical capacity analysis.
+
+Rejected keyed providers (do not add): Alpha Vantage (25 requests/day is unusable for an agent loop), Financial Modeling Prep (250 requests/day duplicates what edgartools already provides keylessly from official SEC XBRL).
 
 ## Future capability-agent extension boundary
 
@@ -248,6 +288,8 @@ class InvestigationState(TypedDict):
     confidence: float | None
     tool_calls: int
     status: str
+    consensus_snapshot: dict[str, object] | None
+    expectation_gap: dict[str, object] | None
 ```
 
 Persist readable Markdown plus structured JSON. Keep raw SEC sources and indexes per case:
@@ -267,6 +309,8 @@ Persist the originating `ResearchRequest`, rendered memo, source/citation receip
 ## Output and delivery
 
 Memo includes trigger, hype claims, confirmed facts, contradicted/exaggerated claims, SEC evidence, dilution/financing risk, material insider activity, remaining uncertainty, source links, confidence. Every SEC claim keeps form, accession, filing date, direct source, and relevant excerpt.
+
+For demand-shift investigations the memo adds a **Wall Street Expectations vs Ground Reality** section: a consensus variance table (metric, ground-reality finding, consensus estimate, gap) in the `earnings-summary` format, followed by an expectation-gap verdict stating whether the verified catalyst is unpriced, fairly priced, or already over-priced relative to consensus. The memo opens in the `investor-note` institutional format: a headline of at most 15 words, a bottom-line paragraph, core drivers, and an explicit risks/what-we-are-watching list, before the detailed forensic sections.
 
 Generate optional short explainer script only after memo, then send script to `Creatorberry/faceless`. Research never depends on video:
 
@@ -300,6 +344,8 @@ reference/
 
 The skill also selectively adapts investment-thinking ideas from `virattt/ai-hedge-fund`: product and user-value observation, qualitative adoption/scuttlebutt, disruptive-growth potential, asymmetric upside/downside, permanent shareholder-loss risk, and whether expectations are already priced in. These are reasoning lenses for the one outer agent, not separate Buffett, Lynch, Fisher, or other persona agents.
 
+The skill incorporates the Scuttlebutt & Expectations methodology (see Outer-agent behavior): Fisher/Lynch ground-reality tracing from signal to beneficiary, the management-execution audit against XBRL statement trajectories (margins, inventory, CapEx, financing behavior) available through edgartools, and the Mauboussin expectation-gap benchmark using `get_company_research` consensus data. It also adopts the institutional output formats from `reference/financial-research-workshop/agents/deep_agent/skills/`: the `investor-note` structure (headline of at most 15 words, bottom line up front, drivers, risks/what-we-are-watching, numbered sources) and the `earnings-summary` variance table (metric, result, consensus, year-over-year) for comparing prints and estimates against consensus.
+
 For a leading-indicator investigation, the skill treats market context as a pricing check: it compares the trigger against the causal chain `signal -> demand or bottleneck -> beneficiary -> financial mechanism -> expectation gap`, then calls `get_market_data` when it needs to learn whether price, relative performance, volume, or trend already suggest a repricing. A social spike, SMA, RSI, or any other indicator cannot independently establish demand or a recommendation.
 
 Research flow is conceptual, never mandatory:
@@ -329,29 +375,32 @@ All repository donors used by the project stay unmodified in `reference/`; packa
 8. `dgunning/edgartools`: discovery/acquisition, CIK, parsing, exhibits. Wrap, do not fork SEC plumbing.
 9. `ara-5/Enterprise-Agentic-RAG-Platform`: required SEC RAG donor: BM25 plus dense embeddings/FAISS, RRF fusion, CrossEncoder reranking, verification. Remove web-search fallback completely.
 10. `digit987/enterprise-agentic-rag-platform`: optional retrieval/reranking/verification ideas only; exclude unnecessary multi-agent orchestration.
-11. `langchain-samples/financial-research-workshop`: methodology Markdown, simple research, tracing/evaluation.
-12. `ranaroussi/yfinance`: future company-research source for analyst targets/revisions, estimates, financial statements, and supplemental market data. Use behind one normalized `get_company_research` tool; provider output is secondary research data and retains provenance/as-of fields.
+11. `langchain-samples/financial-research-workshop`: methodology Markdown, simple research, tracing/evaluation, plus the `investor-note` and `earnings-summary` skill formats adopted for memo output.
+12. `ranaroussi/yfinance`: company-research source for analyst targets/revisions, estimates, financial statements, and supplemental market data, used behind the normalized `get_company_research` tool; provider output is secondary research data and retains provenance/as-of fields.
 13. `alex9smith/gdelt-doc-api`: future package donor for the already planned GDELT article-discovery adapter; use behind `search_articles` only.
 14. `RomelTorres/alpha_vantage`: future optional free-key source for company news/sentiment and transcripts only after endpoint coverage and free-tier limits are smoke-tested; do not make it an MVP dependency.
 15. `OpenBB-finance/OpenBB`: inspected only for provider-standardization ideas. Do not copy, install, or run its provider/plugin runtime: its repository is AGPL-3.0 and materially broader than this product.
-16. `HalcyonVector/Stock-Market-Intelligence`: selective market-context donor. Its `backend/app/services/technicals.py` contains small deterministic SMA, EMA, RSI, MACD, Bollinger Band, and ATR calculations, while `backend/app/services/explain.py` demonstrates combining quote, candles, news, and sentiment. Port only the approved compact-market-context functions under a future per-file specification with exact provenance; do not inherit its web UI, API, scoring, forecasting, backtesting, portfolio, caching, or background-ingestion architecture.
+16. `HalcyonVector/Stock-Market-Intelligence`: selective market-context donor. Its `backend/app/services/technicals.py` contains small deterministic SMA, EMA, RSI, MACD, Bollinger Band, and ATR calculations (SMA and ATR already ported), while `backend/app/adapters/sentiment_live.py` supplied the StockTwits symbol-stream adapter adapted into `app/social/providers/stocktwits.py` (unauthenticated stream, null-body and `entities: null` guards retained). Do not inherit its web UI, API, scoring, forecasting, backtesting, portfolio, caching, or background-ingestion architecture.
 17. `Creatorberry/faceless`: source-script-to-reel workflow only.
+
+Keyed API providers — Finnhub, Apify, and FRED — are black-box HTTPS API dependencies, not repository donors: no clone, no copied code; their use is recorded in the dependency boundary per the Donor Code Provenance policy.
 
 `jadchaar/sec-edgar-downloader` is fallback-only. `LoneRanger-dev/qa-forge` is private, inspiration only. Existing `sec-edgar-agentkit` and `gpt-researcher` are optional later donors; they do not dictate architecture.
 
 ## MVP order
 
-1. Inspect donors; write component/reuse/licensing/compatibility map.
-2. Define schemas, case storage, contracts, methodology, state/control tests.
-3. Implement `list_sec_filings` and `pull_sec_filings` with Edgartools and case-local sources.
-4. Build case-local ingestion/retrieval/`verify_sec_claim`; test the verifier has no external retrieval or application-tool path, while allowing its approved inference-provider call.
-5. Add normalized Reddit/ApeWisdom plus deterministic metrics.
-6. Add normalized professional article search/read tools with RSS/GDELT/Trafilatura, paywall-safe behavior, and provider failure handling.
-7. Add market and general-web adapters with provider failure handling.
-8. Build smallest outer-agent loop, budgets, deduplication, memo renderer.
-9. Test fixture cases and failures: acquisition, verdict, stopping.
-10. Add optional reel-script/Faceless layer.
-11. After the interactive runner and artifact contracts are stable, add the optional daily `ResearchRequest` wrapper plus static-site publication. Reuse the runner; do not create a parallel research pipeline.
+1. Inspect donors; write component/reuse/licensing/compatibility map. *(Complete.)*
+2. Define schemas, case storage, contracts, methodology, state/control tests. *(Complete.)*
+3. Implement `list_sec_filings` and `pull_sec_filings` with Edgartools and case-local sources. *(Complete.)*
+4. Build case-local ingestion/retrieval/`verify_sec_claim`; test the verifier has no external retrieval or application-tool path, while allowing its approved inference-provider call. *(Complete, including the OpenAI-compatible assessor.)*
+5. Add normalized Reddit/ApeWisdom plus deterministic metrics. *(Complete; StockTwits added later from the Stock-Market-Intelligence donor.)*
+6. Add normalized professional article search/read tools with RSS/GDELT/Trafilatura, paywall-safe behavior, and provider failure handling. *(Complete.)*
+7. Add market and general-web adapters with provider failure handling. *(Complete: `get_market_data`, `search_web`.)*
+8. Build smallest outer-agent loop, budgets, deduplication, memo renderer. *(Complete: LangGraph loop, two-tier state, tool registry with duplicate guard, `memo.md` + `investigation.json` runner.)*
+9. Implement `get_company_research` (yfinance first, Finnhub optional) and upgrade the agent prompt and memo renderer with the Scuttlebutt & Expectations framework (consensus variance table, expectation-gap verdict, investor-note opening).
+10. Test fixture cases and failures: acquisition, verdict, stopping, provider degradation, full multi-turn scenario.
+11. Add optional reel-script/Faceless layer.
+12. After the interactive runner and artifact contracts are stable, add the optional daily `ResearchRequest` wrapper plus static-site publication. Reuse the runner; do not create a parallel research pipeline.
 
 ## Explicit V1 exclusions
 
@@ -359,8 +408,8 @@ All repository donors used by the project stay unmodified in `reference/`; packa
 - Knowledge graphs, Neo4j, global SEC RAG, fine-tuning, portfolio optimization, prediction models, broker execution.
 - Backtesting, article RAG, and invented model-only financial analysis when reputable current professional analysis is available.
 - Every-EDGAR ingestion; outer agent controls pulls.
-- Instagram, TikTok, Discord, Telegram, continuous X.
-- StockTwits as core provider.
+- Instagram, TikTok, Discord, Telegram; continuous X firehose (keyed on-demand Apify X search is permitted; a continuous feed is not).
+- Keyed providers as hard dependencies: Finnhub, Apify, and FRED are optional with keyless fallback; the system must run with zero API keys.
 - Video coupled to research internals.
 
 ## Implementation-start acceptance criteria
