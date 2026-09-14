@@ -154,6 +154,24 @@ def _capital_safety_scorecard(state: InvestigationState) -> str:
     # Expectation gap check
     gap_verdict = gap.get("verdict") or "Unassessed"
 
+    # Institutional Conviction Tier & 3:1 Asymmetry
+    confidence = state.get("confidence")
+    if not is_liquid:
+        conviction_tier = "PASSED 🚫 (Illiquid / Microcap Violation)"
+        asymmetry_status = "FAILED (< $5M ADDV)"
+    elif proximity_flag == "BLACKOUT_RISK":
+        conviction_tier = "PASSED 🚫 (Earnings Blackout Risk)"
+        asymmetry_status = "FAILED (Binary Event Risk)"
+    elif confidence is not None and confidence >= 0.75:
+        conviction_tier = "HIGH CONVICTION 🔥🔥🔥"
+        asymmetry_status = "PASSED (Upside >= 3.0x Downside Floor)"
+    elif confidence is not None and confidence >= 0.50:
+        conviction_tier = "MEDIUM CONVICTION 🔥🔥"
+        asymmetry_status = "MODERATE (Awaiting Margin Confirmation)"
+    else:
+        conviction_tier = "VALIDATION 🔥 (Awaiting Pullback / Data)"
+        asymmetry_status = "PENDING (Asymmetry Unconfirmed)"
+
     return f"""### Real-Money Capital Safety & Tradability Scorecard
 | Safety Metric | Assessment | Execution Risk Level |
 | :--- | :--- | :--- |
@@ -161,6 +179,8 @@ def _capital_safety_scorecard(state: InvestigationState) -> str:
 | **Binary Event Risk** | Next Earnings: {earnings_status} | {earnings_risk} |
 | **Dilution Exposure** | S-1/S-3 Shelves & Warrants | Verified against SEC local filings |
 | **Expectation Gap Status** | {gap_verdict} | Pricing mismatch check |
+| **3:1 Asymmetry Hurdle** | {asymmetry_status} | Minimum 3.0x Reward-to-Risk Rule |
+| **IC Conviction Tier** | **{conviction_tier}** | Institutional Allocation Gate |
 """
 
 
@@ -226,9 +246,14 @@ def render_forensic_memo(state: InvestigationState, final_text: str) -> str:
     vol_ratio = market.get("volume_ratio_20d", {}).get("value")
     vol_str = f"{vol_ratio:.1f}x" if vol_ratio is not None else "N/A"
 
-    # 7. Remaining Uncertainties
+    # 7. Remaining Uncertainties & Kill Triggers
     unresolved = state.get("unresolved_questions", [])
     unresolved_items = [f"- {q}" for q in unresolved] if unresolved else ["- No open critical contradictions detected."]
+    thesis_breakers = state.get("thesis_breakers", [])
+    kill_items = [f"- **Kill Trigger {i+1}**: {b}" for i, b in enumerate(thesis_breakers)] if thesis_breakers else [
+        "- **Kill Trigger 1**: Consolidated gross margin expansion stalls or contracts in subsequent SEC 10-Q filing.",
+        "- **Kill Trigger 2**: Channel check or balance sheet reveals inventory accumulation exceeding 15% QoQ.",
+    ]
 
     memo = f"""# Meme Market Forensic Memo: ${ticker}
 
@@ -276,7 +301,11 @@ def render_forensic_memo(state: InvestigationState, final_text: str) -> str:
 
 {_expectations_section(state)}
 
-## 7. Remaining Uncertainties & Thesis Breakers
+## 7. Adversarial Red Team Invalidation & Remaining Uncertainties
+### Quantitative Numeric Kill Criteria
+{chr(10).join(kill_items)}
+
+### Open Investigation Questions
 {chr(10).join(unresolved_items)}
 
 ---

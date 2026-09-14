@@ -42,6 +42,8 @@ def test_render_forensic_memo_includes_required_sections():
     assert "### Real-Money Capital Safety & Tradability Scorecard" in memo_md
     assert "Liquidity & Dollar Volume" in memo_md
     assert "Binary Event Risk" in memo_md
+    assert "3:1 Asymmetry Hurdle" in memo_md
+    assert "IC Conviction Tier" in memo_md
 
     # Check key headings and content
     assert "# Meme Market Forensic Memo: $XYZ" in memo_md
@@ -54,7 +56,8 @@ def test_render_forensic_memo_includes_required_sections():
     assert "## 6. Market Context & Pricing Check" in memo_md
     assert "## Wall Street Expectations vs Ground Reality" in memo_md
     assert "No institutional analyst coverage" in memo_md  # no consensus data yet
-    assert "## 7. Remaining Uncertainties" in memo_md
+    assert "## 7. Adversarial Red Team Invalidation" in memo_md
+    assert "Kill Trigger 1" in memo_md
     assert "## 8. Forensic Conclusion" in memo_md
     assert final_text in memo_md
 
