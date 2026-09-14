@@ -37,41 +37,44 @@ grassroots demand signal
 
 The system organizes institutional equity research into a **3-Stage Gated Pipeline** in LangGraph:
 
-```text
-               ┌────────────────────────────────────────────────────────┐
-               │ STAGE 1: FORENSIC INVESTIGATOR (Free-Loop Tool Agent)  │
-               │  • Selects tools dynamically to resolve uncertainties: │
-               │    - search_social() / search_articles() / read_article│
-               │    - search_web() / get_market_data()                  │
-               │    - get_company_research() / get_sec_financials()     │
-               │    - list_sec_filings() / pull_sec_filings()           │
-               │    - verify_sec_claim() [Isolated local RAG]           │
-               │  • Pre-trade gates: ADDV >= $5M & Earnings > 7d        │
-               │  • Outputs: Grounded evidence list + draft thesis      │
-               └───────────────────────────┬────────────────────────────┘
-                                           │ (Facts passed forward)
-                                           ▼
-               ┌────────────────────────────────────────────────────────┐
-               │ STAGE 2: AIR-GAPPED ADVERSARIAL RED TEAM               │
-               │  • Hostile Short-Seller Mandate (Muddy Waters mindset) │
-               │  • Zero visibility into Stage 1 bullish draft          │
-               │  • Formulates: 4 Falsifiable Objections                │
-               │  • Sets: 2 Quantitative Numeric Kill Triggers          │
-               └───────────────────────────┬────────────────────────────┘
-                                           │ (Bull Thesis + Bear Attack)
-                                           ▼
-               ┌────────────────────────────────────────────────────────┐
-               │ STAGE 3: INVESTMENT COMMITTEE (CIO Allocation & Sizing)│
-               │  • Weighs Bull Thesis against Adversarial Red Team     │
-               │  • Enforces 3:1 Asymmetric Reward-to-Risk Hurdle       │
-               │  • Enforces Passing Discipline (saying NO to bad traps)│
-               │  • Computes Fractional Kelly Position Size (in code)   │
-               │  • Renders Final Institutional Memo & Audit JSON       │
-               └───────────────────────────┬────────────────────────────┘
-                                           │
-                                           v
-                       Creatorberry/faceless delivery (optional)
-```
+40	```text
+41	               ┌────────────────────────────────────────────────────────┐
+42	               │ STAGE 1: FORENSIC INVESTIGATOR (Free-Loop Tool Agent)  │
+43	               │  • Selects tools dynamically to resolve uncertainties: │
+44	               │    - search_social() / search_articles() / read_article│
+45	               │    - search_web() / get_market_data()                  │
+46	               │    - get_company_research() / get_sec_financials()     │
+47	               │    - list_sec_filings() / pull_sec_filings()           │
+48	               │    - verify_sec_claim() [Isolated local RAG]           │
+49	               │  • Post-Tool Ingestion: Deterministic fact projection  │
+50	               │  • Context Policy: Adaptive 1M window / 200k threshold │
+51	               │  • Pre-trade gates: ADDV >= $5M & Earnings > 7d        │
+52	               │  • Outputs: Grounded evidence list + draft thesis      │
+53	               └───────────────────────────┬────────────────────────────┘
+54	                                           │ (Verified facts only)
+55	                                           ▼
+56	               ┌────────────────────────────────────────────────────────┐
+57	               │ STAGE 2: AIR-GAPPED ADVERSARIAL RED TEAM               │
+58	               │  • Hostile Short-Seller Mandate (Muddy Waters mindset) │
+59	               │  • Zero visibility into Stage 1 bullish draft          │
+60	               │  • Formulates: 4 Falsifiable Objections                │
+61	               │  • Sets: 2 Quantitative Numeric Kill Triggers          │
+62	               │  • Bounded Downside Floor & Stress Testing             │
+63	               └───────────────────────────┬────────────────────────────┘
+64	                                           │ (Bull Thesis + Bear Attack)
+65	                                           ▼
+66	               ┌────────────────────────────────────────────────────────┐
+67	               │ STAGE 3: INVESTMENT COMMITTEE (CIO Allocation & Sizing)│
+68	               │  • Weighs Bull Thesis against Adversarial Red Team     │
+69	               │  • Enforces Strict 3:1 Asymmetric Reward-to-Risk Hurdle│
+70	               │  • Enforces Strict Fail-Closed Passing Discipline      │
+71	               │  • Computes Fractional Kelly Position Size (in code)   │
+72	               │  • Renders Final Institutional Memo & Audit JSON       │
+73	               └───────────────────────────┬────────────────────────────┘
+74	                                           │
+75	                                           v
+76	                       Creatorberry/faceless delivery (optional)
+77	```
 
 ### Outer-agent behavior
 
@@ -106,7 +109,7 @@ Interactive use passes the user's request directly to the shared research runner
 
 ## Outer-agent tools
 
-The MVP model receives nine tools only. Internal provider classes are not agent tools.
+The outer agent receives ten normalized tools only. Internal provider classes are not agent tools.
 
 ### `search_social`
 
@@ -137,7 +140,7 @@ Paywalls must not be bypassed. Preserve usable RSS headline/description metadata
 read_article(url: str) -> ArticleContent
 ```
 
-Use `adbar/trafilatura` for URL-to-cleaned-article-text and metadata. Do not implement a generic HTML/article parser. This is live research only, not an article RAG corpus.
+Use `adbar/trafilatura` for URL-to-cleaned-article-text and metadata. Do not implement a generic HTML/article parser. This is live research only, not an article RAG corpus. All outbound HTTP requests must pass through strict SSRF validation (blocking private/loopback/link-local/cloud-metadata targets before and after redirects).
 
 ### `search_web`
 
@@ -150,12 +153,13 @@ One general research tool covers company/counterparty websites, IR pages, press 
 ### `get_market_data`
 
 ```python
-get_market_data(ticker: str, period: str | None = None) -> MarketDataResult
+get_market_data(ticker: str, period: str | None = None,
+                benchmark_ticker: str = "SPY") -> MarketDataResult
 ```
 
 This remains the one market-context tool; do not add a separate technical-analysis agent or one tool per indicator. Use a provider abstraction: Yahoo/yfinance initially, Finnhub or Stooq fallback. Return normalized price, price change, volume/history, OHLCV, market capitalization, float and shares outstanding when reliable, plus available short interest.
 
-Deterministic code derives only the compact context set needed to assess whether a catalyst may already be priced in: 1-day, 5-day, 1-month, and 3-month returns; volume divided by its 20-trading-day average; return relative to a supplied or default sector/index benchmark; 50-day and 200-day simple-moving-average trend status; and a 14-day volatility measure such as ATR. Each derived field declares its lookback, benchmark when applicable, calculation status, provider, and as-of timestamp. The tool never returns a buy/sell signal or treats a technical indicator as evidence of business demand. RSI, MACD, and Bollinger Bands are deferred until a real research question demonstrates that the compact set is insufficient.
+Deterministic code derives only the compact context set needed to assess whether a catalyst may already be priced in: 1-day, 5-day, 1-month, and 3-month returns; volume divided by its 20-trading-day average; return relative to a supplied or default sector/index benchmark (joined on common trading dates); 50-day and 200-day simple-moving-average trend status; and a 14-day volatility measure such as ATR. Each derived field declares its lookback, benchmark when applicable, calculation status, provider, and source observation timestamp (`as_of` vs `retrieved_at`). The tool never returns a buy/sell signal or treats a technical indicator as evidence of business demand.
 
 ### `get_company_research`
 
@@ -178,10 +182,10 @@ Metadata only: form, filing date, accession, filing URL, and cheaply available e
 
 ```python
 pull_sec_filings(case_id: str,
-                 selections: list[SelectedSecFiling]) -> PulledCorpus
+                 selections: list[SelectedSecDocument]) -> PulledCorpus
 ```
 
-`SelectedSecFiling` identifies one result returned by `list_sec_filings` by its accession and explicitly names the primary document and any material exhibits to acquire. The outer agent chooses these exact records; it does not merely supply a ticker, form filter, and arbitrary limit. Download selected filing text and material exhibits to one case-local corpus, returning `corpus_id`, document metadata, and accessions. Never indiscriminately ingest EDGAR.
+`SelectedSecDocument` explicitly pairs a complete `FilingMetadata` record (accession, form, filing date, report date, CIK, ticker) with the document name and source URL to acquire. The outer agent chooses these exact records; it does not merely supply a ticker, form filter, and arbitrary limit. Download selected filing text and material exhibits to one case-local corpus, returning `corpus_id`, document metadata, and accessions. Never indiscriminately ingest EDGAR. All corpus storage is strictly isolated and validated via `case_path`.
 
 ### `verify_sec_claim`
 
@@ -189,7 +193,15 @@ pull_sec_filings(case_id: str,
 verify_sec_claim(corpus_id: str, claim: str) -> SECVerification
 ```
 
-Verifier is a black-box local-evidence tool. Internals may use BM25, vectors, reranking, or corrective retrieval, but never a web-search fallback.
+Verifier is a black-box local-evidence tool. Internals use BM25, dense embeddings, FAISS indexing (`sec.faiss`), and reciprocal rank fusion. The verifier runs without internet access or web search; inference is performed via an approved, allowlisted OpenAI-compatible endpoint with JSON Schema constraints. Offline fallback must abstain with `INSUFFICIENT_EVIDENCE` and never manufacture false confirmations.
+
+### `get_sec_financials`
+
+```python
+get_sec_financials(ticker: str, periods: int = 4) -> SecFinancialsResult
+```
+
+Deterministic SEC XBRL financial statement extraction tool. Extracts quarterly income statement (revenue, gross margin, operating margin), balance sheet (cash, short-term investments, total debt, inventories), and cash flows (operating cash flow, CapEx) directly from official SEC XBRL data. All extractions strictly distinguish discrete quarterly durations from cumulative YTD durations, sort periods by fiscal end-date, and preserve accounting units. Zero hallucination.
 
 ### Keyed free-tier provider policy
 
@@ -264,22 +276,41 @@ Use `dgunning/edgartools` as primary acquisition library instead of writing tick
 
 ```python
 class InvestigationState(TypedDict):
+    messages: Annotated[Sequence[BaseMessage], add_messages]
+    case_id: str
     ticker: str
     company: str | None
     cik: str | None
-    trigger: dict[str, object]
+    trigger: dict[str, Any]
     root_claims: list[str]
-    evidence: list[dict[str, object]]
-    contradictions: list[dict[str, object]]
+    evidence: list[dict[str, Any]]
+    contradictions: list[dict[str, Any]]
     unresolved_questions: list[str]
     sec_corpora: list[str]
-    searches_performed: list[dict[str, object]]
+    searches_performed: list[dict[str, Any]]
     confidence: float | None
     tool_calls: int
     status: str
-    consensus_snapshot: dict[str, object] | None
-    expectation_gap: dict[str, object] | None
+    causal_chain: dict[str, str] | None
+    market_context: dict[str, Any] | None
+    consensus_snapshot: dict[str, Any] | None
+    expectation_gap: dict[str, Any] | None
+    thesis_breakers: list[str]
+    adversarial_report: Any | None
+    ic_verdict: Any | None
+    budget_state: dict[str, Any]
 ```
+
+### Two-Tier State Architecture
+
+1. **Tier 1 (Ephemeral Conversational Working Set)**: `messages` contains the raw multi-turn dialogue with LangGraph `add_messages`. Before each model invocation, `prepare_context()` applies `ModelContextPolicy`:
+   - Configurable for 1M-token windows (default `context_window_tokens=1,000,000`).
+   - High activation threshold (`compact_threshold_tokens=200,000`), preserving full raw history during normal multi-turn investigation.
+   - Reserved output tokens (`32,000`) and input safety margin (`32,000`) ensure the model never runs out of generation budget.
+   - Pair-Safe Exchange Integrity: an assistant `AIMessage` with `tool_calls` and all matching `ToolMessage` results form an indivisible conversational unit that is never split or partially truncated.
+   - Deterministic Tool-Result Pruning: old oversized tool bodies (exceeding `8,000` tokens) are replaced with compact metadata envelopes (`name`, `id`, `status`, byte size, and SHA-256 digest) before dropping older conversational units.
+   - Model-aware token counting uses provider hooks (`get_num_tokens_from_messages`) where available, with explicit conservative character-based fallback.
+2. **Tier 2 (Permanent Structured Evidence)**: `evidence`, `contradictions`, `market_context`, `consensus_snapshot`, `sec_corpora`, `searches_performed`, and `confidence` are populated deterministically by `ingest_tool_results` at tool-return time. They are never trimmed and are injected cleanly into the dynamic system prompt every turn.
 
 Persist readable Markdown plus structured JSON. Keep raw SEC sources and indexes per case:
 
@@ -287,13 +318,30 @@ Persist readable Markdown plus structured JSON. Keep raw SEC sources and indexes
 cases/XYZ-2026-09-01-001/
   investigation.json
   memo.md
+  article.md
+  faceless/
+    dialogue.json
+    caption.txt
   sec/
   corpus/
 ```
 
-Start filesystem-only. Add DB only when concurrent case handling proves need. Enforce max tool calls/rounds, provider limits, timeout, budget, duplicate-query detection. Track information gain: new source, claim, resolved uncertainty, contradiction, or material verdict change; stop repeated no-value calls.
+### Fail-Closed Financial Governance & Risk Policy
 
-Persist the originating `ResearchRequest`, rendered memo, source/citation receipts, and request-template version when scheduled. A scheduled run that cannot meet the publication threshold records an explicit no-material-finding result rather than inventing a thesis.
+1. **Strict Fail-Closed Data Gating**: When prices, consensus targets, bear floors, earnings dates, or SEC evidence are missing, unavailable, zero, negative, or unparseable, the system must **strictly fail closed**. Never substitute synthetic defaults (e.g. defaulting price to $100, assuming +30% upside or -15% downside, or treating `confidence=None` as high confidence). Missing critical inputs force an immediate `VALIDATION_WATCH` or `PASSED_STRICT_DISCIPLINE` verdict with **0.0% capital allocation**.
+2. **Strict 3:1 Asymmetric Reward-to-Risk Rule**: The 3.0x threshold is a non-negotiable hard hurdle:
+   $$\text{Reward-to-Risk Ratio} = \frac{\text{Base Target Price} - \text{Current Price}}{\text{Current Price} - \text{Bear Downside Floor}} \ge 3.0$$
+   Any ratio below 3.0x (including 2.0–2.99x) strictly fails the hurdle, receives `VALIDATION_WATCH` (awaiting pullback) or `PASSED`, and receives **0.0% capital allocation**.
+3. **Deterministic Valuation & Bounded Downside**: The bear downside floor must be calculated from deterministic valuation models and balance-sheet liquidation constraints (trough multiples, net debt, dilution), not unverified raw LLM prose. `bear_floor` must satisfy $0 < \text{bear\_floor} < \text{current\_price}$. An invalid floor invalidates the scenario rather than being masked by artificial dollar floors.
+4. **Calibrated Sizing & Portfolio Risk**: Fractional Kelly sizing ($f^* = (p \cdot b - q) / b$) is gated on an empirically calibrated win probability ($p$). Research confidence is an evidence score, not an outcome probability. Position sizing must enforce single-name loss budgets, portfolio NAV constraints, and sector concentration limits.
+
+### Production Security, SSRF & Operational Hardening
+
+1. **Outbound SSRF Mitigation**: All HTTP fetches in `read_article` and web search must perform strict IP/DNS validation, rejecting loopback, link-local, private RFC1918, IPv6-local, multicast, and cloud metadata targets (169.254.169.254) before and after redirects. Restrict ports to standard HTTPS (443) and enforce byte caps and timeouts.
+2. **Filesystem Path Traversal Containment**: All case-local reads, corpus pulls, index building (`sec.faiss`), and artifact writes must pass through validated `case_path()` resolution and containment checks, preventing path traversal via arbitrary `corpus_id` or `case_id` strings.
+3. **Atomic Case Reservation & Publication**: Sequential case directory allocation must use atomic reservation (`mkdir(exist_ok=False)`). Artifacts must be written to temporary staging files and published via atomic filesystem rename (`os.replace`) to prevent corrupted or partial states.
+4. **Elimination of Fabricated Fallbacks**: When model parsing or generation fails in Red Team, memo rendering, or media generation, the system must record a typed degraded state or abort safely. Never emit canned or hallucinated financial claims (such as inventing margin expansion or demand spikes) in fallback handlers.
+5. **Hard Operational & Cost Budgets**: Enforce overall per-investigation limits covering total input/output tokens, external model calls, TTS character consumption, wall-clock execution timeouts, and estimated monetary cost. Stop safely once any budget is reached.
 
 ## Output and delivery
 
@@ -388,10 +436,11 @@ Keyed API providers — Finnhub, Apify, and FRED — are black-box HTTPS API dep
 8. Build smallest outer-agent loop, budgets, deduplication, memo renderer. *(Complete: LangGraph loop, two-tier state, tool registry with duplicate guard, `memo.md` + `investigation.json` runner.)*
 9. Implement `get_company_research` (yfinance first, Finnhub optional) and upgrade prompt/memo with Scuttlebutt & Expectations framework. *(Complete: 9th tool, consensus variance table, investor-note opening.)*
 10. Add real-money safeguards and deterministic SEC XBRL financials tool (`get_sec_financials` as 10th tool, 20d ADDV liquidity filter, market cap tiering, earnings blackout guard, capital safety scorecard). *(Complete.)*
-11. Implement the 3-Stage Institutional Gated Pipeline (`investigator -> air_gapped_red_team -> investment_committee`) with 3:1 asymmetry hurdle, passing discipline, and Fractional Kelly position sizing.
-12. Test fixture cases and failures: acquisition, verdict, stopping, provider degradation, full multi-turn scenario.
-13. Add optional reel-script/Faceless layer.
-14. After the interactive runner and artifact contracts are stable, add the optional daily `ResearchRequest` wrapper plus static-site publication. Reuse the runner; do not create a parallel research pipeline.
+439	11. Implement the 3-Stage Institutional Gated Pipeline (`investigator -> air_gapped_red_team -> investment_committee`) with deterministic post-tool ingestion, adaptive 1M-context management, 3:1 asymmetry hurdle, passing discipline, and Fractional Kelly position sizing. *(Complete.)*
+440	12. Add optional media generator (`generate_media_package`) and Creatorberry/Faceless reel video execution bridge. *(Complete.)*
+441	13. Institutional Battle-Readiness Hardening & Audit Remediation (Fail-closed data gating, strict 3:1 zero-allocation enforcement, deterministic scenario valuation, typed XBRL context/duration parsing, SSRF/filesystem containment, atomic persistence, and real-provider evaluation). *(In progress; see `doc/plans/16-battle-ready-audit-remediation-and-institutional-hardening.md`.)*
+442	14. E2E live fixture testing, golden SEC claim benchmark, and strategy backtest calibration.
+443	15. Static-site publication build and daily scheduled runner wrapper.
 
 ## Post-MVP Extension: Headless Subscription-Backed Execution
 
