@@ -60,6 +60,7 @@ class FacelessBridge:
         dialogue_path: Path,
         topic_slug: str,
         output_dir: Path,
+        fish_model: str | None = None,
     ) -> Path | None:
         """Invoke generate-audio.mjs to produce full-dialogue.mp3 via Fish Audio."""
         if not self.is_available():
@@ -82,6 +83,10 @@ class FacelessBridge:
             str(output_dir.resolve()),
         ]
 
+        run_env = dict(os.environ)
+        if fish_model:
+            run_env["FISH_MODEL"] = str(fish_model).strip()
+
         try:
             res = subprocess.run(
                 cmd,
@@ -89,6 +94,7 @@ class FacelessBridge:
                 text=True,
                 cwd=str(self.faceless_root.resolve()),
                 timeout=120,
+                env=run_env,
             )
             if res.returncode != 0:
                 logger.warning("generate-audio.mjs failed (exit %d): %s", res.returncode, res.stderr or res.stdout)

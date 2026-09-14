@@ -6,7 +6,7 @@ import {ensureFfmpeg} from './ffmpeg.mjs';
 import {loadFishApiKey} from './fish-config.mjs';
 
 const FISH_TTS_URL = 'https://api.fish.audio/v1/tts';
-const FISH_MODEL = 's2';
+const FISH_MODEL = process.env.FISH_MODEL?.trim() || 's2';
 const PETER_VOICE_ID = 'e34b4e061b874623a08f41e5c4fecfb9';
 const STEWIE_VOICE_ID = 'fdffd3722cd040fcb3f95eec5a7f29f3';
 const RICK_VOICE_ID = 'd2e75a3e3fd6419893057c02a375a113';

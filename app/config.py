@@ -31,6 +31,7 @@ class MediaConfig:
     generate_media: bool = True
     character_pair: str = "peter_stewie"  # Allowed: "peter_stewie" or "rick_morty"
     reel_temperature: float = 0.4  # Higher temperature (0.4) specifically for witty dialogue & comedic banter
+    fish_model: str = "s2"  # Fish Audio TTS model: "s2" (flagship) or "s2-free" (free tier)
 
     def __post_init__(self) -> None:
         """Validate character pair against supported cast options."""
@@ -41,6 +42,8 @@ class MediaConfig:
         object.__setattr__(self, "character_pair", clean)
         if not 0.0 <= self.reel_temperature <= 2.0:
             raise ValueError(f"reel_temperature must be between 0.0 and 2.0, got: {self.reel_temperature}")
+        clean_model = self.fish_model.strip() if self.fish_model else "s2"
+        object.__setattr__(self, "fish_model", clean_model)
 
 
 @dataclass(frozen=True)
@@ -101,10 +104,12 @@ def load_config(config_path: Path | str | None = None) -> AppConfig:
     gen_media = raw_media.get("generate_media", True) if "generate_media" in raw_media else True
     char_pair = os.getenv("CHARACTER_PAIR") or raw_media.get("character_pair") or "peter_stewie"
     raw_reel_temp = os.getenv("REEL_TEMPERATURE") or raw_media.get("reel_temperature", 0.4)
+    raw_fish_model = os.getenv("FISH_MODEL") or raw_media.get("fish_model", "s2")
     media_cfg = MediaConfig(
         generate_media=bool(gen_media),
         character_pair=str(char_pair),
         reel_temperature=float(raw_reel_temp),
+        fish_model=str(raw_fish_model),
     )
 
     # Parse Research config

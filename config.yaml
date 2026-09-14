@@ -31,6 +31,12 @@ media:
   # while the core investigation and accounting checks stay at temperature 0.2.
   reel_temperature: 0.4
 
+  # Fish Audio TTS model for voice synthesis.
+  # Options:
+  #   - "s2": Flagship Fish Audio model (highest audio quality & emotion inflection)
+  #   - "s2-free": Free tier Fish Audio model
+  fish_model: "s2"
+
 research:
   max_tool_calls: 15
   max_identical_calls: 2
