@@ -1,0 +1,36 @@
+{
+  "githubRepository": "Creatorberry/faceless",
+  "releaseTag": "video-templates-v1",
+  "templates": [
+    {
+      "name": "minecraft1.mp4",
+      "bytes": 458291282,
+      "sha256": "af657a72dafff28349d62c41c60e0aecd5cde9cdeb293aaf9a85e8b9839a6e8c"
+    },
+    {
+      "name": "minecraft2.mp4",
+      "bytes": 459102301,
+      "sha256": "2c020580129e0febe0d713b30761bbae2eb6da761f8b94c1f93da8f698f97573"
+    },
+    {
+      "name": "minecraft3.mp4",
+      "bytes": 459912066,
+      "sha256": "94ad29ef48f44641500568d0c88b7f7a8c957f02350b3836e090be97d6de9d59"
+    },
+    {
+      "name": "minecraft4.mp4",
+      "bytes": 458655624,
+      "sha256": "2e1801d1ef5c84d96350ba3ef9fe2c2bd7a5783729facaf4d6bb40061185a597"
+    },
+    {
+      "name": "minecraft5.mp4",
+      "bytes": 457683712,
+      "sha256": "a51ccf1047ae872215cf2249799fef36c185549acfb61a51d4c94fa86fa9d6f6"
+    },
+    {
+      "name": "minecraft6.mp4",
+      "bytes": 92256374,
+      "sha256": "bc9e6a4ab3f01749644f28745bf72afcef187d4c5be9d8284dbaed21e9a9a099"
+    }
+  ]
+}

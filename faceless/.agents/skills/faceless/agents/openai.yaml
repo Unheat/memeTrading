@@ -1,0 +1,4 @@
+interface:
+  display_name: "Faceless"
+  short_description: "Turn a supplied script into a faceless reel"
+  default_prompt: "Use $faceless to turn this script into a two-character faceless reel."

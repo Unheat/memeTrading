@@ -30,6 +30,9 @@ def test_run_investigation_generates_case_artifacts(tmp_path):
     assert case_dir.exists()
     assert (case_dir / "memo.md").exists()
     assert (case_dir / "investigation.json").exists()
+    assert (case_dir / "article.md").exists()
+    assert (case_dir / "faceless" / "dialogue.json").exists()
+    assert (case_dir / "faceless" / "caption.txt").exists()
 
     memo_content = (case_dir / "memo.md").read_text(encoding="utf-8")
     assert "# Meme Market Forensic Memo: $TEST" in memo_content

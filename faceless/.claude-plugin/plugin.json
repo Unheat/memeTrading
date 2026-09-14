@@ -1,0 +1,8 @@
+{
+  "name": "faceless",
+  "description": "Turn a supplied script into a two-character faceless reel with local Fish Audio and an optional Minecraft-background video.",
+  "author": {"name": "Creatorberry"},
+  "license": "MIT",
+  "homepage": "https://www.creatorberry.com/",
+  "keywords": ["faceless", "reels", "dialogue", "fish-audio", "minecraft", "creatorberry", "skill"]
+}

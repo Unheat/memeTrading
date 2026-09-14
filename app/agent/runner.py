@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from app.agent.graph import create_agent_graph
+from app.agent.media import generate_media_package
 from app.agent.memo import render_forensic_memo, serialize_investigation_json
 from app.agent.state import InvestigationState, ResearchRequest, create_initial_state
 from app.agent.tools import create_agent_tools
@@ -31,6 +32,7 @@ class InvestigationResult:
     status: str
     memo_markdown: str
     final_state: dict[str, Any]
+    article_markdown: str | None = None
 
 
 def _resolve_case_id(root: Path, ticker: str) -> str:
@@ -49,13 +51,15 @@ def run_investigation(
     request: ResearchRequest,
     model: Any | None = None,
     cases_root: Path | str | None = None,
+    generate_media: bool = True,
 ) -> InvestigationResult:
     """Run an autonomous forensic market investigation.
 
     :param request: Validated ResearchRequest.
     :param model: Optional LLM model or test double.
     :param cases_root: Base storage directory (defaults to 'cases').
-    :returns: InvestigationResult containing case ID, status, and rendered memo.
+    :param generate_media: Whether to generate article.md and faceless reel dialogue.
+    :returns: InvestigationResult containing case ID, status, rendered memo, and article.
     """
     root = Path(cases_root) if cases_root else Path("cases")
     root.mkdir(parents=True, exist_ok=True)
@@ -92,6 +96,25 @@ def run_investigation(
     memo_file.write_text(memo_md, encoding="utf-8")
     json_file.write_text(json.dumps(investigation_json, indent=2), encoding="utf-8")
 
+    article_md: str | None = None
+    if generate_media:
+        try:
+            pkg = generate_media_package(final_state, model=model)
+            article_md = pkg.article_markdown
+
+            # Write article.md
+            (target_case_dir / "article.md").write_text(pkg.article_markdown, encoding="utf-8")
+
+            # Write Faceless input files under cases/<case_id>/faceless/
+            faceless_dir = target_case_dir / "faceless"
+            faceless_dir.mkdir(parents=True, exist_ok=True)
+            (faceless_dir / "dialogue.json").write_text(json.dumps(pkg.dialogue_json, indent=2), encoding="utf-8")
+            (faceless_dir / "source-script.txt").write_text(pkg.reel_script_text, encoding="utf-8")
+            (faceless_dir / "reel_script.txt").write_text(pkg.reel_script_text, encoding="utf-8")
+            (faceless_dir / "caption.txt").write_text(pkg.caption_text, encoding="utf-8")
+        except Exception as exc:
+            logger.warning("Media generation failed for %s: %s", case_id, exc)
+
     logger.info("Investigation %s finished. Artifacts written to %s", case_id, target_case_dir)
 
     return InvestigationResult(
@@ -100,4 +123,5 @@ def run_investigation(
         status=final_state.get("status", "completed"),
         memo_markdown=memo_md,
         final_state=dict(final_state),
+        article_markdown=article_md,
     )

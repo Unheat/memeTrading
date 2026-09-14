@@ -1,0 +1,31 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check helper script syntax
+        run: |
+          node --check skills/faceless/scripts/setup-fish.mjs
+          node --check skills/faceless/scripts/fish-config.mjs
+          node --check skills/faceless/scripts/doctor.mjs
+          node --check skills/faceless/scripts/generate-audio.mjs
+          node --check skills/faceless/scripts/download-templates.mjs
+          node --check skills/faceless/scripts/generate-video.mjs
+      - name: Check template manifest JSON
+        run: node -e "JSON.parse(require('node:fs').readFileSync('video-templates-manifest.json', 'utf8'))"
+      - name: Verify agent skill copies are synced
+        run: |
+          node scripts/sync-agent-skills.mjs
+          git diff --exit-code

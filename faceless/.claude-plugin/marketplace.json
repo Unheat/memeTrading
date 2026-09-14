@@ -1,0 +1,12 @@
+{
+  "name": "faceless",
+  "description": "Create a two-character faceless reel from a supplied script with local Fish Audio and optional Minecraft video generation.",
+  "owner": {"name": "Creatorberry", "url": "https://www.creatorberry.com/"},
+  "plugins": [
+    {
+      "name": "faceless",
+      "source": "./",
+      "description": "Turn a supplied script into dialogue JSON, local Fish Audio, and an optional Minecraft-background reel."
+    }
+  ]
+}
