@@ -35,53 +35,42 @@ grassroots demand signal
 
 ## Runtime architecture
 
+The system organizes institutional equity research into a **3-Stage Gated Pipeline** in LangGraph:
+
 ```text
-                         OUTER MARKET AGENT
-                    free model / tool-calling loop
-                 chooses largest remaining uncertainty
-                                   |
-          +------------------------+-----------------------+
-          |                        |                       |
-          v                        v                       v
-   search_social()         search_articles()      get_market_data()
-   Reddit, ApeWisdom,      professional news,     Yahoo / fallback
-   StockTwits              analyst commentary
-          |                        |                       |
-          +------------------------+-----------------------+
-                                   |
-                    read_article() / search_web() /
-                    get_company_research()
-                 cleaned articles / primary sources /
-                 Wall Street consensus benchmark
-                                   |
-                                   |
-                            claim discovered
-                                   |
-                                   v
-                         list_sec_filings()
-                           metadata only
-                                   |
-                                   v
-                         pull_sec_filings()
-                    outer agent chooses documents
-                    writes case-local corpus
-                                   |
-                                   v
-                         SEC RAG VERIFIER
-             local corpus only; no network or downloads
-                                   |
-           CONFIRMED | PARTIALLY_CONFIRMED | CONTRADICTED |
-                        INSUFFICIENT_EVIDENCE
-                                   |
-                                   v
-                         OUTER MARKET AGENT
-                    research more, pull more, or finish
-                                   |
-                                   v
-                   forensic memo, optional short reel script
-                                   |
-                                   v
-                       Creatorberry/faceless delivery
+               ┌────────────────────────────────────────────────────────┐
+               │ STAGE 1: FORENSIC INVESTIGATOR (Free-Loop Tool Agent)  │
+               │  • Selects tools dynamically to resolve uncertainties: │
+               │    - search_social() / search_articles() / read_article│
+               │    - search_web() / get_market_data()                  │
+               │    - get_company_research() / get_sec_financials()     │
+               │    - list_sec_filings() / pull_sec_filings()           │
+               │    - verify_sec_claim() [Isolated local RAG]           │
+               │  • Pre-trade gates: ADDV >= $5M & Earnings > 7d        │
+               │  • Outputs: Grounded evidence list + draft thesis      │
+               └───────────────────────────┬────────────────────────────┘
+                                           │ (Facts passed forward)
+                                           ▼
+               ┌────────────────────────────────────────────────────────┐
+               │ STAGE 2: AIR-GAPPED ADVERSARIAL RED TEAM               │
+               │  • Hostile Short-Seller Mandate (Muddy Waters mindset) │
+               │  • Zero visibility into Stage 1 bullish draft          │
+               │  • Formulates: 4 Falsifiable Objections                │
+               │  • Sets: 2 Quantitative Numeric Kill Triggers          │
+               └───────────────────────────┬────────────────────────────┘
+                                           │ (Bull Thesis + Bear Attack)
+                                           ▼
+               ┌────────────────────────────────────────────────────────┐
+               │ STAGE 3: INVESTMENT COMMITTEE (CIO Allocation & Sizing)│
+               │  • Weighs Bull Thesis against Adversarial Red Team     │
+               │  • Enforces 3:1 Asymmetric Reward-to-Risk Hurdle       │
+               │  • Enforces Passing Discipline (saying NO to bad traps)│
+               │  • Computes Fractional Kelly Position Size (in code)   │
+               │  • Renders Final Institutional Memo & Audit JSON       │
+               └───────────────────────────┬────────────────────────────┘
+                                           │
+                                           v
+                       Creatorberry/faceless delivery (optional)
 ```
 
 ### Outer-agent behavior
@@ -397,10 +386,19 @@ Keyed API providers — Finnhub, Apify, and FRED — are black-box HTTPS API dep
 6. Add normalized professional article search/read tools with RSS/GDELT/Trafilatura, paywall-safe behavior, and provider failure handling. *(Complete.)*
 7. Add market and general-web adapters with provider failure handling. *(Complete: `get_market_data`, `search_web`.)*
 8. Build smallest outer-agent loop, budgets, deduplication, memo renderer. *(Complete: LangGraph loop, two-tier state, tool registry with duplicate guard, `memo.md` + `investigation.json` runner.)*
-9. Implement `get_company_research` (yfinance first, Finnhub optional) and upgrade the agent prompt and memo renderer with the Scuttlebutt & Expectations framework (consensus variance table, expectation-gap verdict, investor-note opening).
-10. Test fixture cases and failures: acquisition, verdict, stopping, provider degradation, full multi-turn scenario.
-11. Add optional reel-script/Faceless layer.
-12. After the interactive runner and artifact contracts are stable, add the optional daily `ResearchRequest` wrapper plus static-site publication. Reuse the runner; do not create a parallel research pipeline.
+9. Implement `get_company_research` (yfinance first, Finnhub optional) and upgrade prompt/memo with Scuttlebutt & Expectations framework. *(Complete: 9th tool, consensus variance table, investor-note opening.)*
+10. Add real-money safeguards and deterministic SEC XBRL financials tool (`get_sec_financials` as 10th tool, 20d ADDV liquidity filter, market cap tiering, earnings blackout guard, capital safety scorecard). *(Complete.)*
+11. Implement the 3-Stage Institutional Gated Pipeline (`investigator -> air_gapped_red_team -> investment_committee`) with 3:1 asymmetry hurdle, passing discipline, and Fractional Kelly position sizing.
+12. Test fixture cases and failures: acquisition, verdict, stopping, provider degradation, full multi-turn scenario.
+13. Add optional reel-script/Faceless layer.
+14. After the interactive runner and artifact contracts are stable, add the optional daily `ResearchRequest` wrapper plus static-site publication. Reuse the runner; do not create a parallel research pipeline.
+
+## Post-MVP Extension: Headless Subscription-Backed Execution
+
+For users running the system who wish to use their flat-rate ChatGPT or Claude Pro/Team subscription instead of paying per-token API bills:
+- **Claude Code Headless Execution**: Call `claude -p --bare --append-system-prompt-file <path> --output-format json --allowedTools all` connected to our local stdio MCP server.
+- **OpenAI Codex CLI Headless Execution**: Call `codex exec --output-schema <file> --full-auto --ephemeral` connected to our local stdio MCP server.
+- Both modes allow running full institutional research investigations using flat subscription allowances with zero per-token cost, while preserving our exact system charter prompts and JSON schema constraints. The standalone raw API runner (`app/agent/runner.py`) remains the default core engine for headless automation.
 
 ## Explicit V1 exclusions
 

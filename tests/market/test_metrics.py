@@ -9,7 +9,22 @@ from app.market.metrics import (
     benchmark_relative_return,
     average_daily_dollar_volume,
     market_cap_tier,
+    compute_fractional_kelly,
 )
+
+
+def test_compute_fractional_kelly():
+    # 3:1 asymmetry: +45% upside, 15% downside, 60% win prob -> hits 8% single-name cap
+    size = compute_fractional_kelly(upside_pct=0.45, downside_pct=0.15, win_prob=0.60, fraction=0.25)
+    assert size == pytest.approx(0.08)
+
+    # Low asymmetry: +10% upside, 20% downside -> negative expectancy -> 0%
+    size_bad = compute_fractional_kelly(upside_pct=0.10, downside_pct=0.20, win_prob=0.50)
+    assert size_bad == 0.0
+
+    # High downside risk constrained by max loss budget (e.g. 50% downside with 5% loss budget -> <= 10%)
+    size_risk = compute_fractional_kelly(upside_pct=2.0, downside_pct=0.70, win_prob=0.60, max_position_cap=0.20, max_loss_budget=0.05)
+    assert size_risk <= 0.05 / 0.70
 
 
 def test_average_daily_dollar_volume():

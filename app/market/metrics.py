@@ -103,3 +103,33 @@ def market_cap_tier(market_cap: float | None) -> str:
         return "small"
     return "micro"
 
+
+def compute_fractional_kelly(
+    upside_pct: float,
+    downside_pct: float,
+    win_prob: float = 0.60,
+    fraction: float = 0.25,
+    max_position_cap: float = 0.08,
+    max_loss_budget: float = 0.05,
+) -> float:
+    """Calculate institutional position size via Fractional Kelly Criterion.
+
+    Donor provenance: adapted from reference/investment-research/references/HEDGE_FUND_ORGANIZATIONAL_MANUAL.md:50-70.
+    Enforces Quarter-Kelly scaling (0.25), hard single-name cap (8%), and maximum portfolio loss budget (5%).
+    """
+    if upside_pct <= 0 or downside_pct <= 0 or win_prob <= 0 or win_prob >= 1.0:
+        return 0.0
+
+    b = upside_pct / downside_pct  # payoff ratio
+    q = 1.0 - win_prob
+    full_kelly = (win_prob * b - q) / b
+
+    if full_kelly <= 0:
+        return 0.0
+
+    scaled_kelly = full_kelly * fraction
+    drawdown_constrained = max_loss_budget / downside_pct
+
+    return round(min(scaled_kelly, max_position_cap, drawdown_constrained), 4)
+
+
