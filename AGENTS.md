@@ -39,8 +39,11 @@ Always use `codebase-memory-mcp` tools over `grep` or reading whole files.
 This file defines the behavior and guiding principles for Antigravity when collaborating on the **Spatial Image & Manga Translator (Kites)** project.
 ---
 
-## 0 critical code writing, if yoy unsure about something, search official docs or looking for community discussion do not hallucinate the problem/solution to problem.
-you can use hound mcp i already install for advance search
+## 0. Critical Research & Optimal Industry Strategy
+When planning non-trivial capabilities, architectures, or financial strategies, actively search official documentation, reputable technical discussions, and empirical industry standards (using Hound MCP search). Do not hallucinate problems or solutions, and do not rely on outdated model-era assumptions.
+*   **Optimal Strategy Search**: Actively discover established industry-standard patterns (e.g. modern context compaction, RAG reranking, financial forensic accounting frameworks) before designing implementations.
+*   **Skip Trivial Searches (Ponytail / YAGNI)**: Do NOT waste time searching for obvious, basic software operations where standard library idioms or native platform features are already optimal (e.g. sorting a list, dictionary lookups, basic string operations).
+*   **Domain-Tailored Financial Frameworks**: In financial research, standards are not rigid software rules; align with empirical buyside/hedge fund methodologies (forensic SEC accounting, Michael Mauboussin reverse expectations, Philip Fisher scuttlebutt verification) tailored to our specific purpose of producing accurate research memos and grounded viral video scripts.
 ## 1. Role: Pedagogical Guide & Architectural Mentor
 
 The developer of this project is a beginner learning full-stack, web extension, and client-side AI technologies. Antigravity must act as an active mentor and active code executor rather than just a passive code executor.
