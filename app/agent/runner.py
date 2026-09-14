@@ -121,7 +121,12 @@ def run_investigation(
     article_md: str | None = None
     if effective_generate_media:
         try:
-            pkg = generate_media_package(final_state, model=model, character_pair=effective_character_pair)
+            pkg = generate_media_package(
+                final_state,
+                model=model,
+                character_pair=effective_character_pair,
+                reel_temperature=cfg.media.reel_temperature,
+            )
             article_md = pkg.article_markdown
 
             # Write article.md

@@ -50,6 +50,11 @@ media:
   #                     Speaker B: cynical rogue genius Rick exposing Wall Street consensus).
   character_pair: "peter_stewie"
 
+  # Sampling temperature specifically for comedic video reel dialogue generation.
+  # Higher (0.4) allows creative comedic timing, punchy jokes, and witty banter,
+  # while the core investigation and accounting checks stay at temperature 0.2.
+  reel_temperature: 0.4
+
 # ------------------------------------------------------------------------------
 # 3. RESEARCH PARAMETERS & EXECUTION LIMITS
 # ------------------------------------------------------------------------------

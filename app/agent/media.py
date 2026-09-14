@@ -111,12 +111,14 @@ def generate_media_package(
     state: InvestigationState,
     model: Any,
     character_pair: str = "peter_stewie",
+    reel_temperature: float = 0.4,
 ) -> MediaPackage:
     """Generate the cited forensic article and Faceless video reel package.
 
     :param state: InvestigationState with audited facts and consensus.
     :param model: LLM model instance.
     :param character_pair: 'peter_stewie' or 'rick_morty'.
+    :param reel_temperature: Higher temperature for comedic banter generation (default 0.4).
     :returns: MediaPackage with article.md and dialogue.json.
     """
     ticker = state.get("ticker") or "UNKNOWN"
@@ -184,7 +186,12 @@ Investigated Facts & SEC Evidence:
 {context_payload}
 ```
 """
-    reel_res = model.invoke([
+    reel_model = (
+        model.bind(temperature=reel_temperature)
+        if hasattr(model, "bind") and reel_temperature is not None
+        else model
+    )
+    reel_res = reel_model.invoke([
         SystemMessage(content=reel_sys_prompt),
         HumanMessage(content=reel_prompt),
     ])
