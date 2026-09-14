@@ -2,7 +2,7 @@
 
 ## Responsibility
 
-Define the typed request, budget, and investigation state for LangGraph, along with the dynamic forensic prompt generator.
+Define the typed request, budget, investigation, and model-context policy state for LangGraph, along with the dynamic forensic prompt generator. Context management targets models with context windows up to 1M tokens without assuming every configured model or provider exposes that capacity.
 
 ## `app/agent/state.py`
 
@@ -40,6 +40,18 @@ Define the typed request, budget, and investigation state for LangGraph, along w
 - `market_context: dict[str, Any] | None`
 - `thesis_breakers: list[str]`
 - `budget_state: dict[str, Any]`
+
+### `ModelContextPolicy`
+- Adaptive policy for the investigator model's ephemeral message context; it does not change permanent structured forensic state.
+- Supports model context windows up to 1M tokens, while using a conservative default pruning threshold of 200,000 tokens when model/provider metadata does not establish a safer higher limit.
+- Counts tokens with a model-aware counter when the configured model exposes one. A documented conservative estimator is the fallback, and threshold decisions must identify which counting mode was used.
+- Preserves assistant tool-call messages together with all corresponding tool-result messages. Tool exchanges are pair-safe and must never be split into invalid or semantically orphaned history.
+- Applies context reduction in order: prune older completed tool exchanges first, then compact eligible retained material only if pruning is insufficient. Permanent structured facts remain available through the dynamic prompt.
+- Provider-native context management is optional and capability-gated. It may be used only when the selected provider/model explicitly supports the required API; portable local policy remains the fallback and no provider-specific feature is assumed.
+
+## Donor code provenance
+
+The `ModelContextPolicy` contract and any new symbols introduced to implement it are locally written for this project. They are not copied or adapted from repositories under `reference/`. Existing symbols retain their previously recorded provenance; ordinary LangChain/LangGraph or provider API use is black-box dependency use, not donor-code reuse.
 
 ## `app/agent/prompts.py`
 
