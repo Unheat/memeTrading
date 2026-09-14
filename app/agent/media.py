@@ -36,7 +36,7 @@ RULES FOR CITATIONS:
 """
 
 MEDIA_REEL_SYSTEM_PROMPT = """You are a master viral finance creator.
-Your job is to turn this research into a hilarious, punchy, 60–75 second two-person dialogue reel script (White House Economist pitching to the President / Family Guy Peter & Stewie style).
+Your job is to turn this research into a hilarious, punchy, 60–75 second two-person dialogue reel script in the exact comedic style of {cast_name}.
 
 5-BEAT STRUCTURE:
 1. The Hook (0–10s): Shocking counter-intuitive opening statement.
@@ -45,10 +45,12 @@ Your job is to turn this research into a hilarious, punchy, 60–75 second two-p
 4. The Expectation Gap (45–60s): Why Wall Street consensus models haven't priced it in yet.
 5. The Handoff (60–75s): Punchline pointing the viewer directly to the cited audit below.
 
+{persona_instructions}
+
 VOICE & SCHEMA REQUIREMENTS:
-- Character 1 (Speaker A - The Skeptic / Everyday Investor): voiceId "{first_voice}"
-- Character 2 (Speaker B - The Rogue Economist): voiceId "{second_voice}"
-- Speakers must strictly alternate.
+- Character 1 (Speaker A): voiceId "{first_voice}"
+- Character 2 (Speaker B): voiceId "{second_voice}"
+- Speakers must strictly alternate (A, B, A, B...).
 - Every spoken line MUST start with an emotion tag: (shocked), (smirking), (excited), (deadpan), (laughing), (confused), (skeptical), (confident).
 - The final line must be spoken by Character 2 directing the viewer to the audit receipts below.
 
@@ -126,11 +128,18 @@ def generate_media_package(
     adversarial = state.get("adversarial_report")
     ic_verdict = state.get("ic_verdict")
 
-    first_voice, second_voice = (
-        (PETER_VOICE_ID, STEWIE_VOICE_ID)
-        if character_pair == "peter_stewie"
-        else (RICK_VOICE_ID, MORTY_VOICE_ID)
-    )
+    if character_pair == "peter_stewie":
+        first_voice, second_voice = PETER_VOICE_ID, STEWIE_VOICE_ID
+        cast_name = "Family Guy's Peter Griffin and Stewie Griffin"
+        persona_instructions = f"""CHARACTER PERSONAS (Peter & Stewie from Family Guy):
+- Speaker A (Peter Griffin - voiceId "{first_voice}"): Clueless, gullible, impulsive everyday retail investor. Speaks casually, easily distracted, confuses financial terms, obsessed with viral internet hype.
+- Speaker B (Stewie Griffin - voiceId "{second_voice}"): Smug, hyper-articulate, condescending British genius. Speaks with sophisticated vocabulary, treats Peter like an absolute idiot, and drops brutal, verifiable SEC filing facts, gross margin jumps, and valuation reality."""
+    else:
+        first_voice, second_voice = RICK_VOICE_ID, MORTY_VOICE_ID
+        cast_name = "Rick and Morty"
+        persona_instructions = f"""CHARACTER PERSONAS (Rick & Morty):
+- Speaker A (Morty Smith - voiceId "{first_voice}"): Anxious, stuttering, nervous everyday guy terrified of losing money on the stock market.
+- Speaker B (Rick Sanchez - voiceId "{second_voice}"): Cynical, arrogant, reckless rogue genius who sees right through Wall Street consensus nonsense and explains the supply-chain arbitrage with cold mathematical certainty."""
 
     context_payload = json.dumps(
         {
@@ -164,7 +173,11 @@ Investigated Facts & SEC Evidence:
 
     # 2. Generate Two-Person Dialogue Script & Caption
     reel_sys_prompt = (
-        MEDIA_REEL_SYSTEM_PROMPT.replace("{first_voice}", first_voice).replace("{second_voice}", second_voice)
+        MEDIA_REEL_SYSTEM_PROMPT
+        .replace("{cast_name}", cast_name)
+        .replace("{persona_instructions}", persona_instructions)
+        .replace("{first_voice}", first_voice)
+        .replace("{second_voice}", second_voice)
     )
     reel_prompt = f"""Create the 60–75 second viral dialogue reel for ${ticker} based on these verified facts:
 ```json
