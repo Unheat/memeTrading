@@ -3,7 +3,8 @@ from pathlib import Path
 import pytest
 from langchain_core.messages import AIMessage
 from app.agent.runner import run_investigation, InvestigationResult
-from app.agent.state import ResearchRequest
+from app.agent.state import BudgetLimits, ResearchRequest
+from app.config import AppConfig, ResearchConfig
 
 
 class FakeRunnerModel:
@@ -55,3 +56,23 @@ def test_run_investigation_with_rick_morty_character_pair(tmp_path):
     assert len(dialogue) == 4
     # Character pair should be Rick & Morty voice IDs
     assert dialogue[0]["voiceId"] == "d2e75a3e3fd6419893057c02a375a113" or dialogue[1]["voiceId"] == "d2e75a3e3fd6419893057c02a375a113"
+
+
+def test_run_investigation_applies_configured_research_budget(tmp_path):
+    """Verify default request budget is replaced by config.yaml research limits."""
+    config = AppConfig(
+        research=ResearchConfig(
+            max_tool_calls=42,
+            max_identical_calls=4,
+            cases_root=str(tmp_path),
+        )
+    )
+    result = run_investigation(
+        request=ResearchRequest(query="Investigate configured budget", ticker="CFG"),
+        model=FakeRunnerModel(),
+        generate_media=False,
+        config=config,
+    )
+
+    assert result.final_state["budget_state"]["max_tool_calls"] == 42
+    assert result.final_state["budget_state"]["max_identical_calls"] == 4

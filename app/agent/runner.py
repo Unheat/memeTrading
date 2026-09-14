@@ -17,7 +17,7 @@ from app.agent.graph import create_agent_graph
 from app.agent.media import generate_media_package
 from app.agent.model_runtime import ModelRuntime, create_default_model_runtime
 from app.agent.memo import render_forensic_memo, serialize_investigation_json
-from app.agent.state import InvestigationState, ResearchRequest, create_initial_state
+from app.agent.state import BudgetLimits, InvestigationState, ResearchRequest, create_initial_state
 from app.agent.tools import ToolCallGuard, create_agent_tools
 from app.config import AppConfig, load_config
 from app.storage.cases import case_path, create_case_id
@@ -80,8 +80,23 @@ def run_investigation(
     target_case_dir = case_path(root, case_id)
     target_case_dir.mkdir(parents=True, exist_ok=True)
 
-    initial_state = create_initial_state(request, case_id=case_id)
-    guard = ToolCallGuard(max_identical=request.budget.max_identical_calls)
+    configured_budget = BudgetLimits(
+        max_tool_calls=cfg.research.max_tool_calls,
+        max_identical_calls=cfg.research.max_identical_calls,
+    )
+    effective_budget = configured_budget if request.budget == BudgetLimits() else request.budget
+    effective_request = ResearchRequest(
+        query=request.query,
+        ticker=request.ticker,
+        company=request.company,
+        theme=request.theme,
+        mandate=request.mandate,
+        time_boundary=request.time_boundary,
+        budget=effective_budget,
+        template_version=request.template_version,
+    )
+    initial_state = create_initial_state(effective_request, case_id=case_id)
+    guard = ToolCallGuard(max_identical=effective_budget.max_identical_calls)
     tools = create_agent_tools(cases_root=root, guard=guard)
 
     if model is not None:

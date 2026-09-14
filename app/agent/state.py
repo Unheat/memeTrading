@@ -15,7 +15,7 @@ from langgraph.graph.message import add_messages
 class BudgetLimits:
     """Per-investigation execution limits."""
 
-    max_tool_calls: int = 15
+    max_tool_calls: int = 35
     max_identical_calls: int = 2
 
 

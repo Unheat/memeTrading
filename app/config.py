@@ -50,7 +50,7 @@ class MediaConfig:
 class ResearchConfig:
     """User-configurable execution limits and research defaults."""
 
-    max_tool_calls: int = 15
+    max_tool_calls: int = 35
     max_identical_calls: int = 2
     benchmark_ticker: str = "SPY"
     sec_periods: int = 4
@@ -95,7 +95,7 @@ def load_config(config_path: Path | str | None = None) -> AppConfig:
         base_url = str(base_url).strip()
         if not base_url or base_url.lower() in ("none", "null"):
             base_url = None
-    temp = float(raw_llm.get("temperature", 0.0))
+    temp = float(raw_llm.get("temperature", 0.2))
 
     llm_cfg = LLMConfig(model=model_name, base_url=base_url, temperature=temp)
 
@@ -115,7 +115,7 @@ def load_config(config_path: Path | str | None = None) -> AppConfig:
     # Parse Research config
     raw_res = data.get("research", {}) or {}
     research_cfg = ResearchConfig(
-        max_tool_calls=int(raw_res.get("max_tool_calls", 15)),
+        max_tool_calls=int(raw_res.get("max_tool_calls", 35)),
         max_identical_calls=int(raw_res.get("max_identical_calls", 2)),
         benchmark_ticker=str(raw_res.get("benchmark_ticker", "SPY")),
         sec_periods=int(raw_res.get("sec_periods", 4)),

@@ -42,18 +42,22 @@ media:
 # ------------------------------------------------------------------------------
 # Note: You can leave all of these as default! They are safe out-of-the-box defaults.
 research:
-  # The Research Budget: How many actions the agent can take (searching social,
-  # checking news, pulling SEC filings, getting market data) before it is forced
-  # to stop researching and write your final memo.
-  #   - Default: 15 (solid depth, ~1-2 minutes per run)
-  #   - Quick summary: 8
-  #   - Deep dive audit: 20
-  max_tool_calls: 15
+  # Total Tool-Action Budget: One model turn may request several tools in parallel, so
+  # this counts individual tool executions—not reasoning turns or research phases.
+  # Deep-research frameworks usually configure iterations, subtopics, concurrency, and
+  # time separately; there is no universal industry-standard tool-call number.
+  # For this 10-tool forensic workflow:
+  #   - Quick scan: 15 calls (basic market, social, news, and filing check)
+  #   - Standard deep audit (Recommended): 35 calls (multiple sources and SEC claims)
+  #   - Broad multi-company/theme investigation: 50 calls
+  # Runtime depends on provider latency and chosen tools; these are depth guides, not timers.
+  max_tool_calls: 35
 
-  # Anti-Stuck Guard: If the AI asks the exact same tool query twice (e.g. searching
-  # Reddit for the exact same phrase again), the 3rd attempt is suppressed and the
-  # agent is told to use its existing notes. Prevents wasted tokens in loops.
-  #   - Default: 2 (leave as is)
+  # Exact-Duplicate Guard: Number of times the exact same tool call with identical arguments
+  # may execute. A refined query is different and does not count as an identical call.
+  # This is loop protection, not the research-depth budget. Leave at 2 unless one provider
+  # genuinely requires application-level repeat attempts; transport retries belong inside
+  # that provider and should not consume additional research decisions.
   max_identical_calls: 2
 
   # Market Comparison Benchmark: The ETF symbol used to compare stock returns against.

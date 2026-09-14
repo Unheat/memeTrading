@@ -16,7 +16,7 @@ from app.agent.prompts import build_dynamic_system_prompt, FORENSIC_CHARTER_PROM
 
 def test_budget_limits_defaults():
     budget = BudgetLimits()
-    assert budget.max_tool_calls == 15
+    assert budget.max_tool_calls == 35
     assert budget.max_identical_calls == 2
 
 
@@ -24,7 +24,7 @@ def test_research_request_validation():
     req = ResearchRequest(query="Investigate NVDA hype", ticker="nvda")
     assert req.ticker == "NVDA"
     assert req.query == "Investigate NVDA hype"
-    assert req.budget.max_tool_calls == 15
+    assert req.budget.max_tool_calls == 35
 
     with pytest.raises(ValueError, match="query"):
         ResearchRequest(query="")
@@ -74,7 +74,7 @@ def test_build_dynamic_system_prompt():
     content = build_dynamic_system_prompt(state).content
 
     assert "ABC" in content
-    assert "Remaining tool calls**: 12" in content
+    assert "Remaining tool calls**: 32" in content
     for label, value in expected_projections.items():
         assert f"- **{label}**:\n```json\n{json.dumps(value, indent=2)}\n```" in content
 
