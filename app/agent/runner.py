@@ -15,9 +15,10 @@ from typing import Any
 
 from app.agent.graph import create_agent_graph
 from app.agent.media import generate_media_package
+from app.agent.model_runtime import ModelRuntime, create_default_model_runtime
 from app.agent.memo import render_forensic_memo, serialize_investigation_json
 from app.agent.state import InvestigationState, ResearchRequest, create_initial_state
-from app.agent.tools import create_agent_tools
+from app.agent.tools import ToolCallGuard, create_agent_tools
 from app.storage.cases import case_path, create_case_id
 
 logger = logging.getLogger(__name__)
@@ -70,13 +71,17 @@ def run_investigation(
     target_case_dir.mkdir(parents=True, exist_ok=True)
 
     initial_state = create_initial_state(request, case_id=case_id)
-    tools = create_agent_tools(cases_root=root)
+    guard = ToolCallGuard(max_identical=request.budget.max_identical_calls)
+    tools = create_agent_tools(cases_root=root, guard=guard)
 
-    if model is None:
-        from langchain_openai import ChatOpenAI
-        model = ChatOpenAI(model="gpt-4o", temperature=0)
-
-    graph = create_agent_graph(model=model, tools=tools)
+    runtime = ModelRuntime(model=model) if model is not None else create_default_model_runtime()
+    model = runtime.model
+    graph = create_agent_graph(
+        model=model,
+        tools=tools,
+        context_policy=runtime.context_policy,
+        token_counter=runtime.token_counter,
+    )
 
     logger.info("Starting investigation %s for $%s", case_id, ticker)
     final_state = dict(graph.invoke(initial_state))
