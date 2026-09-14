@@ -56,7 +56,14 @@ Every completed thesis must be stress-tested with:
 
 
 def build_dynamic_system_prompt(state: InvestigationState) -> SystemMessage:
-    """Construct dynamic system prompt embedding permanent structured facts."""
+    """Build a deterministic system prompt from an investigation state.
+
+    Args:
+        state: Permanent investigation facts and current tool-budget state.
+
+    Returns:
+        A system message containing JSON-serialized investigation facts.
+    """
     ticker = state.get("ticker") or "UNKNOWN"
     company = state.get("company") or ""
     cik = state.get("cik") or ""
@@ -65,27 +72,29 @@ def build_dynamic_system_prompt(state: InvestigationState) -> SystemMessage:
     max_calls = budget.get("max_tool_calls", 15)
     remaining_calls = max(0, max_calls - tool_calls)
 
-    evidence_summary = json.dumps(state.get("evidence", []), indent=2)
-    contradictions_summary = json.dumps(state.get("contradictions", []), indent=2)
-    unresolved = state.get("unresolved_questions", [])
+    projections = (
+        ("Current Unresolved Questions", state.get("unresolved_questions", [])),
+        ("Verified Evidence Accumulated", state.get("evidence", [])),
+        ("Contradictions Observed", state.get("contradictions", [])),
+        ("Market Context", state.get("market_context")),
+        ("Consensus Snapshot", state.get("consensus_snapshot")),
+        ("SEC Corpora", state.get("sec_corpora", [])),
+        ("Confidence", state.get("confidence")),
+        ("Causal Chain", state.get("causal_chain")),
+        ("Searches Performed", state.get("searches_performed", [])),
+    )
+    projected_facts = "\n\n".join(
+        f"- **{label}**:\n```json\n{json.dumps(value, indent=2)}\n```"
+        for label, value in projections
+    )
 
     prompt_content = f"""{FORENSIC_CHARTER_PROMPT}
 
 ### CURRENT INVESTIGATION STATE
 - **Target Ticker**: ${ticker} {f'({company})' if company else ''} {f'CIK: {cik}' if cik else ''}
 - **Remaining tool calls**: {remaining_calls}
-- **Current Unresolved Questions**:
-{chr(10).join(f'- {q}' for q in unresolved) if unresolved else '- (None identified yet; discover root claims)'}
 
-- **Verified Evidence Accumulated**:
-```json
-{evidence_summary}
-```
-
-- **Contradictions Observed**:
-```json
-{contradictions_summary}
-```
+{projected_facts}
 
 Directly call the most informative tool to resolve the largest remaining uncertainty, or synthesize your final conclusions if evidence is sufficient.
 """
