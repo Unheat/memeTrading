@@ -23,6 +23,7 @@ from app.sec.schemas import FilingMetadata
 from app.sec.verifier import verify_sec_claim as _verify_sec_claim
 from app.sec.financials import get_sec_financials as _get_sec_financials
 from app.storage.cases import case_path
+from app.agent.sanitizer import sanitize_payload
 
 
 @dataclass
@@ -68,7 +69,7 @@ def create_agent_tools(
             return suppressed
         try:
             res = _search_social(query=query, ticker=ticker, time_window=time_window)
-            return json.dumps(res.to_dict())
+            return json.dumps(sanitize_payload(res.to_dict()))
         except Exception as exc:
             return json.dumps({"status": "error", "message": f"search_social error: {exc}"})
 
@@ -80,7 +81,7 @@ def create_agent_tools(
             return suppressed
         try:
             res = _search_articles(query=query, ticker=ticker, sources=sources, days=days, limit=limit)
-            return json.dumps(res.to_dict())
+            return json.dumps(sanitize_payload(res.to_dict()))
         except Exception as exc:
             return json.dumps({"status": "error", "message": f"search_articles error: {exc}"})
 
@@ -92,7 +93,7 @@ def create_agent_tools(
             return suppressed
         try:
             res = _read_article(url=url)
-            return json.dumps(res.to_dict())
+            return json.dumps(sanitize_payload(res.to_dict()))
         except Exception as exc:
             return json.dumps({"status": "error", "message": f"read_article error: {exc}"})
 
@@ -104,7 +105,7 @@ def create_agent_tools(
             return suppressed
         try:
             res = _search_web(query=query, domains=domains, limit=limit)
-            return json.dumps(res.to_dict())
+            return json.dumps(sanitize_payload(res.to_dict()))
         except Exception as exc:
             return json.dumps({"status": "error", "message": f"search_web error: {exc}"})
 
