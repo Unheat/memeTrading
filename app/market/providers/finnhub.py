@@ -39,7 +39,12 @@ class FinnhubClient:
         for key, value in (params or {}).items():
             query += f"&{key}={value}"
         url = f"{BASE_URL}{path}?{query}"
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        headers = {
+            "Accept": "application/json",
+            "X-Finnhub-Token": str(self.api_key),
+            "User-Agent": "MemeTradingResearchAgent/0.1",
+        }
+        req = urllib.request.Request(url, headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=DEFAULT_TIMEOUT_SECONDS) as response:
                 body = response.read().decode("utf-8")

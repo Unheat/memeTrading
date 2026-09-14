@@ -41,7 +41,13 @@ class ApifyTwitterClient:
             f"https://api.apify.com/v2/acts/{ACTOR_ID}/run-sync-get-dataset-items"
             f"?token={self.api_key_param()}"
         )
-        body = json.dumps({"searchTerms": [query], "tweetsLimit": limit}).encode("utf-8")
+        # apidojo/tweet-scraper schema uses searchTerms, maxItems, and maxTweetsPerQuery
+        payload = {
+            "searchTerms": [query],
+            "maxItems": limit,
+            "maxTweetsPerQuery": limit,
+        }
+        body = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
             url,
             data=body,
@@ -83,21 +89,48 @@ class ApifyTwitterClient:
         for item in items:
             if not isinstance(item, dict):
                 continue
-            tweet_id = item.get("id")
-            text = str(item.get("text") or "").strip()
+            tweet_id = item.get("id") or item.get("id_str") or item.get("tweet_id")
+            text = str(
+                item.get("text")
+                or item.get("full_text")
+                or item.get("fullText")
+                or ""
+            ).strip()
             if not tweet_id or not text:
                 continue
-            author = (item.get("author") or {}).get("userName")
+
+            author_obj = item.get("author") or {}
+            author = (
+                author_obj.get("userName")
+                or author_obj.get("username")
+                or item.get("user_screen_name")
+                or item.get("userName")
+            )
+
+            likes = (
+                item.get("likeCount")
+                or item.get("favoriteCount")
+                or item.get("favorite_count")
+                or 0
+            )
+            replies = (
+                item.get("replyCount")
+                or item.get("reply_count")
+                or item.get("conversation_count")
+                or 0
+            )
+            created_at = item.get("createdAt") or item.get("created_at")
+
             posts.append(
                 SocialPost(
                     post_id=f"twitter_{tweet_id}",
                     source="twitter",
                     author=author,
-                    created_utc=_normalize_created(item.get("createdAt")),
+                    created_utc=_normalize_created(created_at),
                     title=text.split("\n")[0][:60],
                     text=text,
-                    score=max(0, int(item.get("favoriteCount") or 0)),
-                    num_comments=max(0, int(item.get("replyCount") or 0)),
+                    score=max(0, int(likes)),
+                    num_comments=max(0, int(replies)),
                     upvote_ratio=None,
                     url=str(item.get("url") or f"https://x.com/{author or 'i'}/status/{tweet_id}"),
                     flair=None,

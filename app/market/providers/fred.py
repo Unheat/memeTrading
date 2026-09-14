@@ -23,7 +23,11 @@ DEFAULT_TIMEOUT_SECONDS = 10
 def _fred_get(path: str, params: dict[str, Any]) -> dict[str, Any]:
     """Seam over FRED observations endpoint so tests can patch it."""
     query = "&".join(f"{k}={v}" for k, v in params.items())
-    req = urllib.request.Request(f"{BASE_URL}?{query}", headers={"Accept": "application/json"})
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "MemeTradingResearchAgent/0.1 (FRED client)",
+    }
+    req = urllib.request.Request(f"{BASE_URL}?{query}", headers=headers)
     with urllib.request.urlopen(req, timeout=DEFAULT_TIMEOUT_SECONDS) as response:
         return json.loads(response.read().decode("utf-8"))
 
