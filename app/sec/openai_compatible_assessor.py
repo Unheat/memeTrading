@@ -64,13 +64,15 @@ def _normalized_url(value: str) -> str:
         Canonical endpoint without a trailing slash.
 
     Raises:
-        ValueError: If the endpoint is not a safe HTTPS base URL.
+        ValueError: If the endpoint is not a safe HTTPS or local HTTP base URL.
     """
     normalized = value.strip().rstrip("/")
     parsed = urlsplit(normalized)
+    is_local = parsed.hostname in {"localhost", "127.0.0.1"}
+    valid_scheme = parsed.scheme == "https" or (is_local and parsed.scheme == "http")
     if (
         not normalized
-        or parsed.scheme != "https"
+        or not valid_scheme
         or not parsed.netloc
         or parsed.username is not None
         or parsed.password is not None

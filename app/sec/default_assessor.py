@@ -16,14 +16,26 @@ logger = logging.getLogger(__name__)
 APPROVED_BASE_URLS = (
     "https://api.openai.com/v1",
     "https://openrouter.ai/api/v1",
+    "http://localhost:20128/v1",
+    "http://127.0.0.1:20128/v1",
 )
 
 
 def get_default_sec_assessor():
     """Return an Assessor callable for verify_sec_claim."""
     api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    base_url = "https://openrouter.ai/api/v1" if os.environ.get("OPENROUTER_API_KEY") else "https://api.openai.com/v1"
-    model = os.environ.get("SEC_ASSESSOR_MODEL", "gpt-4o-mini" if "openai.com" in base_url else "openai/gpt-4o-mini")
+    custom_base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get("LLM_BASE_URL")
+    if custom_base_url:
+        base_url = custom_base_url.strip().rstrip("/")
+    elif os.environ.get("OPENROUTER_API_KEY"):
+        base_url = "https://openrouter.ai/api/v1"
+    else:
+        base_url = "https://api.openai.com/v1"
+
+    model = os.environ.get(
+        "SEC_ASSESSOR_MODEL",
+        "gpt-4o-mini" if "openai.com" in base_url or "localhost" in base_url else "openai/gpt-4o-mini",
+    )
 
     if api_key:
         try:
@@ -32,11 +44,15 @@ def get_default_sec_assessor():
                 create_openai_compatible_sec_assessor,
             )
 
+            approved_list = list(APPROVED_BASE_URLS)
+            if custom_base_url and custom_base_url.strip().rstrip("/") not in approved_list:
+                approved_list.append(custom_base_url.strip().rstrip("/"))
+
             config = OpenAICompatibleAssessorConfig(
                 base_url=base_url,
                 api_key=api_key.strip(),
                 model=model,
-                approved_base_urls=APPROVED_BASE_URLS,
+                approved_base_urls=tuple(approved_list),
             )
             return create_openai_compatible_sec_assessor(config)
         except Exception as exc:
