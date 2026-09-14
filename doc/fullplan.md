@@ -326,22 +326,15 @@ cases/XYZ-2026-09-01-001/
   corpus/
 ```
 
-### Fail-Closed Financial Governance & Risk Policy
+### Report Accuracy & Integrity Policy
 
-1. **Strict Fail-Closed Data Gating**: When prices, consensus targets, bear floors, earnings dates, or SEC evidence are missing, unavailable, zero, negative, or unparseable, the system must **strictly fail closed**. Never substitute synthetic defaults (e.g. defaulting price to $100, assuming +30% upside or -15% downside, or treating `confidence=None` as high confidence). Missing critical inputs force an immediate `VALIDATION_WATCH` or `PASSED_STRICT_DISCIPLINE` verdict with **0.0% capital allocation**.
-2. **Strict 3:1 Asymmetric Reward-to-Risk Rule**: The 3.0x threshold is a non-negotiable hard hurdle:
+1. **Fail-Closed Reporting**: When prices, analyst targets, bear floors, earnings dates, or SEC evidence are missing or unparseable, report them explicitly as `UNAVAILABLE` or `INSUFFICIENT_EVIDENCE`. Never substitute synthetic defaults (e.g. defaulting price to $100 or assuming +30% upside). If essential valuation or downside data is missing, the report assigns **0.0% capital allocation** and flags the uncertainty so generated reels do not assert ungrounded claims.
+2. **Strict 3:1 Asymmetric Reward-to-Risk Rule**: The 3.0x threshold is a strict hurdle for a positive long recommendation:
    $$\text{Reward-to-Risk Ratio} = \frac{\text{Base Target Price} - \text{Current Price}}{\text{Current Price} - \text{Bear Downside Floor}} \ge 3.0$$
-   Any ratio below 3.0x (including 2.0–2.99x) strictly fails the hurdle, receives `VALIDATION_WATCH` (awaiting pullback) or `PASSED`, and receives **0.0% capital allocation**.
-3. **Deterministic Valuation & Bounded Downside**: The bear downside floor must be calculated from deterministic valuation models and balance-sheet liquidation constraints (trough multiples, net debt, dilution), not unverified raw LLM prose. `bear_floor` must satisfy $0 < \text{bear\_floor} < \text{current\_price}$. An invalid floor invalidates the scenario rather than being masked by artificial dollar floors.
-4. **Calibrated Sizing & Portfolio Risk**: Fractional Kelly sizing ($f^* = (p \cdot b - q) / b$) is gated on an empirically calibrated win probability ($p$). Research confidence is an evidence score, not an outcome probability. Position sizing must enforce single-name loss budgets, portfolio NAV constraints, and sector concentration limits.
-
-### Production Security, SSRF & Operational Hardening
-
-1. **Outbound SSRF Mitigation**: All HTTP fetches in `read_article` and web search must perform strict IP/DNS validation, rejecting loopback, link-local, private RFC1918, IPv6-local, multicast, and cloud metadata targets (169.254.169.254) before and after redirects. Restrict ports to standard HTTPS (443) and enforce byte caps and timeouts.
-2. **Filesystem Path Traversal Containment**: All case-local reads, corpus pulls, index building (`sec.faiss`), and artifact writes must pass through validated `case_path()` resolution and containment checks, preventing path traversal via arbitrary `corpus_id` or `case_id` strings.
-3. **Atomic Case Reservation & Publication**: Sequential case directory allocation must use atomic reservation (`mkdir(exist_ok=False)`). Artifacts must be written to temporary staging files and published via atomic filesystem rename (`os.replace`) to prevent corrupted or partial states.
-4. **Elimination of Fabricated Fallbacks**: When model parsing or generation fails in Red Team, memo rendering, or media generation, the system must record a typed degraded state or abort safely. Never emit canned or hallucinated financial claims (such as inventing margin expansion or demand spikes) in fallback handlers.
-5. **Hard Operational & Cost Budgets**: Enforce overall per-investigation limits covering total input/output tokens, external model calls, TTS character consumption, wall-clock execution timeouts, and estimated monetary cost. Stop safely once any budget is reached.
+   Any ratio below 3.0x (including 2.0–2.99x) receives `VALIDATION_WATCH` (awaiting pullback) or `PASSED`, with **0.0% position sizing**.
+3. **Deterministic Valuation Scenarios**: The bear floor and base target prices must be supported by explicit valuation metrics (trough P/E, EV/Sales, net debt, dilution), not raw unverified model guesses. $0 < \text{bear\_floor} < \text{current\_price}$.
+4. **Clean Fallbacks Without Hallucinations**: When model generation or parsing fails in the Red Team node, memo renderer, or reel dialogue generator, record a clean failure/degraded state. Never emit canned or fake financial claims (such as pretending "10-Q confirmed gross margin expansion" when generation failed).
+5. **Path & Storage Containment**: All case-local reads, corpus pulls, index building (`sec.faiss`), and artifact writes use `case_path()` to ensure files stay cleanly organized in their respective case folders.
 
 ## Output and delivery
 
