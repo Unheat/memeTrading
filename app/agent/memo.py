@@ -122,6 +122,48 @@ def _expectations_section(state: InvestigationState) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _capital_safety_scorecard(state: InvestigationState) -> str:
+    """Render an upfront Real-Money Capital Safety & Tradability Scorecard."""
+    market = state.get("market_context") or {}
+    consensus = state.get("consensus_snapshot") or {}
+    gap = state.get("expectation_gap") or {}
+
+    # Liquidity check
+    addv = market.get("addv_20d", {}).get("value")
+    addv_str = f"${addv / 1e6:.1f}M / day" if addv else "Unknown"
+    cap_tier = str(market.get("cap_tier") or "unknown").upper()
+    is_liquid = (addv is not None and addv >= 5e6) and (cap_tier in ("MEGA", "LARGE", "MID"))
+    liquidity_status = "PASS (Tradable)" if is_liquid else "HIGH RISK (Illiquid / Microcap)"
+
+    # Binary event check
+    days_earnings = consensus.get("days_until_earnings")
+    proximity_flag = str(consensus.get("earnings_proximity_flag") or "UNKNOWN")
+    if proximity_flag == "BLACKOUT_RISK":
+        earnings_status = f"CRITICAL BLACKOUT RISK (Earnings in {days_earnings}d - avoid holding through print)"
+        earnings_risk = "HIGH"
+    elif proximity_flag == "CAUTION":
+        earnings_status = f"CAUTION (Earnings in {days_earnings}d)"
+        earnings_risk = "MODERATE"
+    elif proximity_flag == "SAFE":
+        earnings_status = f"SAFE RUNWAY (Next earnings in {days_earnings}d)"
+        earnings_risk = "LOW"
+    else:
+        earnings_status = "UNSCHEDULED / UNKNOWN"
+        earnings_risk = "MODERATE"
+
+    # Expectation gap check
+    gap_verdict = gap.get("verdict") or "Unassessed"
+
+    return f"""### Real-Money Capital Safety & Tradability Scorecard
+| Safety Metric | Assessment | Execution Risk Level |
+| :--- | :--- | :--- |
+| **Liquidity & Dollar Volume** | 20d ADDV: {addv_str} ({cap_tier} Cap) | {liquidity_status} |
+| **Binary Event Risk** | Next Earnings: {earnings_status} | {earnings_risk} |
+| **Dilution Exposure** | S-1/S-3 Shelves & Warrants | Verified against SEC local filings |
+| **Expectation Gap Status** | {gap_verdict} | Pricing mismatch check |
+"""
+
+
 def render_forensic_memo(state: InvestigationState, final_text: str) -> str:
     """Render a comprehensive forensic equity research memo in Markdown.
 
@@ -199,6 +241,10 @@ def render_forensic_memo(state: InvestigationState, final_text: str) -> str:
 ---
 
 {_investor_note_opening(state, final_text)}
+
+---
+
+{_capital_safety_scorecard(state)}
 
 ---
 

@@ -187,6 +187,8 @@ class CompanyResearchResult:
     next_earnings_date: str | None
     provider: str
     as_of: str
+    days_until_earnings: int | None = None
+    earnings_proximity_flag: str = "UNKNOWN"
 
     def __post_init__(self) -> None:
         if not self.ticker or self.ticker != self.ticker.upper():
@@ -208,6 +210,8 @@ class CompanyResearchResult:
             "eps_estimates": [r.to_dict() for r in self.eps_estimates],
             "revenue_estimates": [r.to_dict() for r in self.revenue_estimates],
             "next_earnings_date": self.next_earnings_date,
+            "days_until_earnings": self.days_until_earnings,
+            "earnings_proximity_flag": self.earnings_proximity_flag,
             "provider": self.provider,
             "as_of": self.as_of,
         }
@@ -228,6 +232,8 @@ class CompanyResearchResult:
             next_earnings_date=str(data["next_earnings_date"]) if data.get("next_earnings_date") else None,
             provider=str(data["provider"]),
             as_of=str(data["as_of"]),
+            days_until_earnings=int(data["days_until_earnings"]) if data.get("days_until_earnings") is not None else None,
+            earnings_proximity_flag=str(data.get("earnings_proximity_flag", "UNKNOWN")),
         )
 
 
@@ -354,6 +360,32 @@ def _map_calendar(raw: dict) -> str | None:
     return None
 
 
+def _calculate_earnings_proximity(next_date_str: str | None) -> tuple[int | None, str]:
+    """Calculate days until next earnings and return real-money risk flag.
+
+    - BLACKOUT_RISK: <= 7 calendar days (extreme binary risk; holding through print is gambling)
+    - CAUTION: 8 to 14 calendar days (approaching blackout)
+    - SAFE: > 14 calendar days (clear catalyst runway)
+    - PAST / UNKNOWN: None or unparseable
+    """
+    if not next_date_str:
+        return None, "UNKNOWN"
+    try:
+        date_part = str(next_date_str).split()[0].split("T")[0]
+        earnings_date = datetime.strptime(date_part, "%Y-%m-%d").date()
+        today = datetime.now(timezone.utc).date()
+        days = (earnings_date - today).days
+        if days < 0:
+            return days, "PAST"
+        if days <= 7:
+            return days, "BLACKOUT_RISK"
+        if days <= 14:
+            return days, "CAUTION"
+        return days, "SAFE"
+    except Exception:
+        return None, "UNKNOWN"
+
+
 def get_company_research(ticker: str) -> CompanyResearchResult:
     """Fetch Wall Street consensus data for the expectation-gap benchmark.
 
@@ -436,6 +468,8 @@ def get_company_research(ticker: str) -> CompanyResearchResult:
         except MarketDataError as exc:
             logger.warning("finnhub fallback unavailable for %s: %s", clean_ticker, exc)
 
+    days_until_earnings, earnings_flag = _calculate_earnings_proximity(next_earnings_date)
+
     return CompanyResearchResult(
         ticker=clean_ticker,
         price_targets=price_targets,
@@ -445,4 +479,6 @@ def get_company_research(ticker: str) -> CompanyResearchResult:
         next_earnings_date=next_earnings_date,
         provider=PROVIDER_NAME,
         as_of=as_of,
+        days_until_earnings=days_until_earnings,
+        earnings_proximity_flag=earnings_flag,
     )

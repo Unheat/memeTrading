@@ -41,6 +41,8 @@ def test_get_market_data_full_context():
     assert result.atr_14 is not None and result.atr_14.status == "ok"
     assert result.benchmark_return is not None and result.benchmark_return.benchmark == "SPY"
     assert result.fundamentals["market_cap"] == {"value": 2.2e12, "reliable": True}
+    assert result.addv_20d is not None and result.addv_20d.status == "ok"
+    assert result.cap_tier == "mega"
 
 
 def test_get_market_data_short_history_degrades_fields():

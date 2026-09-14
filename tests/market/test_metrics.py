@@ -7,7 +7,32 @@ from app.market.metrics import (
     sma_status,
     atr_14,
     benchmark_relative_return,
+    average_daily_dollar_volume,
+    market_cap_tier,
 )
+
+
+def test_average_daily_dollar_volume():
+    closes = np.full(25, 100.0)
+    volumes = np.full(25, 50_000.0)
+    # last 20 days: 100 * 50_000 = 5,000,000
+    assert average_daily_dollar_volume(closes, volumes, window=20) == pytest.approx(5_000_000.0)
+
+
+def test_average_daily_dollar_volume_insufficient():
+    closes = np.full(10, 100.0)
+    volumes = np.full(10, 50_000.0)
+    assert average_daily_dollar_volume(closes, volumes, window=20) is None
+
+
+def test_market_cap_tier():
+    assert market_cap_tier(2.5e12) == "mega"
+    assert market_cap_tier(50e9) == "large"
+    assert market_cap_tier(5e9) == "mid"
+    assert market_cap_tier(500e6) == "small"
+    assert market_cap_tier(50e6) == "micro"
+    assert market_cap_tier(None) == "unknown"
+    assert market_cap_tier(-1) == "unknown"
 
 
 def test_simple_return_exact():

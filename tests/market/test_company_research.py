@@ -62,6 +62,34 @@ def test_get_company_research_full_coverage():
     assert len(result.revenue_estimates) == 1
 
     assert result.next_earnings_date == "2026-10-28"
+    assert result.days_until_earnings is not None
+    assert result.earnings_proximity_flag in ("SAFE", "CAUTION", "BLACKOUT_RISK")
+
+
+def test_earnings_proximity_flag_logic():
+    from datetime import datetime, timezone, timedelta
+    from app.market.company_research import _calculate_earnings_proximity
+
+    today = datetime.now(timezone.utc).date()
+    in_3_days = (today + timedelta(days=3)).isoformat()
+    in_10_days = (today + timedelta(days=10)).isoformat()
+    in_30_days = (today + timedelta(days=30)).isoformat()
+
+    days, flag = _calculate_earnings_proximity(in_3_days)
+    assert days == 3
+    assert flag == "BLACKOUT_RISK"
+
+    days, flag = _calculate_earnings_proximity(in_10_days)
+    assert days == 10
+    assert flag == "CAUTION"
+
+    days, flag = _calculate_earnings_proximity(in_30_days)
+    assert days == 30
+    assert flag == "SAFE"
+
+    days, flag = _calculate_earnings_proximity(None)
+    assert days is None
+    assert flag == "UNKNOWN"
 
 
 def test_get_company_research_no_coverage_degrades_to_unavailable():

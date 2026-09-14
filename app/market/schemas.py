@@ -126,6 +126,8 @@ class MarketDataResult:
     fundamentals: dict[str, dict[str, Any]] | None
     provider: str
     as_of: str
+    addv_20d: CalculatedField | None = None
+    cap_tier: str = "unknown"
 
     def __post_init__(self) -> None:
         if not self.ticker or self.ticker != self.ticker.upper():
@@ -155,6 +157,8 @@ class MarketDataResult:
             "fundamentals": self.fundamentals,
             "provider": self.provider,
             "as_of": self.as_of,
+            "addv_20d": self.addv_20d.to_dict() if self.addv_20d else None,
+            "cap_tier": self.cap_tier,
         }
 
     @classmethod
@@ -166,6 +170,8 @@ class MarketDataResult:
         atr_14 = CalculatedField.from_dict(data["atr_14"]) if data.get("atr_14") else None
         benchmark_return = CalculatedField.from_dict(data["benchmark_return"]) if data.get("benchmark_return") else None
         fundamentals = dict(data["fundamentals"]) if data.get("fundamentals") is not None else None
+        addv_20d = CalculatedField.from_dict(data["addv_20d"]) if data.get("addv_20d") else None
+        cap_tier = str(data.get("cap_tier", "unknown"))
         return cls(
             ticker=str(data["ticker"]),
             period=str(data.get("period", "6mo")),
@@ -179,6 +185,8 @@ class MarketDataResult:
             fundamentals=fundamentals,
             provider=str(data["provider"]),
             as_of=str(data["as_of"]),
+            addv_20d=addv_20d,
+            cap_tier=cap_tier,
         )
 
 

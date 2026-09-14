@@ -69,3 +69,37 @@ def benchmark_relative_return(asset_return: float | None, benchmark_return: floa
     if asset_return is None or benchmark_return is None:
         return None
     return asset_return - benchmark_return
+
+
+def average_daily_dollar_volume(closes: np.ndarray, volumes: np.ndarray, window: int = VOLUME_WINDOW) -> float | None:
+    """Calculate average daily dollar volume (Close * Volume) over the last `window` trading days."""
+    if len(closes) < window or len(volumes) < window or window <= 0:
+        return None
+    recent_closes = closes[-window:]
+    recent_volumes = volumes[-window:]
+    dollar_volumes = recent_closes * recent_volumes
+    return float(np.mean(dollar_volumes))
+
+
+def market_cap_tier(market_cap: float | None) -> str:
+    """Classify market cap into standard institutional liquidity tiers.
+
+    - mega: >= $200B
+    - large: >= $10B
+    - mid: >= $2B
+    - small: >= $300M
+    - micro: < $300M (extreme illiquidity / manipulation risk)
+    - unknown: None or <= 0
+    """
+    if market_cap is None or market_cap <= 0:
+        return "unknown"
+    if market_cap >= 200e9:
+        return "mega"
+    if market_cap >= 10e9:
+        return "large"
+    if market_cap >= 2e9:
+        return "mid"
+    if market_cap >= 300e6:
+        return "small"
+    return "micro"
+

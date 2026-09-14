@@ -4,7 +4,7 @@ import pytest
 from app.agent.tools import create_agent_tools, ToolCallGuard
 
 
-def test_tool_registry_contains_all_9_tools():
+def test_tool_registry_contains_all_10_tools():
     tools = create_agent_tools()
     tool_names = {t.name for t in tools}
     expected = {
@@ -17,6 +17,7 @@ def test_tool_registry_contains_all_9_tools():
         "list_sec_filings",
         "pull_sec_filings",
         "verify_sec_claim",
+        "get_sec_financials",
     }
     assert tool_names == expected
 

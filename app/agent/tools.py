@@ -19,6 +19,7 @@ from app.market.company_research import get_company_research as _get_company_res
 from app.sec.acquisition import list_sec_filings as _list_sec_filings
 from app.sec.pull import pull_sec_filings as _pull_sec_filings, SelectedSecDocument
 from app.sec.verifier import verify_sec_claim as _verify_sec_claim
+from app.sec.financials import get_sec_financials as _get_sec_financials
 
 
 @dataclass
@@ -181,6 +182,18 @@ def create_agent_tools(
         except Exception as exc:
             return json.dumps({"status": "error", "message": f"verify_sec_claim error: {exc}"})
 
+    @tool
+    def get_sec_financials(ticker: str, periods: int = 4) -> str:
+        """Extract official quarterly SEC XBRL metrics (gross margin %, operating margin %, net cash, inventory QoQ change, CapEx). Deterministic math with zero hallucination."""
+        suppressed = _guard_check("get_sec_financials", {"ticker": ticker, "periods": periods})
+        if suppressed:
+            return suppressed
+        try:
+            res = _get_sec_financials(ticker=ticker, periods=periods)
+            return json.dumps(res.to_dict())
+        except Exception as exc:
+            return json.dumps({"status": "error", "message": f"get_sec_financials error: {exc}"})
+
     return [
         search_social,
         search_articles,
@@ -191,4 +204,5 @@ def create_agent_tools(
         list_sec_filings,
         pull_sec_filings,
         verify_sec_claim,
+        get_sec_financials,
     ]

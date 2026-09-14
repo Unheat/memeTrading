@@ -38,6 +38,11 @@ def test_render_forensic_memo_includes_required_sections():
     assert "**Drivers**:" in memo_md
     assert "**Risks / What we're watching**:" in memo_md
 
+    # Real-Money Capital Safety & Tradability Scorecard
+    assert "### Real-Money Capital Safety & Tradability Scorecard" in memo_md
+    assert "Liquidity & Dollar Volume" in memo_md
+    assert "Binary Event Risk" in memo_md
+
     # Check key headings and content
     assert "# Meme Market Forensic Memo: $XYZ" in memo_md
     assert "XYZ Tech Inc" in memo_md

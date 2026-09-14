@@ -101,11 +101,13 @@ def get_market_data(
         "3m": _field(metrics.simple_return(closes, THREE_MONTH_LOOKBACK), "3m", as_of),
     }
 
-    # Volume ratio / ATR / SMA statuses
+    # Volume ratio / ATR / SMA statuses / Liquidity (ADDV)
     volume_ratio_field = _field(metrics.volume_ratio(volumes), "20d-vol", as_of)
     atr_field = _field(metrics.atr_14(highs, lows, closes), "atr-14", as_of)
     sma_50_status = metrics.sma_status(closes, 50)
     sma_200_status = metrics.sma_status(closes, 200)
+    addv_val = metrics.average_daily_dollar_volume(closes, volumes)
+    addv_field = _field(addv_val, "20d-addv", as_of)
 
     # Benchmark-relative return: primary 1m return vs benchmark 1m return.
     benchmark_return = None
@@ -121,15 +123,19 @@ def get_market_data(
 
     # Fundamentals (reliability: present-and-numeric = reliable)
     fundamentals = None
+    mkt_cap = None
     try:
         info = fetch_info(clean_ticker)
+        mkt_cap = info.get("market_cap")
         fundamentals = {
-            "market_cap": {"value": info.get("market_cap"), "reliable": info.get("market_cap") is not None},
+            "market_cap": {"value": mkt_cap, "reliable": mkt_cap is not None},
             "shares_outstanding": {"value": info.get("shares_outstanding"), "reliable": info.get("shares_outstanding") is not None},
             "short_interest_pct": {"value": info.get("short_interest_pct"), "reliable": info.get("short_interest_pct") is not None},
         }
     except MarketDataError:
         fundamentals = None
+
+    cap_tier = metrics.market_cap_tier(mkt_cap)
 
     return MarketDataResult(
         ticker=clean_ticker,
@@ -144,4 +150,6 @@ def get_market_data(
         fundamentals=fundamentals,
         provider=PROVIDER_NAME,
         as_of=as_of,
+        addv_20d=addv_field,
+        cap_tier=cap_tier,
     )
