@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 
 from app.market.schemas import MarketDataError
+from app.market.providers.finnhub import FinnhubClient
 
 logger = logging.getLogger(__name__)
 
@@ -397,6 +398,43 @@ def get_company_research(ticker: str) -> CompanyResearchResult:
         next_earnings_date = _map_calendar(_yf_calendar(clean_ticker))
     except Exception as exc:
         logger.warning("calendar unavailable for %s: %s", clean_ticker, exc)
+
+    # Finnhub fallback (optional keyed provider): fill only sections yfinance
+    # could not, preserving keyless behavior when FINNHUB_API_KEY is absent.
+    if price_targets is None or ratings is None:
+        try:
+            fh = FinnhubClient()
+            if fh.is_configured:
+                if price_targets is None:
+                    fh_target = fh.get_price_target(clean_ticker) or {}
+                    price_targets = PriceTargets(
+                        low=_value_or_unavailable(fh_target.get("targetLow"), "finnhub", as_of),
+                        mean=_value_or_unavailable(fh_target.get("targetMean"), "finnhub", as_of),
+                        high=_value_or_unavailable(fh_target.get("targetHigh"), "finnhub", as_of),
+                    )
+                if ratings is None:
+                    trends = fh.get_recommendation_trends(clean_ticker)
+                    if trends:
+                        newest = trends[0]
+                        counts = {
+                            k: newest.get(k)
+                            for k in ("strongBuy", "buy", "hold", "sell", "strongSell")
+                        }
+                        numeric = {k: int(v) for k, v in counts.items() if isinstance(v, (int, float))}
+                        if numeric:
+                            ratings = RatingsSnapshot(
+                                buy=numeric.get("buy"),
+                                hold=numeric.get("hold"),
+                                sell=numeric.get("sell"),
+                                strong_buy=numeric.get("strongBuy"),
+                                strong_sell=numeric.get("strongSell"),
+                                total=sum(numeric.values()),
+                                status="ok",
+                                provider="finnhub",
+                                as_of=as_of,
+                            )
+        except MarketDataError as exc:
+            logger.warning("finnhub fallback unavailable for %s: %s", clean_ticker, exc)
 
     return CompanyResearchResult(
         ticker=clean_ticker,

@@ -16,6 +16,7 @@ from app.social.metrics import (
 from app.social.providers.apewisdom import ApeWisdomClient
 from app.social.providers.reddit import RedditProvider
 from app.social.providers.stocktwits import StockTwitsClient
+from app.social.providers.apify_twitter import ApifyTwitterClient
 
 logger = logging.getLogger(__name__)
 
@@ -80,10 +81,21 @@ def search_social(
     except Exception as exc:
         logger.warning("Reddit provider error during search_social: %s", exc)
 
-    # 3. Deduplicate posts
+    # 4. Query Twitter/X via Apify (only when APIFY_API_TOKEN is configured)
+    try:
+        apify_provider = ApifyTwitterClient()
+        if apify_provider.is_configured:
+            tweets = apify_provider.search(query=search_term or "", limit=25)
+            if tweets:
+                all_posts.extend(tweets)
+                source_summary["twitter"] = len(tweets)
+    except Exception as exc:
+        logger.warning("Apify Twitter provider error during search_social: %s", exc)
+
+    # 5. Deduplicate posts
     deduped = deduplicate_posts(all_posts)
 
-    # 4. Calculate trend metrics
+    # 6. Calculate trend metrics
     # If ApeWisdom provided an aggregate mention count, use that for total_mentions
     total_mentions_override = ape_mentions if (ape_mentions is not None and ape_mentions > len(deduped)) else len(deduped)
     metrics = calculate_trend_metrics(
@@ -92,7 +104,7 @@ def search_social(
         velocity_24h=velocity_24h,
     )
 
-    # 5. Select high-signal representative posts
+    # 7. Select high-signal representative posts
     representative = select_representative_posts(deduped, max_posts=4)
 
     return SocialSearchResult(
