@@ -252,6 +252,9 @@ def _default_downloader(source_url: str) -> bytes:
     """
     identity = os.environ.get(SEC_IDENTITY_ENV_NAME, "").strip()
     if not identity:
+        from app.sec.identity import ensure_sec_identity
+        identity = ensure_sec_identity()
+    if not identity:
         raise _MissingIdentityError
     request = Request(source_url, headers={"User-Agent": identity, "Accept-Encoding": "gzip, deflate"})
     with urlopen(request, timeout=DEFAULT_TIMEOUT_SECONDS) as response:
@@ -392,6 +395,7 @@ def pull_sec_filings(
             write_corpus_manifest(directory, corpus)
         except OSError as error:
             raise _StorageFailure from error
+
         return FilingPullResult(corpus=corpus)
     except _StorageFailure:
         _cleanup_created_files(created_files, documents_directory)

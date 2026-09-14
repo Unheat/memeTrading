@@ -84,17 +84,104 @@ class SecFinancialsResult:
         )
 
 
-def _fetch_xbrl_statements(ticker: str, periods: int = 4) -> dict[str, Any]:
-    """Fetch raw statement series via edgartools."""
+def _is_period_col(col_name: Any) -> bool:
+    """Check if a DataFrame column represents a fiscal date period."""
+    s = str(col_name).strip()
+    # e.g. 2024-06-30 or 2025-Q1
+    if any(s.startswith(str(year)) for year in range(2000, 2040)):
+        return True
+    return False
+
+
+def _find_row_val(df: Any, concept_names: list[str], col: str) -> float | None:
+    """Find a row matching concept_names and extract float value from column `col`."""
+    if df is None:
+        return None
+    try:
+        # Check index
+        for concept in concept_names:
+            concept_lower = concept.lower()
+            for idx in df.index:
+                if str(idx).lower() == concept_lower or concept_lower in str(idx).lower():
+                    val = df.loc[idx, col]
+                    if hasattr(val, "iloc"):
+                        val = val.iloc[0]
+                    if val is not None:
+                        f_val = float(val)
+                        return abs(f_val) if "payments" in concept_lower or "capex" in concept_lower else f_val
+    except Exception:
+        pass
+    return None
+
+
+def _get_company(ticker: str) -> Any:
+    """Instantiate edgartools Company object."""
     from edgar import Company
+    return Company(ticker)
 
-    company = Company(ticker)
-    facts = getattr(company, "get_facts", None)
-    if not callable(facts):
-        facts = getattr(company, "facts", None)
 
-    # If live edgartools doesn't have facts for ticker or network unconfigured:
-    raise RuntimeError("XBRL statement extraction requires active SEC user agent and EDGAR filings")
+def _fetch_xbrl_statements(ticker: str, periods: int = 4) -> dict[str, Any]:
+    """Fetch raw statement series via edgartools with concept fallback."""
+    from app.sec.identity import ensure_sec_identity
+    ensure_sec_identity()
+
+    company = _get_company(ticker)
+
+    result: dict[str, Any] = {
+        "periods": [],
+        "revenue": {},
+        "gross_profit": {},
+        "operating_income": {},
+        "net_income": {},
+        "cash_and_equivalents": {},
+        "total_debt": {},
+        "inventory": {},
+        "capex": {},
+    }
+
+    # 1. Income Statement
+    try:
+        inc_stmt = company.income_statement(annual=False, periods=periods, as_dataframe=True)
+        if inc_stmt is not None and hasattr(inc_stmt, "columns"):
+            period_cols = [str(c) for c in inc_stmt.columns if _is_period_col(c)]
+            result["periods"] = period_cols[:periods]
+            for col in result["periods"]:
+                result["revenue"][col] = _find_row_val(inc_stmt, ["Revenues", "Revenue", "SalesRevenueNet", "RevenueFromContractWithCustomerExcludingAssessedTax"], col)
+                result["gross_profit"][col] = _find_row_val(inc_stmt, ["GrossProfit", "GrossMargin"], col)
+                result["operating_income"][col] = _find_row_val(inc_stmt, ["OperatingIncomeLoss", "OperatingIncome"], col)
+                result["net_income"][col] = _find_row_val(inc_stmt, ["NetIncomeLoss", "NetIncome"], col)
+    except Exception as exc:
+        logger.debug("Failed income statement extraction via dataframe: %s", exc)
+
+    # 2. Balance Sheet
+    try:
+        bs_stmt = company.balance_sheet(annual=False, periods=periods, as_dataframe=True)
+        if bs_stmt is not None and hasattr(bs_stmt, "columns"):
+            bs_periods = [str(c) for c in bs_stmt.columns if _is_period_col(c)]
+            if not result["periods"]:
+                result["periods"] = bs_periods[:periods]
+            for col in result["periods"]:
+                result["cash_and_equivalents"][col] = _find_row_val(bs_stmt, ["CashAndCashEquivalentsAtCarryingValue", "CashAndCashEquivalents", "Cash"], col)
+                result["inventory"][col] = _find_row_val(bs_stmt, ["InventoryNet", "Inventories", "Inventory"], col)
+                st_debt = _find_row_val(bs_stmt, ["ShortTermBorrowings", "CommercialPaper", "DebtCurrent"], col) or 0.0
+                lt_debt = _find_row_val(bs_stmt, ["LongTermDebtNoncurrent", "LongTermDebt"], col) or 0.0
+                result["total_debt"][col] = (st_debt + lt_debt) if (st_debt > 0 or lt_debt > 0) else None
+    except Exception as exc:
+        logger.debug("Failed balance sheet extraction via dataframe: %s", exc)
+
+    # 3. Cash Flow Statement (CapEx)
+    try:
+        cf_stmt = company.cash_flow_statement(annual=False, periods=periods, as_dataframe=True)
+        if cf_stmt is not None and hasattr(cf_stmt, "columns"):
+            for col in result["periods"]:
+                result["capex"][col] = _find_row_val(cf_stmt, ["PaymentsToAcquirePropertyPlantAndEquipment", "PaymentsToAcquireProductiveAssets", "CapitalExpenditures"], col)
+    except Exception as exc:
+        logger.debug("Failed cash flow extraction via dataframe: %s", exc)
+
+    if not result["periods"]:
+        raise ValueError(f"No XBRL reporting periods found for ticker {ticker}")
+
+    return result
 
 
 def get_sec_financials(ticker: str, periods: int = 4) -> SecFinancialsResult:

@@ -142,6 +142,8 @@ def _default_company_factory(ticker: str) -> Any:
         ModuleNotFoundError: If optional runtime dependency is not installed.
         Exception: Any Edgartools construction failure for caller translation.
     """
+    from app.sec.identity import ensure_sec_identity
+    ensure_sec_identity()
     from edgar import Company
 
     return Company(ticker)

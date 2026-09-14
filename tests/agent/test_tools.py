@@ -41,3 +41,51 @@ def test_tool_execution_catches_errors_gracefully():
     # Invalid ticker should return structured error string, not crash loop
     res = market_tool.invoke({"ticker": ""})
     assert "error" in str(res).lower() or "invalid" in str(res).lower()
+
+
+def test_verify_sec_claim_tool_wires_embedder_and_assessor(tmp_path):
+    from app.sec.schemas import FilingMetadata, DownloadedDocument, PulledCorpus
+    from app.storage.cases import write_corpus_manifest
+    from datetime import datetime, timezone, date
+
+    case_id = "MU-2026-09-01-001"
+    case_dir = tmp_path / case_id
+    doc_dir = case_dir / "sec" / "documents"
+    doc_dir.mkdir(parents=True)
+
+    from hashlib import sha256
+
+    doc_path = doc_dir / "8k.htm"
+    text_content = "Gross margin expanded to 36 percent. The agreement is non-binding."
+    doc_path.write_text(text_content, encoding="utf-8")
+    actual_hash = sha256(text_content.encode("utf-8")).hexdigest()
+
+    corpus = PulledCorpus(
+        corpus_id=case_id,
+        ticker="MU",
+        cik="723125",
+        created_at=datetime.now(timezone.utc),
+        documents=(
+            DownloadedDocument(
+                accession="0001193125-26-000001",
+                form="8-K",
+                filing_date=date(2026, 9, 1),
+                document_name="8k.htm",
+                source_url="https://www.sec.gov/8k.htm",
+                relative_path="sec/documents/8k.htm",
+                sha256=actual_hash,
+            ),
+        ),
+    )
+    write_corpus_manifest(case_dir, corpus)
+
+    tools = create_agent_tools(cases_root=tmp_path)
+    verify_tool = next(t for t in tools if t.name == "verify_sec_claim")
+
+    # Invoking verify_sec_claim should automatically prepare, index, and verify!
+    output_str = verify_tool.invoke({"corpus_id": case_id, "claim": "Gross margin expanded to 36 percent"})
+    import json
+    data = json.loads(output_str)
+    assert data.get("status") == "ok"
+    assert data.get("verification") is not None
+    assert data["verification"]["verdict"] == "CONFIRMED"

@@ -174,8 +174,28 @@ def create_agent_tools(
         if suppressed:
             return suppressed
         try:
+            from app.sec.corpus import prepare_sec_corpus
+            from app.sec.default_assessor import get_default_sec_assessor
+            from app.sec.embeddings import get_sec_embedder, get_sec_query_embedder
+            from app.sec.retrieval import build_sec_index
+
             case_dir = root_path / corpus_id
-            res = _verify_sec_claim(case_directory=case_dir, claim=claim)
+            # Ensure corpus is prepared and indexed before retrieval
+            index_file = case_dir / "sec" / "index" / "faiss.index"
+            if not index_file.exists():
+                prep_res = prepare_sec_corpus(case_dir)
+                if prep_res.error is None:
+                    build_sec_index(case_dir, embedder=get_sec_embedder())
+
+            embed_query = get_sec_query_embedder()
+            assessor = get_default_sec_assessor()
+
+            res = _verify_sec_claim(
+                case_directory=case_dir,
+                claim=claim,
+                embed_query=embed_query,
+                assessor=assessor,
+            )
             if res.error:
                 return json.dumps({"status": "error", "code": res.error.code, "message": res.error.message})
             return json.dumps({"status": "ok", "verification": res.verification.to_dict() if res.verification else None})
