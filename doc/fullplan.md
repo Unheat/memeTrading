@@ -33,48 +33,57 @@ grassroots demand signal
 - Keep agent tools few. Provider details stay behind tool implementations.
 - Do not begin with Neo4j, a global knowledge graph, fine-tuning, or a corpus of all EDGAR filings.
 
+## General Equity Research Scope & Mandate
+
+The system is a **general-purpose public equity research agent**, not a meme-stock or penny-stock trading bot. We do not trade or speculate on meme stocks. 
+
+1. **The Role of Social/Meme Signals**: Social media platforms (Reddit, Twitter, forums) are used solely as a **grassroots sensor** to detect real-world supply and demand bottlenecks (e.g. retail shortages of DDR5 RAM, cloud GPU wait times, pharmacy backorders for weight-loss drugs).
+2. **Value-Chain Tracing**: The agent traces these grassroots demand signals up the supply chain to **real public companies** (e.g. Micron, Western Digital, TSMC, Eli Lilly)—investable public equities in general.
+3. **Fundamental SEC Audit as the Real Filter**: The agent conducts a rigorous SEC execution audit (checking 10-Q/10-K gross margins, inventory drawdown, CapEx, Form 4 insider transactions, and S-3 dilution). Bad leadership that fails to raise prices or expand capacity—or that engages in dilutive financing—is rejected regardless of how strong retail demand appears.
+4. **No Arbitrary Market-Cap Bias**: The agent analyzes stocks in general across all market-cap tiers (mega, large, mid, small). While low-quality penny stocks typically fail the fundamental SEC audit 99.9% of the time, the system avoids arbitrary market-cap discrimination: if a smaller company demonstrates audited execution, profitability, and clean governance, the analysis evaluates the business objectively on profitability and risk.
+
 ## Runtime architecture
 
 The system organizes institutional equity research into a **3-Stage Gated Pipeline** in LangGraph:
 
-40	```text
-41	               ┌────────────────────────────────────────────────────────┐
-42	               │ STAGE 1: FORENSIC INVESTIGATOR (Free-Loop Tool Agent)  │
-43	               │  • Selects tools dynamically to resolve uncertainties: │
-44	               │    - search_social() / search_articles() / read_article│
-45	               │    - search_web() / get_market_data()                  │
-46	               │    - get_company_research() / get_sec_financials()     │
-47	               │    - list_sec_filings() / pull_sec_filings()           │
-48	               │    - verify_sec_claim() [Isolated local RAG]           │
-49	               │  • Post-Tool Ingestion: Deterministic fact projection  │
-50	               │  • Context Policy: Adaptive 1M window / 200k threshold │
-51	               │  • Pre-trade gates: ADDV >= $5M & Earnings > 7d        │
-52	               │  • Outputs: Grounded evidence list + draft thesis      │
-53	               └───────────────────────────┬────────────────────────────┘
-54	                                           │ (Verified facts only)
-55	                                           ▼
-56	               ┌────────────────────────────────────────────────────────┐
-57	               │ STAGE 2: AIR-GAPPED ADVERSARIAL RED TEAM               │
-58	               │  • Hostile Short-Seller Mandate (Muddy Waters mindset) │
-59	               │  • Zero visibility into Stage 1 bullish draft          │
-60	               │  • Formulates: 4 Falsifiable Objections                │
-61	               │  • Sets: 2 Quantitative Numeric Kill Triggers          │
-62	               │  • Bounded Downside Floor & Stress Testing             │
-63	               └───────────────────────────┬────────────────────────────┘
-64	                                           │ (Bull Thesis + Bear Attack)
-65	                                           ▼
-66	               ┌────────────────────────────────────────────────────────┐
-67	               │ STAGE 3: INVESTMENT COMMITTEE (CIO Allocation & Sizing)│
-68	               │  • Weighs Bull Thesis against Adversarial Red Team     │
-69	               │  • Enforces Strict 3:1 Asymmetric Reward-to-Risk Hurdle│
-70	               │  • Enforces Strict Fail-Closed Passing Discipline      │
-71	               │  • Computes Fractional Kelly Position Size (in code)   │
-72	               │  • Renders Final Institutional Memo & Audit JSON       │
-73	               └───────────────────────────┬────────────────────────────┘
-74	                                           │
-75	                                           v
-76	                       Creatorberry/faceless delivery (optional)
-77	```
+```text
+               ┌────────────────────────────────────────────────────────┐
+               │ STAGE 1: FORENSIC INVESTIGATOR (Free-Loop Tool Agent)  │
+               │  • Selects tools dynamically to resolve uncertainties: │
+               │    - search_social() / search_articles() / read_article│
+               │    - search_web() / get_market_data()                  │
+               │    - get_company_research() / get_sec_financials()     │
+               │    - list_sec_filings() / pull_sec_filings()           │
+               │    - verify_sec_claim() [Isolated local RAG]           │
+               │  • Post-Tool Ingestion: Deterministic fact projection  │
+               │  • Context Policy: Adaptive 1M window / 200k threshold │
+               │  • Pre-trade gates: ADDV >= $1M & Earnings > 7d        │
+               │  • Outputs: Grounded evidence list + draft thesis      │
+               └───────────────────────────┬────────────────────────────┘
+                                           │ (Verified facts only)
+                                           ▼
+               ┌────────────────────────────────────────────────────────┐
+               │ STAGE 2: AIR-GAPPED ADVERSARIAL RED TEAM               │
+               │  • Hostile Short-Seller Mandate (Muddy Waters mindset) │
+               │  • Zero visibility into Stage 1 bullish draft          │
+               │  • Formulates: 4 Falsifiable Objections                │
+               │  • Sets: 2 Quantitative Numeric Kill Triggers          │
+               │  • Bounded Downside Floor & Stress Testing             │
+               └───────────────────────────┬────────────────────────────┘
+                                           │ (Bull Thesis + Bear Attack)
+                                           ▼
+               ┌────────────────────────────────────────────────────────┐
+               │ STAGE 3: INVESTMENT COMMITTEE (CIO Allocation & Sizing)│
+               │  • Weighs Bull Thesis against Adversarial Red Team     │
+               │  • Enforces Strict 3:1 Asymmetric Reward-to-Risk Hurdle│
+               │  • Enforces Strict Fail-Closed Passing Discipline      │
+               │  • Computes Fractional Kelly Position Size (in code)   │
+               │  • Renders Final Institutional Memo & Audit JSON       │
+               └───────────────────────────┬────────────────────────────┘
+                                           │
+                                           v
+                       Creatorberry/faceless delivery (optional)
+```
 
 ### Outer-agent behavior
 
@@ -429,11 +438,11 @@ Keyed API providers — Finnhub, Apify, and FRED — are black-box HTTPS API dep
 8. Build smallest outer-agent loop, budgets, deduplication, memo renderer. *(Complete: LangGraph loop, two-tier state, tool registry with duplicate guard, `memo.md` + `investigation.json` runner.)*
 9. Implement `get_company_research` (yfinance first, Finnhub optional) and upgrade prompt/memo with Scuttlebutt & Expectations framework. *(Complete: 9th tool, consensus variance table, investor-note opening.)*
 10. Add real-money safeguards and deterministic SEC XBRL financials tool (`get_sec_financials` as 10th tool, 20d ADDV liquidity filter, market cap tiering, earnings blackout guard, capital safety scorecard). *(Complete.)*
-439	11. Implement the 3-Stage Institutional Gated Pipeline (`investigator -> air_gapped_red_team -> investment_committee`) with deterministic post-tool ingestion, adaptive 1M-context management, 3:1 asymmetry hurdle, passing discipline, and Fractional Kelly position sizing. *(Complete.)*
-440	12. Add optional media generator (`generate_media_package`) and Creatorberry/Faceless reel video execution bridge. *(Complete.)*
-441	13. Institutional Battle-Readiness Hardening & Audit Remediation (Fail-closed data gating, strict 3:1 zero-allocation enforcement, deterministic scenario valuation, typed XBRL context/duration parsing, SSRF/filesystem containment, atomic persistence, and real-provider evaluation). *(In progress; see `doc/plans/16-battle-ready-audit-remediation-and-institutional-hardening.md`.)*
-442	14. E2E live fixture testing, golden SEC claim benchmark, and strategy backtest calibration.
-443	15. Static-site publication build and daily scheduled runner wrapper.
+11. Implement the 3-Stage Institutional Gated Pipeline (`investigator -> air_gapped_red_team -> investment_committee`) with deterministic post-tool ingestion, adaptive 1M-context management, 3:1 asymmetry hurdle, passing discipline, and Fractional Kelly position sizing. *(Complete.)*
+12. Add optional media generator (`generate_media_package`) and Creatorberry/Faceless reel video execution bridge. *(Complete.)*
+13. Implement core financial accuracy and reporting fixes: fail-closed gating, strict 3.0x hurdle, discrete XBRL quarter extraction, and grounded media fallback. *(Complete.)*
+14. Add lightweight prompt-injection protection (XML data delimiters + fast regex sanitization for untrusted social/article text).
+15. E2E verification, golden SEC claim benchmark, and static-site publication build.
 
 ## Post-MVP Extension: Headless Subscription-Backed Execution
 

@@ -77,15 +77,15 @@ def run_investment_committee(state: InvestigationState, model: Any) -> dict[str,
     proximity_flag = str(consensus.get("earnings_proximity_flag") or "UNKNOWN").upper()
 
     passing_checks: dict[str, str] = {}
-    is_liquid = (addv is not None and addv >= 5e6) and (cap_tier in ("mega", "large", "mid"))
-    passing_checks["liquidity_gate"] = "PASS" if is_liquid else "FAIL (< $5M ADDV or Microcap)"
+    is_liquid = (addv is not None and addv >= 1e6)
+    passing_checks["liquidity_gate"] = "PASS" if is_liquid else "FAIL (< $1M ADDV / Illiquid)"
 
     is_blackout = (proximity_flag == "BLACKOUT_RISK")
     passing_checks["earnings_blackout_gate"] = "FAIL (Earnings <= 7d)" if is_blackout else "PASS"
 
     # Immediate rejection if hard gates fail
     if not is_liquid or is_blackout:
-        reason = "Illiquid Microcap Trap" if not is_liquid else "Binary Earnings Blackout Risk"
+        reason = "Illiquid Volume Trap" if not is_liquid else "Binary Earnings Blackout Risk"
         verdict = ICVerdict(
             ticker=ticker,
             verdict="PASSED_STRICT_DISCIPLINE",
