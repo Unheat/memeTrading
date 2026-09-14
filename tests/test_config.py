@@ -16,7 +16,7 @@ def test_default_config_instantiation():
     cfg = AppConfig()
     assert cfg.llm.model == "gpt-5.3-codex"
     assert cfg.llm.base_url is None
-    assert cfg.llm.temperature == 0.0
+    assert cfg.llm.temperature == pytest.approx(0.2)
     assert cfg.media.generate_media is True
     assert cfg.media.character_pair == "peter_stewie"
     assert cfg.research.max_tool_calls == 15

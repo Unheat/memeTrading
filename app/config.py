@@ -21,7 +21,7 @@ class LLMConfig:
 
     model: str = "gpt-5.3-codex"
     base_url: str | None = None  # None uses official OpenAI; set for OpenRouter, DeepSeek, etc.
-    temperature: float = 0.0
+    temperature: float = 0.2  # 0.2 provides strategic lateral thinking & witty dialogue while keeping facts grounded
 
 
 @dataclass(frozen=True)

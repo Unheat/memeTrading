@@ -12,8 +12,12 @@ llm:
   # Leave as null for official OpenAI, or set for OpenRouter, DeepSeek, etc.
   base_url: null
 
-  # Temperature (0.0 for deterministic research)
-  temperature: 0.0
+  # Sampling temperature:
+  #   - 0.0: Purely robotic/deterministic. Rigid hypotheses, flat jokes.
+  #   - 0.2 - 0.3 (Recommended): Strategic creativity (uncovering 2nd-order supply chain
+  #         beneficiaries, witty Peter & Stewie banter) while keeping numbers strictly grounded.
+  #   - 0.7+: Too high for finance (risks hallucinating numbers or breaking JSON schemas).
+  temperature: 0.2
 
 media:
   # Whether to generate cited article.md and faceless reel dialogue.json
