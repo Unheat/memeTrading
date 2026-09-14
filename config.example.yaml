@@ -1,0 +1,66 @@
+# ==============================================================================
+# MEME MARKET FORENSIC RESEARCH AGENT — USER CONFIGURATION TEMPLATE
+# ==============================================================================
+# Copy this file to config.yaml and adjust your preferences:
+#   cp config.example.yaml config.yaml
+#
+# NOTE: Secret API keys belong in your .env file, NOT here.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. LLM PROVIDER SETTINGS (OPENAI-COMPATIBLE)
+# ------------------------------------------------------------------------------
+llm:
+  # Model identifier for the outer research agent.
+  # Examples:
+  #   - OpenAI: "gpt-5.3-codex", "gpt-4o", "gpt-4o-mini"
+  #   - OpenRouter: "anthropic/claude-3.5-sonnet", "deepseek/deepseek-chat", "meta-llama/llama-3.3-70b-instruct"
+  model: "gpt-5.3-codex"
+
+  # Base URL for the OpenAI-compatible endpoint.
+  # OPTIONAL:
+  #   - Leave as null (or comment it out) to call official OpenAI directly.
+  #   - Set to an OpenAI-compatible URL if using OpenRouter, DeepSeek, Together, vLLM, etc.
+  # Examples:
+  #   base_url: null                            # Uses official OpenAI (https://api.openai.com/v1)
+  #   base_url: "https://openrouter.ai/api/v1"  # Uses OpenRouter
+  #   base_url: "https://api.deepseek.com/v1"   # Uses DeepSeek
+  base_url: null
+
+  # Sampling temperature (0.0 is recommended for deterministic, fact-grounded research).
+  temperature: 0.0
+
+# ------------------------------------------------------------------------------
+# 2. MEDIA & VIDEO REEL SCRIPT GENERATION
+# ------------------------------------------------------------------------------
+media:
+  # Whether to generate the cited Substack-style article (article.md)
+  # and the viral video dialogue script (faceless/dialogue.json).
+  generate_media: true
+
+  # Character duo for the viral video dialogue reel script.
+  # RESTRICTED INPUT — MUST BE EXACTLY ONE OF THE FOLLOWING TWO CHOICES:
+  #   - "peter_stewie": Family Guy's Peter Griffin (Speaker A: clueless/gullible retail investor)
+  #                     and Stewie Griffin (Speaker B: smug British genius dropping SEC receipts).
+  #   - "rick_morty":   Rick and Morty (Speaker A: panicked/nervous Morty questioning trades,
+  #                     Speaker B: cynical rogue genius Rick exposing Wall Street consensus).
+  character_pair: "peter_stewie"
+
+# ------------------------------------------------------------------------------
+# 3. RESEARCH PARAMETERS & EXECUTION LIMITS
+# ------------------------------------------------------------------------------
+research:
+  # Maximum autonomous tool calls allowed per investigation before forced synthesis.
+  max_tool_calls: 15
+
+  # Maximum identical queries allowed before duplicate call suppression kicks in.
+  max_identical_calls: 2
+
+  # Benchmark ETF symbol used to calculate relative market return performance.
+  benchmark_ticker: "SPY"
+
+  # Number of recent quarterly SEC reporting periods to extract for XBRL statements.
+  sec_periods: 4
+
+  # Directory where research cases, memos, and video scripts are persisted.
+  cases_root: "cases"

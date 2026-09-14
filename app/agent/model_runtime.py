@@ -47,17 +47,40 @@ def resolve_token_counter(model: Any) -> TokenCounter:
     return conservative_token_counter
 
 
-def create_default_model_runtime() -> ModelRuntime:
-    """Create default OpenAI LangChain runtime from environment configuration.
+def create_default_model_runtime(
+    model: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    temperature: float = 0.0,
+) -> ModelRuntime:
+    """Create default OpenAI-compatible LangChain runtime.
 
     Args:
-        None.
+        model: Optional model name override. Defaults to OUTER_MODEL_ENV or DEFAULT_OUTER_MODEL.
+        base_url: Optional OpenAI-compatible base URL (e.g. OpenRouter, DeepSeek, vLLM).
+        api_key: Optional explicit API key.
+        temperature: Model sampling temperature (default 0.0).
 
     Returns:
         Runtime using configured model and provider-neutral context preparation.
     """
     from langchain_openai import ChatOpenAI
 
-    model_name = os.getenv(OUTER_MODEL_ENV, DEFAULT_OUTER_MODEL)
-    model = ChatOpenAI(model=model_name, temperature=0)
-    return ModelRuntime(model=model, token_counter=resolve_token_counter(model))
+    model_name = model or os.getenv(OUTER_MODEL_ENV, DEFAULT_OUTER_MODEL)
+    effective_base_url = base_url or os.getenv("OPENAI_BASE_URL") or os.getenv("LLM_BASE_URL")
+    if effective_base_url:
+        effective_base_url = str(effective_base_url).strip()
+        if not effective_base_url or effective_base_url.lower() in ("none", "null"):
+            effective_base_url = None
+
+    kwargs: dict[str, Any] = {
+        "model": model_name,
+        "temperature": temperature,
+    }
+    if effective_base_url:
+        kwargs["base_url"] = effective_base_url
+    if api_key:
+        kwargs["api_key"] = api_key
+
+    chat_model = ChatOpenAI(**kwargs)
+    return ModelRuntime(model=chat_model, token_counter=resolve_token_counter(chat_model))

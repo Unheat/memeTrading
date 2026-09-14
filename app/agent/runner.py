@@ -19,6 +19,7 @@ from app.agent.model_runtime import ModelRuntime, create_default_model_runtime
 from app.agent.memo import render_forensic_memo, serialize_investigation_json
 from app.agent.state import InvestigationState, ResearchRequest, create_initial_state
 from app.agent.tools import ToolCallGuard, create_agent_tools
+from app.config import AppConfig, load_config
 from app.storage.cases import case_path, create_case_id
 
 logger = logging.getLogger(__name__)
@@ -52,17 +53,26 @@ def run_investigation(
     request: ResearchRequest,
     model: Any | None = None,
     cases_root: Path | str | None = None,
-    generate_media: bool = True,
+    generate_media: bool | None = None,
+    character_pair: str | None = None,
+    config: AppConfig | None = None,
 ) -> InvestigationResult:
     """Run an autonomous forensic market investigation.
 
     :param request: Validated ResearchRequest.
     :param model: Optional LLM model or test double.
-    :param cases_root: Base storage directory (defaults to 'cases').
+    :param cases_root: Base storage directory (defaults to config or 'cases').
     :param generate_media: Whether to generate article.md and faceless reel dialogue.
+    :param character_pair: Duo for reel script: 'peter_stewie' or 'rick_morty'.
+    :param config: Optional AppConfig instance (loads from config.yaml if omitted).
     :returns: InvestigationResult containing case ID, status, rendered memo, and article.
     """
-    root = Path(cases_root) if cases_root else Path("cases")
+    cfg = config or load_config()
+    effective_cases_root = cases_root or cfg.research.cases_root
+    effective_generate_media = generate_media if generate_media is not None else cfg.media.generate_media
+    effective_character_pair = character_pair or cfg.media.character_pair
+
+    root = Path(effective_cases_root)
     root.mkdir(parents=True, exist_ok=True)
 
     ticker = request.ticker or "RESEARCH"
@@ -74,7 +84,14 @@ def run_investigation(
     guard = ToolCallGuard(max_identical=request.budget.max_identical_calls)
     tools = create_agent_tools(cases_root=root, guard=guard)
 
-    runtime = ModelRuntime(model=model) if model is not None else create_default_model_runtime()
+    if model is not None:
+        runtime = ModelRuntime(model=model)
+    else:
+        runtime = create_default_model_runtime(
+            model=cfg.llm.model,
+            base_url=cfg.llm.base_url,
+            temperature=cfg.llm.temperature,
+        )
     model = runtime.model
     graph = create_agent_graph(
         model=model,
@@ -102,9 +119,9 @@ def run_investigation(
     json_file.write_text(json.dumps(investigation_json, indent=2), encoding="utf-8")
 
     article_md: str | None = None
-    if generate_media:
+    if effective_generate_media:
         try:
-            pkg = generate_media_package(final_state, model=model)
+            pkg = generate_media_package(final_state, model=model, character_pair=effective_character_pair)
             article_md = pkg.article_markdown
 
             # Write article.md

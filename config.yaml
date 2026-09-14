@@ -1,0 +1,30 @@
+# ==============================================================================
+# MEME MARKET FORENSIC RESEARCH AGENT — LOCAL CONFIGURATION
+# ==============================================================================
+# Adjust your preferences below:
+# ==============================================================================
+
+llm:
+  # Model name for the outer research agent (e.g. gpt-5.3-codex, gpt-4o, etc.)
+  model: "gpt-5.3-codex"
+
+  # Optional OpenAI-compatible base URL.
+  # Leave as null for official OpenAI, or set for OpenRouter, DeepSeek, etc.
+  base_url: null
+
+  # Temperature (0.0 for deterministic research)
+  temperature: 0.0
+
+media:
+  # Whether to generate cited article.md and faceless reel dialogue.json
+  generate_media: true
+
+  # Character duo for video reel script: "peter_stewie" or "rick_morty"
+  character_pair: "peter_stewie"
+
+research:
+  max_tool_calls: 15
+  max_identical_calls: 2
+  benchmark_ticker: "SPY"
+  sec_periods: 4
+  cases_root: "cases"

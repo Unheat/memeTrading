@@ -36,3 +36,22 @@ def test_run_investigation_generates_case_artifacts(tmp_path):
 
     memo_content = (case_dir / "memo.md").read_text(encoding="utf-8")
     assert "# Meme Market Forensic Memo: $TEST" in memo_content
+
+
+def test_run_investigation_with_rick_morty_character_pair(tmp_path):
+    """Verify run_investigation cleanly passes rick_morty character pair to media generator."""
+    import json
+    req = ResearchRequest(query="Investigate $RICK hype", ticker="RICK")
+    result = run_investigation(
+        request=req,
+        model=FakeRunnerModel(),
+        cases_root=tmp_path,
+        character_pair="rick_morty",
+    )
+    case_dir = tmp_path / result.case_id
+    dialogue_file = case_dir / "faceless" / "dialogue.json"
+    assert dialogue_file.exists()
+    dialogue = json.loads(dialogue_file.read_text(encoding="utf-8"))
+    assert len(dialogue) == 4
+    # Character pair should be Rick & Morty voice IDs
+    assert dialogue[0]["voiceId"] == "d2e75a3e3fd6419893057c02a375a113" or dialogue[1]["voiceId"] == "d2e75a3e3fd6419893057c02a375a113"
