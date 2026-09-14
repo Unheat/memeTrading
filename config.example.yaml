@@ -64,18 +64,39 @@ media:
 # ------------------------------------------------------------------------------
 # 3. RESEARCH PARAMETERS & EXECUTION LIMITS
 # ------------------------------------------------------------------------------
+# Note: You can leave all of these as default! They are safe out-of-the-box defaults.
 research:
-  # Maximum autonomous tool calls allowed per investigation before forced synthesis.
+  # The Research Budget: How many actions the agent can take (searching social,
+  # checking news, pulling SEC filings, getting market data) before it is forced
+  # to stop researching and write your final memo.
+  #   - Default: 15 (solid depth, ~1-2 minutes per run)
+  #   - Quick summary: 8
+  #   - Deep dive audit: 20
   max_tool_calls: 15
 
-  # Maximum identical queries allowed before duplicate call suppression kicks in.
+  # Anti-Stuck Guard: If the AI asks the exact same tool query twice (e.g. searching
+  # Reddit for the exact same phrase again), the 3rd attempt is suppressed and the
+  # agent is told to use its existing notes. Prevents wasted tokens in loops.
+  #   - Default: 2 (leave as is)
   max_identical_calls: 2
 
-  # Benchmark ETF symbol used to calculate relative market return performance.
+  # Market Comparison Benchmark: The ETF symbol used to compare stock returns against.
+  # If a stock is up +10% this month but the broad market is up +15%, the stock is
+  # actually underperforming.
+  #   - Default: "SPY" (S&P 500 ETF, broad market benchmark)
+  #   - Tech comparison: "QQQ" (Nasdaq 100)
   benchmark_ticker: "SPY"
 
-  # Number of recent quarterly SEC reporting periods to extract for XBRL statements.
+  # SEC Financials History: How many quarters (3-month periods) of official SEC XBRL
+  # balance sheets and income statements to extract.
+  #   - Default: 4 (1 full year of quarterly trajectory to check margin expansion & inventory)
+  #   - 2-year history: 8
   sec_periods: 4
 
-  # Directory where research cases, memos, and video scripts are persisted.
+  # Output Directory: The local folder where the agent saves your research artifacts.
+  # For ticker "MU", it creates cases/MU-2026-09-14-001/ with:
+  #   - memo.md (the forensic research memo)
+  #   - article.md (the cited Substack article)
+  #   - faceless/dialogue.json (the Peter & Stewie reel script)
+  #   - faceless/caption.txt (the viral social media caption with hashtags)
   cases_root: "cases"
