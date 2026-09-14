@@ -31,6 +31,13 @@ def test_render_forensic_memo_includes_required_sections():
     final_text = "The buyout hype is speculative and contradicted by official 8-K filings."
     memo_md = render_forensic_memo(state, final_text)
 
+    # Investor-note opening (from financial-research-workshop format)
+    assert "**Headline**:" in memo_md
+    assert "**Bottom Line**:" in memo_md
+    assert "The buyout hype is speculative" in memo_md  # bottom line = first sentence(s)
+    assert "**Drivers**:" in memo_md
+    assert "**Risks / What we're watching**:" in memo_md
+
     # Check key headings and content
     assert "# Meme Market Forensic Memo: $XYZ" in memo_md
     assert "XYZ Tech Inc" in memo_md
@@ -40,9 +47,40 @@ def test_render_forensic_memo_includes_required_sections():
     assert "0001193125-26-123456" in memo_md  # SEC receipt cited
     assert "non-binding and subject to due diligence" in memo_md
     assert "## 6. Market Context & Pricing Check" in memo_md
+    assert "## Wall Street Expectations vs Ground Reality" in memo_md
+    assert "No institutional analyst coverage" in memo_md  # no consensus data yet
     assert "## 7. Remaining Uncertainties" in memo_md
     assert "## 8. Forensic Conclusion" in memo_md
     assert final_text in memo_md
+
+
+def test_render_forensic_memo_with_consensus_and_gap():
+    req = ResearchRequest(query="Check MU memory demand", ticker="MU", company="Micron")
+    state = create_initial_state(req, case_id="case_mu")
+    state["consensus_snapshot"] = {
+        "price_targets": {"low": {"value": 90.0}, "mean": {"value": 130.0}, "high": {"value": 180.0}},
+        "eps_estimates": [
+            {"metric": "eps", "period": "0y", "avg": 3.2, "low": 2.9, "high": 3.55,
+             "growth": 0.21, "n_analysts": 44},
+        ],
+        "revenue_estimates": [
+            {"metric": "revenue", "period": "0y", "avg": 42.1e9, "low": 40.0e9, "high": 44.5e9,
+             "growth": 0.18, "n_analysts": 38},
+        ],
+    }
+    state["expectation_gap"] = {
+        "verdict": "Consensus underprices verified demand signal",
+        "rationale": "Ground reality shows inventory drawdown while consensus models 21% EPS growth.",
+    }
+
+    memo_md = render_forensic_memo(state, "Synthesis text.")
+
+    assert "## Wall Street Expectations vs Ground Reality" in memo_md
+    assert "| EPS | 0y | 3.2 |" in memo_md
+    assert "| REVENUE | 0y |" in memo_md
+    assert "low 90.0 | mean 130.0 | high 180.0" in memo_md
+    assert "**Expectation-gap verdict**: Consensus underprices verified demand signal" in memo_md
+    assert "inventory drawdown" in memo_md
 
 
 def test_serialize_investigation_json():

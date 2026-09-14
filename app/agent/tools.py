@@ -15,6 +15,7 @@ from app.articles.search import search_articles as _search_articles
 from app.articles.reader import read_article as _read_article
 from app.websearch.search import search_web as _search_web
 from app.market.market_data import get_market_data as _get_market_data
+from app.market.company_research import get_company_research as _get_company_research
 from app.sec.acquisition import list_sec_filings as _list_sec_filings
 from app.sec.pull import pull_sec_filings as _pull_sec_filings, SelectedSecDocument
 from app.sec.verifier import verify_sec_claim as _verify_sec_claim
@@ -116,6 +117,18 @@ def create_agent_tools(
             return json.dumps({"status": "error", "message": f"get_market_data error: {exc}"})
 
     @tool
+    def get_company_research(ticker: str) -> str:
+        """Fetch Wall Street consensus data (price targets, ratings, EPS/revenue estimates, earnings date) for the expectation-gap comparison. Secondary data, never a recommendation."""
+        suppressed = _guard_check("get_company_research", {"ticker": ticker})
+        if suppressed:
+            return suppressed
+        try:
+            res = _get_company_research(ticker=ticker)
+            return json.dumps(res.to_dict())
+        except Exception as exc:
+            return json.dumps({"status": "error", "message": f"get_company_research error: {exc}"})
+
+    @tool
     def list_sec_filings(ticker: str, forms: list[str] | None = None, since: str | None = None) -> str:
         """List metadata-only official SEC EDGAR filings for a ticker (8-K, 10-K, 10-Q, S-1, Form 4)."""
         suppressed = _guard_check("list_sec_filings", {"ticker": ticker, "forms": str(forms), "since": since})
@@ -174,6 +187,7 @@ def create_agent_tools(
         read_article,
         search_web,
         get_market_data,
+        get_company_research,
         list_sec_filings,
         pull_sec_filings,
         verify_sec_claim,

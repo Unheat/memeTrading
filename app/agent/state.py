@@ -60,6 +60,8 @@ class InvestigationState(TypedDict):
     status: str
     causal_chain: dict[str, str] | None
     market_context: dict[str, Any] | None
+    consensus_snapshot: dict[str, Any] | None
+    expectation_gap: dict[str, Any] | None
     thesis_breakers: list[str]
     budget_state: dict[str, Any]
 
@@ -85,6 +87,8 @@ def create_initial_state(request: ResearchRequest, case_id: str) -> Investigatio
         "status": "in_progress",
         "causal_chain": None,
         "market_context": None,
+        "consensus_snapshot": None,
+        "expectation_gap": None,
         "thesis_breakers": [],
         "budget_state": {
             "max_tool_calls": request.budget.max_tool_calls,

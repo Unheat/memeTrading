@@ -1,12 +1,125 @@
 """Deterministic forensic memo and JSON report rendering.
 
 Renders formatted Markdown memo and JSON audit artifacts with SEC receipts.
+Formats adapted from reference/financial-research-workshop skills
+(investor-note SKILL.md, earnings-summary SKILL.md).
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 from app.agent.state import InvestigationState
+
+HEADLINE_MAX_WORDS = 15
+BOTTOM_LINE_SENTENCES = 2
+
+
+def _investor_note_opening(state: InvestigationState, final_text: str) -> str:
+    """Render the investor-note opening: headline, bottom line, drivers, risks.
+
+    Format adapted from reference/financial-research-workshop investor-note skill.
+    Deterministic: derived only from state fields and the model's synthesis text.
+    """
+    trigger = state.get("trigger", {})
+    query = str(trigger.get("query") or "").strip()
+    ticker = state.get("ticker") or "UNKNOWN"
+
+    if query:
+        words = query.split()
+        headline = " ".join(words[:HEADLINE_MAX_WORDS])
+        if len(words) > HEADLINE_MAX_WORDS:
+            headline += "…"
+    else:
+        headline = f"Forensic review of ${ticker} attention signal"
+
+    # Bottom line: first sentences of the model synthesis.
+    sentences = re.split(r"(?<=[.!?])\s+", final_text.strip())
+    bottom_line = " ".join(sentences[:BOTTOM_LINE_SENTENCES]).strip() or "See forensic conclusion."
+
+    root_claims = state.get("root_claims", [])
+    drivers = [f"- {c}" for c in root_claims] or [f"- Attention signal on ${ticker} under investigation."]
+
+    thesis_breakers = state.get("thesis_breakers", [])
+    unresolved = state.get("unresolved_questions", [])
+    risks = [f"- {r}" for r in thesis_breakers] or [f"- {q}" for q in unresolved] or ["- None captured."]
+
+    return (
+        f"**Headline**: {headline}\n\n"
+        f"**Bottom Line**: {bottom_line}\n\n"
+        f"**Drivers**:\n" + "\n".join(drivers) + "\n\n"
+        f"**Risks / What we're watching**:\n" + "\n".join(risks)
+    )
+
+
+def _expectations_section(state: InvestigationState) -> str:
+    """Render the Wall Street Expectations vs Ground Reality section.
+
+    Consensus variance table adapted from the financial-research-workshop
+    earnings-summary skill (metric | result | consensus | variance).
+    """
+    consensus = state.get("consensus_snapshot") or {}
+    gap = state.get("expectation_gap") or {}
+
+    eps_rows = consensus.get("eps_estimates") or []
+    rev_rows = consensus.get("revenue_estimates") or []
+
+    if not eps_rows and not rev_rows:
+        return (
+            "## Wall Street Expectations vs Ground Reality\n\n"
+            "No institutional analyst coverage is available for this ticker; "
+            "the expectation-gap benchmark is unavailable and the verdict rests "
+            "on price/volume context and SEC evidence alone.\n"
+        )
+
+    lines = [
+        "## Wall Street Expectations vs Ground Reality",
+        "",
+        "| Metric | Period | Consensus (avg) | Low | High | Analysts | Growth |",
+        "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
+    ]
+    for row in eps_rows + rev_rows:
+        metric = str(row.get("metric", "n/a")).upper()
+        period = str(row.get("period", "n/a"))
+        avg = row.get("avg")
+        low = row.get("low")
+        high = row.get("high")
+        growth = row.get("growth")
+        n = row.get("n_analysts")
+        lines.append(
+            f"| {metric} | {period} | "
+            f"{avg if avg is not None else 'n/a'} | "
+            f"{low if low is not None else 'n/a'} | "
+            f"{high if high is not None else 'n/a'} | "
+            f"{n if n is not None else 'n/a'} | "
+            f"{f'{growth:.0%}' if isinstance(growth, (int, float)) else 'n/a'} |"
+        )
+
+    targets = consensus.get("price_targets") or {}
+    if targets:
+        def _t(key: str) -> str:
+            item = targets.get(key) or {}
+            v = item.get("value")
+            return str(v) if v is not None else "n/a"
+        lines.append("")
+        lines.append(
+            f"**Analyst price targets**: low {_t('low')} | mean {_t('mean')} | high {_t('high')}"
+        )
+
+    verdict = gap.get("verdict")
+    rationale = gap.get("rationale")
+    lines.append("")
+    if verdict:
+        lines.append(f"**Expectation-gap verdict**: {verdict}")
+        if rationale:
+            lines.append(f"\n{rationale}")
+    else:
+        lines.append(
+            "**Expectation-gap verdict**: not yet assessed; compare the verified "
+            "ground reality above against the consensus table before concluding."
+        )
+
+    return "\n".join(lines) + "\n"
 
 
 def render_forensic_memo(state: InvestigationState, final_text: str) -> str:
@@ -85,6 +198,10 @@ def render_forensic_memo(state: InvestigationState, final_text: str) -> str:
 
 ---
 
+{_investor_note_opening(state, final_text)}
+
+---
+
 ## 1. Narrative Origin & Social Trigger
 - **Investigated Catalyst**: {trigger_text}
 - **Narrative Theme**: {theme}
@@ -110,6 +227,8 @@ def render_forensic_memo(state: InvestigationState, final_text: str) -> str:
 - **1-Month Return**: {ret_1m_str}
 - **20-Day Volume Ratio**: {vol_str} (Relative to 20-day baseline)
 - **Expectation Gap**: Compare retail narrative velocity against market price action to determine if the catalyst is already priced in.
+
+{_expectations_section(state)}
 
 ## 7. Remaining Uncertainties & Thesis Breakers
 {chr(10).join(unresolved_items)}
