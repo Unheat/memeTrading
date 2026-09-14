@@ -93,6 +93,11 @@ def _is_period_col(col_name: Any) -> bool:
     return False
 
 
+def _sort_period_cols(cols: list[str]) -> list[str]:
+    """Sort period columns in descending chronological order (newest first)."""
+    return sorted(cols, reverse=True)
+
+
 def _find_row_val(df: Any, concept_names: list[str], col: str) -> float | None:
     """Find a row matching concept_names and extract float value from column `col`."""
     if df is None:
@@ -143,7 +148,7 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4) -> dict[str, Any]:
     try:
         inc_stmt = company.income_statement(annual=False, periods=periods, as_dataframe=True)
         if inc_stmt is not None and hasattr(inc_stmt, "columns"):
-            period_cols = [str(c) for c in inc_stmt.columns if _is_period_col(c)]
+            period_cols = _sort_period_cols([str(c) for c in inc_stmt.columns if _is_period_col(c)])
             result["periods"] = period_cols[:periods]
             for col in result["periods"]:
                 result["revenue"][col] = _find_row_val(inc_stmt, ["Revenues", "Revenue", "SalesRevenueNet", "RevenueFromContractWithCustomerExcludingAssessedTax"], col)
@@ -157,15 +162,18 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4) -> dict[str, Any]:
     try:
         bs_stmt = company.balance_sheet(annual=False, periods=periods, as_dataframe=True)
         if bs_stmt is not None and hasattr(bs_stmt, "columns"):
-            bs_periods = [str(c) for c in bs_stmt.columns if _is_period_col(c)]
+            bs_periods = _sort_period_cols([str(c) for c in bs_stmt.columns if _is_period_col(c)])
             if not result["periods"]:
                 result["periods"] = bs_periods[:periods]
             for col in result["periods"]:
                 result["cash_and_equivalents"][col] = _find_row_val(bs_stmt, ["CashAndCashEquivalentsAtCarryingValue", "CashAndCashEquivalents", "Cash"], col)
                 result["inventory"][col] = _find_row_val(bs_stmt, ["InventoryNet", "Inventories", "Inventory"], col)
-                st_debt = _find_row_val(bs_stmt, ["ShortTermBorrowings", "CommercialPaper", "DebtCurrent"], col) or 0.0
-                lt_debt = _find_row_val(bs_stmt, ["LongTermDebtNoncurrent", "LongTermDebt"], col) or 0.0
-                result["total_debt"][col] = (st_debt + lt_debt) if (st_debt > 0 or lt_debt > 0) else None
+                st_debt = _find_row_val(bs_stmt, ["ShortTermBorrowings", "CommercialPaper", "DebtCurrent"], col)
+                lt_debt = _find_row_val(bs_stmt, ["LongTermDebtNoncurrent", "LongTermDebt"], col)
+                if st_debt is not None or lt_debt is not None:
+                    result["total_debt"][col] = (st_debt or 0.0) + (lt_debt or 0.0)
+                else:
+                    result["total_debt"][col] = None
     except Exception as exc:
         logger.debug("Failed balance sheet extraction via dataframe: %s", exc)
 

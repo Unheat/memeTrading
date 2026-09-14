@@ -4,6 +4,7 @@ Provides duplicate call suppression and exception shielding.
 """
 from __future__ import annotations
 
+from datetime import date
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -18,8 +19,10 @@ from app.market.market_data import get_market_data as _get_market_data
 from app.market.company_research import get_company_research as _get_company_research
 from app.sec.acquisition import list_sec_filings as _list_sec_filings
 from app.sec.pull import pull_sec_filings as _pull_sec_filings, SelectedSecDocument
+from app.sec.schemas import FilingMetadata
 from app.sec.verifier import verify_sec_claim as _verify_sec_claim
 from app.sec.financials import get_sec_financials as _get_sec_financials
+from app.storage.cases import case_path
 
 
 @dataclass
@@ -150,16 +153,36 @@ def create_agent_tools(
         if suppressed:
             return suppressed
         try:
-            selected_docs = [
-                SelectedSecDocument(
-                    accession=s["accession"],
-                    form=s["form"],
-                    filing_date=s["filing_date"],
-                    document_name=s["document_name"],
-                    source_url=s["source_url"],
+            selected_docs = []
+            for s in selections:
+                if "filing" in s and isinstance(s["filing"], dict):
+                    filing_meta = FilingMetadata.from_dict(s["filing"])
+                else:
+                    filing_date_val = s.get("filing_date")
+                    if isinstance(filing_date_val, str):
+                        f_date = date.fromisoformat(filing_date_val)
+                    elif isinstance(filing_date_val, date):
+                        f_date = filing_date_val
+                    else:
+                        f_date = date.today()
+
+                    filing_meta = FilingMetadata(
+                        ticker=str(s.get("ticker") or "UNKNOWN"),
+                        cik=str(s.get("cik") or "0"),
+                        form=str(s.get("form") or "8-K"),
+                        filing_date=f_date,
+                        accession=str(s.get("accession") or "0000000000-00-000000"),
+                        filing_url=str(s.get("filing_url") or s.get("source_url") or "https://www.sec.gov"),
+                        primary_document=s.get("primary_document"),
+                        exhibits=tuple(s.get("exhibits") or ()),
+                    )
+                selected_docs.append(
+                    SelectedSecDocument(
+                        filing=filing_meta,
+                        document_name=str(s.get("document_name") or "primary_doc.htm"),
+                        source_url=str(s.get("source_url") or filing_meta.filing_url),
+                    )
                 )
-                for s in selections
-            ]
             res = _pull_sec_filings(cases_root=root_path, case_id=case_id, selections=selected_docs)
             if res.error:
                 return json.dumps({"status": "error", "code": res.error.code, "message": res.error.message})
@@ -179,9 +202,13 @@ def create_agent_tools(
             from app.sec.embeddings import get_sec_embedder, get_sec_query_embedder
             from app.sec.retrieval import build_sec_index
 
-            case_dir = root_path / corpus_id
+            try:
+                case_dir = case_path(root_path, corpus_id)
+            except ValueError:
+                case_dir = root_path / corpus_id
+
             # Ensure corpus is prepared and indexed before retrieval
-            index_file = case_dir / "sec" / "index" / "faiss.index"
+            index_file = case_dir / "sec" / "index" / "sec.faiss"
             if not index_file.exists():
                 prep_res = prepare_sec_corpus(case_dir)
                 if prep_res.error is None:

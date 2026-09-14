@@ -99,31 +99,79 @@ def run_investment_committee(state: InvestigationState, model: Any) -> dict[str,
 
     # 2. Evaluate 3:1 Asymmetry & Fractional Kelly Sizing
     quote = market.get("quote") or {}
-    current_price = float(quote.get("price") or 100.0)
+    raw_price = quote.get("price")
+    if raw_price is None or float(raw_price) <= 0:
+        passing_checks["price_gate"] = "FAIL (Missing or non-positive market price)"
+        verdict = ICVerdict(
+            ticker=ticker,
+            verdict="VALIDATION_WATCH",
+            conviction_tier="VALIDATION 🔥",
+            reward_to_risk_ratio=None,
+            kelly_position_size_pct=0.0,
+            passing_discipline_checks=passing_checks,
+            cio_deliberation_summary=f"Missing market pricing for ${ticker}. Zero capital allocated.",
+        )
+        return {"ic_verdict": verdict}
+    current_price = float(raw_price)
+
     price_targets = consensus.get("price_targets") or {}
-    base_target = (price_targets.get("mean") or {}).get("value")
-    if base_target is None:
-        base_target = current_price * 1.30  # default 30% upside estimate
+    mean_target = price_targets.get("mean")
+    if isinstance(mean_target, dict):
+        base_target_val = mean_target.get("value")
+    elif isinstance(mean_target, (int, float)):
+        base_target_val = float(mean_target)
+    else:
+        base_target_val = None
 
-    bear_floor = adversarial.bear_floor_price if adversarial and adversarial.bear_floor_price else current_price * 0.85
+    if base_target_val is None or float(base_target_val) <= current_price:
+        passing_checks["target_gate"] = "FAIL (Missing or non-positive upside target)"
+        verdict = ICVerdict(
+            ticker=ticker,
+            verdict="VALIDATION_WATCH",
+            conviction_tier="VALIDATION 🔥",
+            reward_to_risk_ratio=None,
+            kelly_position_size_pct=0.0,
+            passing_discipline_checks=passing_checks,
+            cio_deliberation_summary=f"No verified upside target exceeding current price (${current_price:.2f}) for ${ticker}. Zero capital allocated.",
+        )
+        return {"ic_verdict": verdict}
+    base_target = float(base_target_val)
 
-    upside_dollar = max(0.0, float(base_target) - current_price)
-    downside_dollar = max(1.0, current_price - float(bear_floor))
-    ratio = round(upside_dollar / downside_dollar, 2) if downside_dollar > 0 else 0.0
+    raw_floor = adversarial.bear_floor_price if adversarial else None
+    if raw_floor is None or float(raw_floor) <= 0 or float(raw_floor) >= current_price:
+        passing_checks["bear_floor_gate"] = "FAIL (Missing or invalid bear downside floor)"
+        verdict = ICVerdict(
+            ticker=ticker,
+            verdict="VALIDATION_WATCH",
+            conviction_tier="VALIDATION 🔥",
+            reward_to_risk_ratio=None,
+            kelly_position_size_pct=0.0,
+            passing_discipline_checks=passing_checks,
+            cio_deliberation_summary=f"Missing or invalid adversarial downside floor for ${ticker}. Zero capital allocated.",
+        )
+        return {"ic_verdict": verdict}
+    bear_floor = float(raw_floor)
 
-    upside_pct = upside_dollar / current_price if current_price > 0 else 0.0
-    downside_pct = downside_dollar / current_price if current_price > 0 else 0.15
+    upside_dollar = max(0.0, base_target - current_price)
+    downside_dollar = max(0.01, current_price - bear_floor)
+    ratio = round(upside_dollar / downside_dollar, 2)
 
-    kelly_size = compute_fractional_kelly(
-        upside_pct=upside_pct,
-        downside_pct=downside_pct,
-        win_prob=0.60,
-        fraction=0.25,
-        max_position_cap=0.08,
-        max_loss_budget=0.05,
-    )
+    upside_pct = upside_dollar / current_price
+    downside_pct = downside_dollar / current_price
 
     passing_checks["asymmetry_gate"] = "PASS" if ratio >= 3.0 else f"FAIL ({ratio:.1f}x < 3.0x)"
+
+    if ratio >= 3.0:
+        kelly_size = compute_fractional_kelly(
+            upside_pct=upside_pct,
+            downside_pct=downside_pct,
+            win_prob=0.60,
+            fraction=0.25,
+            max_position_cap=0.08,
+            max_loss_budget=0.05,
+        )
+    else:
+        kelly_size = 0.0
 
     # 3. Deliberation via Model
     prompt_payload = json.dumps(
@@ -153,12 +201,12 @@ Issue the final Investment Committee verdict and capital allocation statement.""
     ])
     cio_text = getattr(response, "content", "")
 
-    # Assign final conviction tier
+    # Assign final conviction tier based on strict 3:1 hurdle
     confidence = state.get("confidence")
-    if ratio >= 3.0 and (confidence is None or confidence >= 0.70):
+    if ratio >= 3.0 and confidence is not None and confidence >= 0.70:
         verdict_str = "APPROVED_LONG_HIGH"
         conviction = "HIGH CONVICTION 🔥🔥🔥"
-    elif ratio >= 2.0:
+    elif ratio >= 3.0:
         verdict_str = "APPROVED_LONG_MEDIUM"
         conviction = "MEDIUM CONVICTION 🔥🔥"
     else:

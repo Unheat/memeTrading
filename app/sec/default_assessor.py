@@ -66,13 +66,11 @@ def get_default_sec_assessor():
 
         for item in chunks:
             text_lower = item.chunk.text.lower()
-            matching_terms = sum(1 for t in claim_terms if t in text_lower)
-            if matching_terms >= 2:
-                # Check for explicit contradictions
-                if any(m in text_lower for m in contradiction_markers) and any(kw in claim_lower for kw in ["binding", "definitive", "signed deal", "acquired"]):
-                    against_ids.append(item.chunk.chunk_id)
-                else:
-                    for_ids.append(item.chunk.chunk_id)
+            # Check for explicit contradictions
+            if any(m in text_lower for m in contradiction_markers) and any(kw in claim_lower for kw in ["binding", "definitive", "signed deal", "acquired"]):
+                against_ids.append(item.chunk.chunk_id)
+            elif claim_lower in text_lower or (len(claim_terms) >= 3 and all(t in text_lower for t in claim_terms)):
+                for_ids.append(item.chunk.chunk_id)
 
         if against_ids:
             return {
@@ -97,10 +95,9 @@ def get_default_sec_assessor():
                 "suggested_document_types": [],
             }
         else:
-            first_chunk_id = chunks[0].chunk.chunk_id if chunks else ""
             return {
                 "verdict": "INSUFFICIENT_EVIDENCE",
-                "confidence": 0.35,
+                "confidence": 0.0,
                 "explanation": "Retrieved excerpts do not conclusively confirm or contradict the claim.",
                 "evidence_for_chunk_ids": [],
                 "evidence_against_chunk_ids": [],

@@ -57,3 +57,10 @@ def test_sec_financials_serialization_round_trip():
     d = result.to_dict()
     restored = SecFinancialsResult.from_dict(d)
     assert restored == result
+
+
+def test_sort_period_cols_orders_chronologically_descending():
+    from app.sec.financials import _sort_period_cols
+    cols = ["2024-03-31", "2024-09-30", "2024-06-30", "2023-12-31"]
+    sorted_cols = _sort_period_cols(cols)
+    assert sorted_cols == ["2024-09-30", "2024-06-30", "2024-03-31", "2023-12-31"]

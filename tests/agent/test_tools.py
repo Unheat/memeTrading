@@ -89,3 +89,62 @@ def test_verify_sec_claim_tool_wires_embedder_and_assessor(tmp_path):
     assert data.get("status") == "ok"
     assert data.get("verification") is not None
     assert data["verification"]["verdict"] == "CONFIRMED"
+
+
+def test_pull_sec_filings_tool_invocation(tmp_path, monkeypatch):
+    """Verify pull_sec_filings correctly constructs SelectedSecDocument and FilingMetadata."""
+    import json
+    from datetime import date, datetime, timezone
+    from app.sec.pull import FilingPullResult
+    from app.sec.schemas import DownloadedDocument, PulledCorpus
+    import app.agent.tools as tools_mod
+
+    case_id = "MU-2026-09-01-001"
+
+    def fake_pull(cases_root, case_id, selections):
+        assert len(selections) == 1
+        assert selections[0].filing.accession == "0001193125-26-000001"
+        assert selections[0].filing.form == "8-K"
+        assert selections[0].document_name == "primary_doc.htm"
+        return FilingPullResult(
+            corpus=PulledCorpus(
+                corpus_id=case_id,
+                ticker="MU",
+                cik="723125",
+                created_at=datetime.now(timezone.utc),
+                documents=(
+                    DownloadedDocument(
+                        accession="0001193125-26-000001",
+                        form="8-K",
+                        filing_date=date(2026, 9, 1),
+                        document_name="primary_doc.htm",
+                        source_url="https://www.sec.gov/8k.htm",
+                        relative_path="sec/documents/primary_doc.htm",
+                        sha256="a" * 64,
+                    ),
+                ),
+            ),
+            error=None,
+        )
+
+    monkeypatch.setattr(tools_mod, "_pull_sec_filings", fake_pull)
+    tools = create_agent_tools(cases_root=tmp_path)
+    pull_tool = next(t for t in tools if t.name == "pull_sec_filings")
+
+    res = pull_tool.invoke({
+        "case_id": case_id,
+        "selections": [
+            {
+                "accession": "0001193125-26-000001",
+                "form": "8-K",
+                "filing_date": "2026-09-01",
+                "document_name": "primary_doc.htm",
+                "source_url": "https://www.sec.gov/8k.htm",
+                "ticker": "MU",
+                "cik": "723125",
+            }
+        ],
+    })
+    data = json.loads(res)
+    assert data["status"] == "ok"
+    assert data["corpus"]["corpus_id"] == case_id

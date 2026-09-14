@@ -111,3 +111,26 @@ def test_generate_media_package_success():
     assert "(shocked)" in pkg.dialogue_json[0]["text"]
     # Check caption
     assert "#stocks" in pkg.caption_text
+
+
+def test_generate_media_package_safe_fallback_on_parse_error():
+    """Verify malformed dialogue generation uses neutral fallback without hallucinated facts."""
+    class BrokenDialogueModel:
+        def __init__(self):
+            self.call_count = 0
+
+        def invoke(self, messages):
+            self.call_count += 1
+            if self.call_count == 1:
+                return AIMessage(content="# Article\nNo claims.")
+            return AIMessage(content="Not valid json or dialogue format.")
+
+    req = ResearchRequest(query="Investigate XYZ", ticker="XYZ")
+    state = create_initial_state(req, case_id="case_xyz_fallback")
+    pkg = generate_media_package(state, model=BrokenDialogueModel())
+
+    assert len(pkg.dialogue_json) == 4
+    full_text = " ".join(line["text"] for line in pkg.dialogue_json)
+    assert "gross margin expansion" not in full_text.lower()
+    assert "consumer demand surged" not in full_text.lower()
+    assert "XYZ" in full_text

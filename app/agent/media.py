@@ -196,10 +196,10 @@ Investigated Facts & SEC Evidence:
     except Exception as exc:
         logger.warning("Dialogue JSON generation error for %s: %s; using safe fallback", ticker, exc)
         dialogue_lines = [
-            {"index": 0, "voiceId": first_voice, "text": f"(shocked) You're saying the ground scuttlebutt on ${ticker} is completely real?"},
-            {"index": 1, "voiceId": second_voice, "text": f"(smirking) Yes, consumer demand surged and the 10-Q confirms gross margin expansion."},
-            {"index": 2, "voiceId": first_voice, "text": "(confused) So why hasn't Wall Street repriced the stock yet?"},
-            {"index": 3, "voiceId": second_voice, "text": f"(laughing) Because consensus models haven't updated yet! Check the full audit receipts on ${ticker} below."},
+            {"index": 0, "voiceId": first_voice, "text": f"(confused) What did the forensic research find on ${ticker}?"},
+            {"index": 1, "voiceId": second_voice, "text": f"(confident) We pulled the official SEC filings and consensus data to audit ${ticker}."},
+            {"index": 2, "voiceId": first_voice, "text": "(skeptical) Are the claims verified by primary regulatory sources?"},
+            {"index": 3, "voiceId": second_voice, "text": f"(deadpan) Check the complete verified memo and source receipts on ${ticker} below."},
         ]
 
     # Render readable transcript
