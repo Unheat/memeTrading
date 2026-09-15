@@ -1,8 +1,19 @@
-"""Tests for outer-agent model runtime configuration."""
+"""Tests for outer-agent model runtime configuration and universal LiteLLM fallback."""
+from types import SimpleNamespace
+from unittest.mock import patch
 import pytest
 
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.tools import tool
+
 from app.agent.context import ModelContextPolicy
-from app.agent.model_runtime import ModelRuntime, resolve_token_counter
+from app.agent.model_runtime import (
+    ModelRuntime,
+    UniversalChatModel,
+    create_default_model_runtime,
+    resolve_token_counter,
+)
+from app.config import ModelEndpointConfig
 
 
 class FakeModel:
@@ -40,3 +51,66 @@ def test_provider_native_mode_requires_capability_adapter() -> None:
     policy = ModelContextPolicy(compaction_mode="provider_native")
     with pytest.raises(ValueError, match="provider capability adapter"):
         prepare_context([], policy=policy)
+
+
+def test_universal_chat_model_message_conversion():
+    """Verify UniversalChatModel converts LangChain message types to LiteLLM payload."""
+    model = UniversalChatModel(model="gpt-4o")
+    messages = [
+        SystemMessage(content="System instructions"),
+        HumanMessage(content="User query"),
+        AIMessage(content="Assistant response", tool_calls=[{"name": "lookup", "args": {"ticker": "MU"}, "id": "call-1"}]),
+        ToolMessage(content="Tool result", tool_call_id="call-1"),
+    ]
+    converted = model._convert_messages(messages)
+    assert len(converted) == 4
+    assert converted[0] == {"role": "system", "content": "System instructions"}
+    assert converted[1] == {"role": "user", "content": "User query"}
+    assert converted[2]["role"] == "assistant"
+    assert converted[2]["tool_calls"][0]["function"]["name"] == "lookup"
+    assert converted[3] == {"role": "tool", "content": "Tool result", "tool_call_id": "call-1"}
+
+
+def test_universal_chat_model_automatic_fallback():
+    """Verify UniversalChatModel tries primary endpoint and falls back on error."""
+    attempts = []
+
+    def fake_completion(**kwargs):
+        attempts.append(kwargs["model"])
+        if kwargs["model"] == "primary-model":
+            raise ConnectionError("Primary model offline")
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content="Fallback response ok",
+                        tool_calls=[],
+                    )
+                )
+            ]
+        )
+
+    model = UniversalChatModel(
+        endpoints=[
+            {"model": "primary-model", "base_url": "http://localhost:20128/v1"},
+            {"model": "fallback-model", "base_url": "https://openrouter.ai/api/v1"},
+        ]
+    )
+
+    with patch("litellm.completion", side_effect=fake_completion):
+        res = model.invoke([HumanMessage(content="Hello")])
+        assert res.content == "Fallback response ok"
+        assert attempts == ["primary-model", "fallback-model"]
+
+
+def test_create_default_model_runtime_with_endpoints():
+    """Verify create_default_model_runtime creates UniversalChatModel with endpoints."""
+    endpoints = [
+        ModelEndpointConfig(model="gpt-4o", base_url="http://localhost:20128/v1"),
+        ModelEndpointConfig(model="deepseek/deepseek-chat", base_url="https://api.deepseek.com/v1"),
+    ]
+    runtime = create_default_model_runtime(endpoints=endpoints)
+    assert isinstance(runtime.model, UniversalChatModel)
+    assert len(runtime.model.endpoints) == 2
+    assert runtime.model.endpoints[0]["model"] == "gpt-4o"
+    assert runtime.model.endpoints[1]["model"] == "deepseek/deepseek-chat"

@@ -8,31 +8,36 @@
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
-# 1. LLM PROVIDER SETTINGS (OPENAI-COMPATIBLE)
+# 1. LLM PROVIDER SETTINGS (UNIVERSAL MULTI-PROVIDER & FALLBACKS VIA LITELLM)
 # ------------------------------------------------------------------------------
 llm:
-  # Model identifier for the outer research agent.
-  # Examples:
-  #   - OpenAI: "gpt-5.3-codex", "gpt-4o", "gpt-4o-mini"
-  #   - OpenRouter: "anthropic/claude-3.5-sonnet", "deepseek/deepseek-chat", "meta-llama/llama-3.3-70b-instruct"
-  model: "gpt-5.3-codex"
-
-  # Base URL for the OpenAI-compatible endpoint.
-  # OPTIONAL:
-  #   - Leave as null (or comment it out) to call official OpenAI directly.
-  #   - Set to an OpenAI-compatible URL if using OpenRouter, DeepSeek, Together, vLLM, etc.
-  # Examples:
-  #   base_url: null                            # Uses official OpenAI (https://api.openai.com/v1)
-  #   base_url: "https://openrouter.ai/api/v1"  # Uses OpenRouter
-  #   base_url: "https://api.deepseek.com/v1"   # Uses DeepSeek
-  base_url: null
-
   # Sampling temperature:
-  #   - 0.0: Purely robotic/deterministic. Rigid hypotheses, flat jokes.
-  #   - 0.2 - 0.3 (Recommended): Strategic creativity (uncovering 2nd-order supply chain
-  #         beneficiaries, witty Peter & Stewie banter) while keeping numbers strictly grounded.
+  #   - 0.0: Purely robotic/deterministic.
+  #   - 0.2 - 0.3 (Recommended): Strategic creativity while keeping facts grounded.
   #   - 0.7+: Too high for finance (risks hallucinating numbers or breaking JSON schemas).
   temperature: 0.2
+
+  # You can define a list of model endpoints in order of priority (Primary -> Backup 1 -> Backup 2...).
+  # The agent tries the first endpoint; if it fails (rate limit, offline, timeout), it automatically fails over!
+  # Supports any provider supported by LiteLLM:
+  #   - OpenAI: "gpt-5.3-codex", "gpt-4o", "gpt-4o-mini", "o1", "o3-mini"
+  #   - Anthropic: "claude-3-5-sonnet-20241022", "anthropic/claude-3.5-sonnet"
+  #   - Google Gemini: "gemini/gemini-1.5-pro", "gemini/gemini-2.0-flash"
+  #   - OpenRouter: "openrouter/anthropic/claude-3.5-sonnet", "openrouter/deepseek/deepseek-chat"
+  #   - DeepSeek: "deepseek/deepseek-chat", "deepseek/deepseek-reasoner"
+  #   - Local / 9Router / Ollama: "openai/<model_name>" with base_url: "http://localhost:20128/v1"
+  models:
+    # 1. Primary: e.g. Local 9Router proxy, OpenRouter, or OpenAI
+    - model: "gpt-5.3-codex"
+      base_url: null # null uses official provider default URL
+
+    # 2. (Optional) Backup 1: OpenRouter fallback
+    # - model: "openrouter/anthropic/claude-3.5-sonnet"
+    #   base_url: "https://openrouter.ai/api/v1"
+
+    # 3. (Optional) Backup 2: DeepSeek fallback
+    # - model: "deepseek/deepseek-chat"
+    #   base_url: "https://api.deepseek.com/v1"
 
 # ------------------------------------------------------------------------------
 # 2. MEDIA & VIDEO REEL SCRIPT GENERATION

@@ -106,6 +106,7 @@ def run_investigation(
             model=cfg.llm.model,
             base_url=cfg.llm.base_url,
             temperature=cfg.llm.temperature,
+            endpoints=cfg.llm.models,
         )
     model = runtime.model
     graph = create_agent_graph(

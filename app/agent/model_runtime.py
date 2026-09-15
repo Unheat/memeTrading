@@ -4,14 +4,157 @@ This module is locally written; it contains no copied or adapted donor code.
 """
 from __future__ import annotations
 
+import json
+import logging
 import os
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Dict, List, Optional, Sequence, Union
+
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.tools import BaseTool
+from langchain_core.utils.function_calling import convert_to_openai_tool
+import litellm
 
 from app.agent.context import ModelContextPolicy, TokenCounter, conservative_token_counter
+from app.config import ModelEndpointConfig, load_config
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_OUTER_MODEL = "gpt-5.3-codex"
 OUTER_MODEL_ENV = "OUTER_AGENT_MODEL"
+
+
+class UniversalChatModel(BaseChatModel):
+    """Universal multi-provider Chat Model supporting automatic endpoint fallbacks via LiteLLM."""
+
+    model: str = DEFAULT_OUTER_MODEL
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+    temperature: float = 0.2
+    endpoints: List[dict] = []
+
+    @property
+    def _llm_type(self) -> str:
+        return "universal-litellm-chat"
+
+    def bind_tools(
+        self,
+        tools: Sequence[Union[Dict[str, Any], type, BaseTool]],
+        **kwargs: Any,
+    ) -> Any:
+        """Bind LangChain tools converted to universal function-calling schema."""
+        formatted_tools = [convert_to_openai_tool(t) for t in tools]
+        return self.bind(tools=formatted_tools, **kwargs)
+
+    def _convert_messages(self, messages: List[BaseMessage]) -> List[dict]:
+        """Convert LangChain message objects to LiteLLM message payloads."""
+        converted = []
+        for m in messages:
+            if isinstance(m, SystemMessage):
+                converted.append({"role": "system", "content": str(m.content)})
+            elif isinstance(m, HumanMessage):
+                converted.append({"role": "user", "content": str(m.content)})
+            elif isinstance(m, ToolMessage):
+                converted.append({
+                    "role": "tool",
+                    "content": str(m.content),
+                    "tool_call_id": m.tool_call_id,
+                })
+            elif isinstance(m, AIMessage):
+                msg_dict: dict[str, Any] = {"role": "assistant", "content": str(m.content or "")}
+                if m.tool_calls:
+                    msg_dict["tool_calls"] = [
+                        {
+                            "id": tc.get("id"),
+                            "type": "function",
+                            "function": {
+                                "name": tc.get("name"),
+                                "arguments": json.dumps(tc.get("args")) if isinstance(tc.get("args"), dict) else str(tc.get("args")),
+                            },
+                        }
+                        for tc in m.tool_calls
+                    ]
+                converted.append(msg_dict)
+            else:
+                converted.append({"role": "user", "content": str(m.content)})
+        return converted
+
+    def get_num_tokens_from_messages(self, messages: List[BaseMessage]) -> int:
+        """Calculate model-aware token count via LiteLLM with conservative fallback."""
+        converted = self._convert_messages(messages)
+        try:
+            return int(litellm.token_counter(model=self.model, messages=converted))
+        except Exception:
+            return conservative_token_counter(messages)
+
+    def _generate(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        """Generate chat completion trying endpoints in fallback priority order."""
+        litellm_messages = self._convert_messages(messages)
+        tools = kwargs.get("tools")
+        temp = kwargs.get("temperature", self.temperature)
+
+        target_endpoints = self.endpoints if self.endpoints else [{
+            "model": self.model,
+            "base_url": self.base_url,
+            "api_key": self.api_key,
+            "temperature": temp,
+        }]
+
+        last_error = None
+        for idx, ep in enumerate(target_endpoints):
+            m_name = ep.get("model") or self.model
+            b_url = ep.get("base_url") or self.base_url
+            a_key = ep.get("api_key") or self.api_key or os.getenv("OPENAI_API_KEY")
+            t_val = ep.get("temperature") if ep.get("temperature") is not None else temp
+
+            call_kwargs: dict[str, Any] = {
+                "model": m_name,
+                "messages": litellm_messages,
+                "temperature": t_val,
+            }
+            if b_url:
+                call_kwargs["api_base"] = b_url
+            if a_key:
+                call_kwargs["api_key"] = a_key
+            if tools:
+                call_kwargs["tools"] = tools
+
+            try:
+                res = litellm.completion(**call_kwargs)
+                choice = res.choices[0]
+                content = choice.message.content or ""
+                tool_calls_list = []
+                if hasattr(choice.message, "tool_calls") and choice.message.tool_calls:
+                    for tc in choice.message.tool_calls:
+                        func = getattr(tc, "function", None)
+                        fn_name = getattr(func, "name", "") if func else ""
+                        fn_args_raw = getattr(func, "arguments", "{}") if func else "{}"
+                        try:
+                            fn_args = json.loads(fn_args_raw) if isinstance(fn_args_raw, str) else dict(fn_args_raw)
+                        except Exception:
+                            fn_args = {"raw": fn_args_raw}
+                        tool_calls_list.append({
+                            "name": fn_name,
+                            "args": fn_args,
+                            "id": getattr(tc, "id", ""),
+                            "type": "tool_call",
+                        })
+                ai_msg = AIMessage(content=content, tool_calls=tool_calls_list)
+                return ChatResult(generations=[ChatGeneration(message=ai_msg)])
+            except Exception as exc:
+                logger.warning("LLM endpoint #%d (%s @ %s) failed: %s; trying next fallback...", idx + 1, m_name, b_url or "default", exc)
+                last_error = exc
+                continue
+
+        raise RuntimeError(f"All configured model endpoints failed. Last error: {last_error}")
 
 
 @dataclass(frozen=True)
@@ -51,36 +194,48 @@ def create_default_model_runtime(
     model: str | None = None,
     base_url: str | None = None,
     api_key: str | None = None,
-    temperature: float = 0.0,
+    temperature: float = 0.2,
+    endpoints: Sequence[ModelEndpointConfig] | None = None,
 ) -> ModelRuntime:
-    """Create default OpenAI-compatible LangChain runtime.
+    """Create default UniversalChatModel runtime with multi-provider fallback.
 
     Args:
-        model: Optional model name override. Defaults to OUTER_MODEL_ENV or DEFAULT_OUTER_MODEL.
-        base_url: Optional OpenAI-compatible base URL (e.g. OpenRouter, DeepSeek, vLLM).
+        model: Optional model name override.
+        base_url: Optional OpenAI-compatible base URL.
         api_key: Optional explicit API key.
-        temperature: Model sampling temperature (default 0.0).
+        temperature: Model sampling temperature (default 0.2).
+        endpoints: Optional sequence of ModelEndpointConfig for fallbacks.
 
     Returns:
         Runtime using configured model and provider-neutral context preparation.
     """
-    from langchain_openai import ChatOpenAI
+    if endpoints:
+        ep_dicts = [
+            {
+                "model": ep.model,
+                "base_url": ep.base_url,
+                "api_key": ep.api_key or api_key,
+                "temperature": ep.temperature if ep.temperature is not None else temperature,
+            }
+            for ep in endpoints
+        ]
+        primary_model = ep_dicts[0]["model"]
+        primary_base = ep_dicts[0]["base_url"]
+    else:
+        primary_model = model or DEFAULT_OUTER_MODEL
+        primary_base = base_url
+        ep_dicts = [{
+            "model": primary_model,
+            "base_url": primary_base,
+            "api_key": api_key,
+            "temperature": temperature,
+        }]
 
-    model_name = model or os.getenv(OUTER_MODEL_ENV, DEFAULT_OUTER_MODEL)
-    effective_base_url = base_url or os.getenv("OPENAI_BASE_URL") or os.getenv("LLM_BASE_URL")
-    if effective_base_url:
-        effective_base_url = str(effective_base_url).strip()
-        if not effective_base_url or effective_base_url.lower() in ("none", "null"):
-            effective_base_url = None
-
-    kwargs: dict[str, Any] = {
-        "model": model_name,
-        "temperature": temperature,
-    }
-    if effective_base_url:
-        kwargs["base_url"] = effective_base_url
-    if api_key:
-        kwargs["api_key"] = api_key
-
-    chat_model = ChatOpenAI(**kwargs)
+    chat_model = UniversalChatModel(
+        model=primary_model,
+        base_url=primary_base,
+        api_key=api_key,
+        temperature=temperature,
+        endpoints=ep_dicts,
+    )
     return ModelRuntime(model=chat_model, token_counter=resolve_token_counter(chat_model))

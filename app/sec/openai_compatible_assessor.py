@@ -88,10 +88,10 @@ class OpenAICompatibleAssessorConfig:
     """Validated configuration for one approved hosted model provider.
 
     Attributes:
-        base_url: Explicit OpenAI-compatible HTTPS endpoint.
+        base_url: Explicit OpenAI-compatible HTTP/HTTPS endpoint.
         api_key: Deployment-supplied provider credential.
         model: Provider model identifier with structured-output support.
-        approved_base_urls: Deployment allowlist of permitted endpoints.
+        approved_base_urls: Optional deployment allowlist of permitted endpoints.
         timeout_seconds: Bounded provider request timeout.
         max_output_tokens: Bounded model response size.
     """
@@ -99,7 +99,7 @@ class OpenAICompatibleAssessorConfig:
     base_url: str
     api_key: str
     model: str
-    approved_base_urls: tuple[str, ...]
+    approved_base_urls: tuple[str, ...] = ()
     timeout_seconds: float = DEFAULT_REQUEST_TIMEOUT_SECONDS
     max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS
 
@@ -115,10 +115,12 @@ class OpenAICompatibleAssessorConfig:
         Raises:
             ValueError: If configuration is incomplete or unsafe.
         """
-        allowed = tuple(_normalized_url(item) for item in self.approved_base_urls)
         base_url = _normalized_url(self.base_url)
-        if not self.api_key.strip() or not self.model.strip() or not allowed or base_url not in allowed:
+        allowed = tuple(_normalized_url(item) for item in self.approved_base_urls) if self.approved_base_urls else ()
+        if not self.api_key.strip() or not self.model.strip():
             raise ValueError("provider configuration is invalid")
+        if allowed and base_url not in allowed:
+            raise ValueError("provider base URL not in approved allowlist")
         if self.timeout_seconds <= 0 or self.max_output_tokens <= 0:
             raise ValueError("provider limits are invalid")
         object.__setattr__(self, "base_url", base_url)

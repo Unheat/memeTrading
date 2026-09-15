@@ -16,12 +16,31 @@ DEFAULT_CONFIG_PATH = Path("config.yaml")
 
 
 @dataclass(frozen=True)
-class LLMConfig:
-    """User-configurable LLM settings for the research agent."""
+class ModelEndpointConfig:
+    """Configuration for a single LLM model endpoint."""
 
     model: str = "gpt-5.3-codex"
-    base_url: str | None = None  # None uses official OpenAI; set for OpenRouter, DeepSeek, etc.
-    temperature: float = 0.2  # 0.2 provides strategic lateral thinking & witty dialogue while keeping facts grounded
+    base_url: str | None = None  # None uses official provider endpoint
+    api_key: str | None = None
+    temperature: float | None = None
+
+
+@dataclass(frozen=True)
+class LLMConfig:
+    """User-configurable LLM settings supporting fallback lists across providers."""
+
+    models: list[ModelEndpointConfig] = field(default_factory=lambda: [ModelEndpointConfig()])
+    temperature: float = 0.2
+
+    @property
+    def model(self) -> str:
+        """Primary model identifier."""
+        return self.models[0].model if self.models else "gpt-5.3-codex"
+
+    @property
+    def base_url(self) -> str | None:
+        """Primary model base URL."""
+        return self.models[0].base_url if self.models else None
 
 
 @dataclass(frozen=True)
@@ -89,15 +108,33 @@ def load_config(config_path: Path | str | None = None) -> AppConfig:
 
     # Parse non-secret LLM settings from config.yaml only.
     raw_llm = data.get("llm", {}) or {}
-    model_name = raw_llm.get("model") or "gpt-5.3-codex"
-    base_url = raw_llm.get("base_url")
-    if base_url:
-        base_url = str(base_url).strip()
-        if not base_url or base_url.lower() in ("none", "null"):
-            base_url = None
     temp = float(raw_llm.get("temperature", 0.2))
 
-    llm_cfg = LLMConfig(model=model_name, base_url=base_url, temperature=temp)
+    raw_models_list = raw_llm.get("models")
+    endpoint_configs: list[ModelEndpointConfig] = []
+
+    if isinstance(raw_models_list, list) and raw_models_list:
+        for item in raw_models_list:
+            if isinstance(item, dict):
+                m_name = item.get("model") or "gpt-5.3-codex"
+                b_url = item.get("base_url")
+                if b_url:
+                    b_url = str(b_url).strip()
+                    if not b_url or b_url.lower() in ("none", "null"):
+                        b_url = None
+                a_key = item.get("api_key")
+                ep_temp = float(item["temperature"]) if "temperature" in item and item["temperature"] is not None else None
+                endpoint_configs.append(ModelEndpointConfig(model=m_name, base_url=b_url, api_key=a_key, temperature=ep_temp))
+    else:
+        model_name = raw_llm.get("model") or "gpt-5.3-codex"
+        base_url = raw_llm.get("base_url")
+        if base_url:
+            base_url = str(base_url).strip()
+            if not base_url or base_url.lower() in ("none", "null"):
+                base_url = None
+        endpoint_configs.append(ModelEndpointConfig(model=model_name, base_url=base_url))
+
+    llm_cfg = LLMConfig(models=endpoint_configs, temperature=temp)
 
     # Parse non-secret media settings from config.yaml only.
     raw_media = data.get("media", {}) or {}

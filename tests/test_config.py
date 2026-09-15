@@ -85,3 +85,30 @@ def test_load_config_ignores_non_secret_environment_settings(tmp_path, monkeypat
     assert cfg.media.character_pair == "peter_stewie"
     assert cfg.media.reel_temperature == pytest.approx(0.4)
     assert cfg.media.fish_model == "s2-free"
+
+
+def test_load_config_models_fallback_list(tmp_path):
+    """Verify loading multi-model fallback list from config.yaml."""
+    yaml_file = tmp_path / "test_config_models.yaml"
+    yaml_file.write_text(
+        """
+llm:
+  temperature: 0.2
+  models:
+    - model: "gpt-4o"
+      base_url: "http://localhost:20128/v1"
+    - model: "openrouter/anthropic/claude-3.5-sonnet"
+      base_url: "https://openrouter.ai/api/v1"
+    - model: "deepseek/deepseek-chat"
+      base_url: "https://api.deepseek.com/v1"
+""",
+        encoding="utf-8",
+    )
+
+    cfg = load_config(yaml_file)
+    assert len(cfg.llm.models) == 3
+    assert cfg.llm.model == "gpt-4o"
+    assert cfg.llm.base_url == "http://localhost:20128/v1"
+    assert cfg.llm.models[1].model == "openrouter/anthropic/claude-3.5-sonnet"
+    assert cfg.llm.models[1].base_url == "https://openrouter.ai/api/v1"
+    assert cfg.llm.models[2].model == "deepseek/deepseek-chat"

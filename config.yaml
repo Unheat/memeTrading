@@ -5,19 +5,26 @@
 # ==============================================================================
 
 llm:
-  # Model name for the outer research agent (e.g. gpt-5.3-codex, gpt-4o, etc.)
-  model: "stack"
-
-  # Optional OpenAI-compatible base URL.
-  # Leave as null for official OpenAI, or set for OpenRouter, DeepSeek, etc.
-  base_url: "http://localhost:20128/v1"
-
   # Sampling temperature:
-  #   - 0.0: Purely robotic/deterministic. Rigid hypotheses, flat jokes.
-  #   - 0.2 - 0.3 (Recommended): Strategic creativity (uncovering 2nd-order supply chain
-  #         beneficiaries, witty Peter & Stewie banter) while keeping numbers strictly grounded.
-  #   - 0.7+: Too high for finance (risks hallucinating numbers or breaking JSON schemas).
+  #   - 0.0: Purely robotic/deterministic.
+  #   - 0.2 - 0.3 (Recommended): Strategic creativity while keeping facts grounded.
   temperature: 0.2
+
+  # You can specify a list of model endpoints in fallback order (Primary -> Backup 1 -> Backup 2...).
+  # The agent tries the first endpoint; if it fails (rate limit, offline, timeout), it automatically fails over!
+  # Supports any provider supported by LiteLLM (OpenAI, 9Router, OpenRouter, Anthropic, Gemini, DeepSeek, Ollama, etc.)
+  models:
+    # 1. Primary endpoint (e.g. your local 9Router proxy, OpenRouter, or OpenAI)
+    - model: "stack"
+      base_url: "http://localhost:20128/v1"
+
+    # 2. (Optional) Fallback 1: OpenRouter Claude / DeepSeek
+    # - model: "openrouter/anthropic/claude-3.5-sonnet"
+    #   base_url: "https://openrouter.ai/api/v1"
+
+    # 3. (Optional) Fallback 2: Official OpenAI
+    # - model: "gpt-4o-mini"
+    #   base_url: null
 
 media:
   # Whether to generate cited article.md and faceless reel dialogue.json
