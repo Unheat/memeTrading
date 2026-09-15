@@ -13,18 +13,34 @@ llm:
   # You can specify a list of model endpoints in fallback order (Primary -> Backup 1 -> Backup 2...).
   # The agent tries the first endpoint; if it fails (rate limit, offline, timeout), it automatically fails over!
   # Supports any provider supported by LiteLLM (OpenAI, 9Router, OpenRouter, Anthropic, Gemini, DeepSeek, Ollama, etc.)
+  # Each endpoint can declare api_key_env: the NAME of its key in .env.
+  # Never paste the actual secret here. If omitted, LiteLLM uses its provider-standard
+  # environment variable automatically (e.g. ANTHROPIC_API_KEY or GEMINI_API_KEY).
   models:
-    # 1. Primary endpoint (e.g. your local 9Router proxy, OpenRouter, or OpenAI)
-    - model: "stack"
+    # 1. Primary: local 9Router proxy. Uses NINEROUTER_API_KEY from .env.
+    - model: "openai/stack"
       base_url: "http://localhost:20128/v1"
+      api_key_env: "NINEROUTER_API_KEY"
 
-    # 2. (Optional) Fallback 1: OpenRouter Claude / DeepSeek
-    # - model: "openrouter/anthropic/claude-3.5-sonnet"
+    # 2. Optional fallback: OpenRouter. Uses OPENROUTER_API_KEY from .env.
+    # - model: "openrouter/anthropic/claude-sonnet-4"
     #   base_url: "https://openrouter.ai/api/v1"
+    #   api_key_env: "OPENROUTER_API_KEY"
 
-    # 3. (Optional) Fallback 2: Official OpenAI
-    # - model: "gpt-4o-mini"
+    # 3. Optional fallback: Anthropic direct. LiteLLM reads ANTHROPIC_API_KEY.
+    # - model: "anthropic/claude-sonnet-4"
     #   base_url: null
+    #   api_key_env: "ANTHROPIC_API_KEY"
+
+    # 4. Optional fallback: Gemini direct. LiteLLM reads GEMINI_API_KEY.
+    # - model: "gemini/gemini-2.5-pro"
+    #   base_url: null
+    #   api_key_env: "GEMINI_API_KEY"
+
+    # 5. Optional fallback: OpenAI direct. Uses OPENAI_API_KEY from .env.
+    # - model: "openai/gpt-4o-mini"
+    #   base_url: null
+    #   api_key_env: "OPENAI_API_KEY"
 
 media:
   # Whether to generate cited article.md and faceless reel dialogue.json

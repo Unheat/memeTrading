@@ -17,12 +17,23 @@ DEFAULT_CONFIG_PATH = Path("config.yaml")
 
 @dataclass(frozen=True)
 class ModelEndpointConfig:
-    """Configuration for a single LLM model endpoint."""
+    """Configuration for one LLM endpoint and its credential environment variable."""
 
     model: str = "gpt-5.3-codex"
     base_url: str | None = None  # None uses official provider endpoint
-    api_key: str | None = None
+    api_key_env: str | None = None  # Name only, e.g. OPENROUTER_API_KEY; secret stays in .env
     temperature: float | None = None
+
+    def resolve_api_key(self) -> str | None:
+        """Read this endpoint's credential from its configured environment variable.
+
+        Returns:
+            Secret value when configured and non-empty; otherwise None.
+        """
+        if not self.api_key_env:
+            return None
+        value = os.getenv(self.api_key_env)
+        return value.strip() if value and value.strip() else None
 
 
 @dataclass(frozen=True)
@@ -122,9 +133,16 @@ def load_config(config_path: Path | str | None = None) -> AppConfig:
                     b_url = str(b_url).strip()
                     if not b_url or b_url.lower() in ("none", "null"):
                         b_url = None
-                a_key = item.get("api_key")
+                api_key_env = item.get("api_key_env")
                 ep_temp = float(item["temperature"]) if "temperature" in item and item["temperature"] is not None else None
-                endpoint_configs.append(ModelEndpointConfig(model=m_name, base_url=b_url, api_key=a_key, temperature=ep_temp))
+                endpoint_configs.append(
+                    ModelEndpointConfig(
+                        model=m_name,
+                        base_url=b_url,
+                        api_key_env=str(api_key_env).strip() if api_key_env else None,
+                        temperature=ep_temp,
+                    )
+                )
     else:
         model_name = raw_llm.get("model") or "gpt-5.3-codex"
         base_url = raw_llm.get("base_url")

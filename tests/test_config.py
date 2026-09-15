@@ -95,20 +95,38 @@ def test_load_config_models_fallback_list(tmp_path):
 llm:
   temperature: 0.2
   models:
-    - model: "gpt-4o"
+    - model: "openai/gpt-4o"
       base_url: "http://localhost:20128/v1"
+      api_key_env: "NINEROUTER_API_KEY"
     - model: "openrouter/anthropic/claude-3.5-sonnet"
       base_url: "https://openrouter.ai/api/v1"
+      api_key_env: "OPENROUTER_API_KEY"
     - model: "deepseek/deepseek-chat"
       base_url: "https://api.deepseek.com/v1"
+      api_key_env: "DEEPSEEK_API_KEY"
 """,
         encoding="utf-8",
     )
 
     cfg = load_config(yaml_file)
     assert len(cfg.llm.models) == 3
-    assert cfg.llm.model == "gpt-4o"
+    assert cfg.llm.model == "openai/gpt-4o"
     assert cfg.llm.base_url == "http://localhost:20128/v1"
+    assert cfg.llm.models[0].api_key_env == "NINEROUTER_API_KEY"
     assert cfg.llm.models[1].model == "openrouter/anthropic/claude-3.5-sonnet"
     assert cfg.llm.models[1].base_url == "https://openrouter.ai/api/v1"
     assert cfg.llm.models[2].model == "deepseek/deepseek-chat"
+
+
+def test_model_endpoint_resolves_its_named_secret(monkeypatch):
+    """Verify each fallback endpoint reads only its declared environment key."""
+    from app.config import ModelEndpointConfig
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "router-secret")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
+    endpoint = ModelEndpointConfig(
+        model="openrouter/anthropic/claude-sonnet-4",
+        api_key_env="OPENROUTER_API_KEY",
+    )
+
+    assert endpoint.resolve_api_key() == "router-secret"

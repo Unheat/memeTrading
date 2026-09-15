@@ -103,14 +103,26 @@ def test_universal_chat_model_automatic_fallback():
         assert attempts == ["primary-model", "fallback-model"]
 
 
-def test_create_default_model_runtime_with_endpoints():
-    """Verify create_default_model_runtime creates UniversalChatModel with endpoints."""
+def test_create_default_model_runtime_with_endpoints(monkeypatch):
+    """Verify runtime resolves a distinct secret for each fallback endpoint."""
+    monkeypatch.setenv("NINEROUTER_API_KEY", "nine-secret")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deep-secret")
     endpoints = [
-        ModelEndpointConfig(model="gpt-4o", base_url="http://localhost:20128/v1"),
-        ModelEndpointConfig(model="deepseek/deepseek-chat", base_url="https://api.deepseek.com/v1"),
+        ModelEndpointConfig(
+            model="openai/gpt-4o",
+            base_url="http://localhost:20128/v1",
+            api_key_env="NINEROUTER_API_KEY",
+        ),
+        ModelEndpointConfig(
+            model="deepseek/deepseek-chat",
+            base_url="https://api.deepseek.com/v1",
+            api_key_env="DEEPSEEK_API_KEY",
+        ),
     ]
     runtime = create_default_model_runtime(endpoints=endpoints)
     assert isinstance(runtime.model, UniversalChatModel)
     assert len(runtime.model.endpoints) == 2
-    assert runtime.model.endpoints[0]["model"] == "gpt-4o"
+    assert runtime.model.endpoints[0]["model"] == "openai/gpt-4o"
+    assert runtime.model.endpoints[0]["api_key"] == "nine-secret"
     assert runtime.model.endpoints[1]["model"] == "deepseek/deepseek-chat"
+    assert runtime.model.endpoints[1]["api_key"] == "deep-secret"

@@ -112,7 +112,7 @@ class UniversalChatModel(BaseChatModel):
         for idx, ep in enumerate(target_endpoints):
             m_name = ep.get("model") or self.model
             b_url = ep.get("base_url") or self.base_url
-            a_key = ep.get("api_key") or self.api_key or os.getenv("OPENAI_API_KEY")
+            a_key = ep.get("api_key") or self.api_key
             t_val = ep.get("temperature") if ep.get("temperature") is not None else temp
 
             call_kwargs: dict[str, Any] = {
@@ -214,7 +214,7 @@ def create_default_model_runtime(
             {
                 "model": ep.model,
                 "base_url": ep.base_url,
-                "api_key": ep.api_key or api_key,
+                "api_key": ep.resolve_api_key() or api_key,
                 "temperature": ep.temperature if ep.temperature is not None else temperature,
             }
             for ep in endpoints

@@ -17,27 +17,36 @@ llm:
   #   - 0.7+: Too high for finance (risks hallucinating numbers or breaking JSON schemas).
   temperature: 0.2
 
-  # You can define a list of model endpoints in order of priority (Primary -> Backup 1 -> Backup 2...).
-  # The agent tries the first endpoint; if it fails (rate limit, offline, timeout), it automatically fails over!
-  # Supports any provider supported by LiteLLM:
-  #   - OpenAI: "gpt-5.3-codex", "gpt-4o", "gpt-4o-mini", "o1", "o3-mini"
-  #   - Anthropic: "claude-3-5-sonnet-20241022", "anthropic/claude-3.5-sonnet"
-  #   - Google Gemini: "gemini/gemini-1.5-pro", "gemini/gemini-2.0-flash"
-  #   - OpenRouter: "openrouter/anthropic/claude-3.5-sonnet", "openrouter/deepseek/deepseek-chat"
-  #   - DeepSeek: "deepseek/deepseek-chat", "deepseek/deepseek-reasoner"
-  #   - Local / 9Router / Ollama: "openai/<model_name>" with base_url: "http://localhost:20128/v1"
+  # You can define a list of model endpoints in fallback priority order.
+  # Each endpoint declares api_key_env: the NAME of its credential in .env.
+  # Never paste actual secrets into this YAML file.
+  # Supported LiteLLM prefixes include openai/, anthropic/, gemini/, openrouter/,
+  # deepseek/, ollama/, bedrock/, azure/, together_ai/, groq/, and others.
   models:
-    # 1. Primary: e.g. Local 9Router proxy, OpenRouter, or OpenAI
-    - model: "gpt-5.3-codex"
-      base_url: null # null uses official provider default URL
+    # 1. Primary example: local 9Router OpenAI-compatible proxy.
+    - model: "openai/stack"
+      base_url: "http://localhost:20128/v1"
+      api_key_env: "NINEROUTER_API_KEY"
 
-    # 2. (Optional) Backup 1: OpenRouter fallback
-    # - model: "openrouter/anthropic/claude-3.5-sonnet"
+    # 2. Optional fallback: OpenRouter.
+    # - model: "openrouter/anthropic/claude-sonnet-4"
     #   base_url: "https://openrouter.ai/api/v1"
+    #   api_key_env: "OPENROUTER_API_KEY"
 
-    # 3. (Optional) Backup 2: DeepSeek fallback
-    # - model: "deepseek/deepseek-chat"
-    #   base_url: "https://api.deepseek.com/v1"
+    # 3. Optional fallback: Anthropic direct.
+    # - model: "anthropic/claude-sonnet-4"
+    #   base_url: null
+    #   api_key_env: "ANTHROPIC_API_KEY"
+
+    # 4. Optional fallback: Gemini direct.
+    # - model: "gemini/gemini-2.5-pro"
+    #   base_url: null
+    #   api_key_env: "GEMINI_API_KEY"
+
+    # 5. Optional fallback: OpenAI direct.
+    # - model: "openai/gpt-4o-mini"
+    #   base_url: null
+    #   api_key_env: "OPENAI_API_KEY"
 
 # ------------------------------------------------------------------------------
 # 2. MEDIA & VIDEO REEL SCRIPT GENERATION

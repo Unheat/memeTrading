@@ -19,13 +19,15 @@ def get_default_sec_assessor():
 
     try:
         cfg = load_config()
-        configured_base_url = cfg.llm.base_url
-        configured_model = cfg.llm.model
+        primary_endpoint = cfg.llm.models[0]
+        configured_base_url = primary_endpoint.base_url
+        configured_model = primary_endpoint.model
+        api_key = primary_endpoint.resolve_api_key()
     except Exception:
         configured_base_url = None
-        configured_model = "gpt-5.3-codex"
+        configured_model = "openai/gpt-4o-mini"
+        api_key = os.environ.get("OPENAI_API_KEY")
 
-    api_key = os.environ.get("OPENAI_API_KEY")
     base_url = (configured_base_url or "https://api.openai.com/v1").strip().rstrip("/")
     model = configured_model
 
