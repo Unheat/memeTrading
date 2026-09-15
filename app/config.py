@@ -10,9 +10,11 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from dotenv import load_dotenv
 
 SUPPORTED_CHARACTER_PAIRS = frozenset({"peter_stewie", "rick_morty"})
 DEFAULT_CONFIG_PATH = Path("config.yaml")
+DEFAULT_ENV_PATH = Path(".env")
 
 
 @dataclass(frozen=True)
@@ -96,16 +98,22 @@ class AppConfig:
     research: ResearchConfig = field(default_factory=ResearchConfig)
 
 
-def load_config(config_path: Path | str | None = None) -> AppConfig:
-    """Load user settings from a YAML file; environment remains secrets-only.
+def load_config(
+    config_path: Path | str | None = None,
+    env_path: Path | str | None = None,
+) -> AppConfig:
+    """Load secrets from .env and non-secret settings from YAML.
 
     Args:
         config_path: Optional path to config.yaml. Defaults to 'config.yaml'.
+        env_path: Optional path to .env. Defaults to sibling of config file.
 
     Returns:
-        Validated AppConfig instance.
+        Validated AppConfig instance with endpoint credential references.
     """
     path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
+    resolved_env_path = Path(env_path) if env_path else path.parent / DEFAULT_ENV_PATH
+    load_dotenv(resolved_env_path, override=False)
     data: dict[str, Any] = {}
 
     if path.exists():

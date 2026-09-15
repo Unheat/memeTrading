@@ -130,3 +130,21 @@ def test_model_endpoint_resolves_its_named_secret(monkeypatch):
     )
 
     assert endpoint.resolve_api_key() == "router-secret"
+
+
+def test_load_config_loads_endpoint_secret_from_dotenv(tmp_path, monkeypatch):
+    """Verify local .env credentials are available to configured endpoints."""
+    monkeypatch.delenv("NINEROUTER_API_KEY", raising=False)
+    env_file = tmp_path / ".env"
+    env_file.write_text('NINEROUTER_API_KEY="local-nine-secret"\n', encoding="utf-8")
+    yaml_file = tmp_path / "config.yaml"
+    yaml_file.write_text(
+        "llm:\n  models:\n    - model: 'openai/stack'\n"
+        "      base_url: 'http://localhost:20128/v1'\n"
+        "      api_key_env: 'NINEROUTER_API_KEY'\n",
+        encoding="utf-8",
+    )
+
+    cfg = load_config(yaml_file)
+
+    assert cfg.llm.models[0].resolve_api_key() == "local-nine-secret"

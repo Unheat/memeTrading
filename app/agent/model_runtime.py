@@ -113,7 +113,16 @@ class UniversalChatModel(BaseChatModel):
             m_name = ep.get("model") or self.model
             b_url = ep.get("base_url") or self.base_url
             a_key = ep.get("api_key") or self.api_key
+            key_env = ep.get("api_key_env")
             t_val = ep.get("temperature") if ep.get("temperature") is not None else temp
+
+            if key_env and not a_key:
+                last_error = ValueError(
+                    f"Missing credential {key_env!r} for model {m_name!r}. "
+                    "Add it to .env or remove this endpoint from config.yaml."
+                )
+                logger.warning("Skipping LLM endpoint #%d: %s", idx + 1, last_error)
+                continue
 
             call_kwargs: dict[str, Any] = {
                 "model": m_name,
@@ -215,6 +224,7 @@ def create_default_model_runtime(
                 "model": ep.model,
                 "base_url": ep.base_url,
                 "api_key": ep.resolve_api_key() or api_key,
+                "api_key_env": ep.api_key_env,
                 "temperature": ep.temperature if ep.temperature is not None else temperature,
             }
             for ep in endpoints

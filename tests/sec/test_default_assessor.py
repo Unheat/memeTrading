@@ -2,6 +2,7 @@
 import os
 from unittest.mock import patch, MagicMock
 import pytest
+from app.config import AppConfig, LLMConfig, ModelEndpointConfig
 from app.sec.default_assessor import get_default_sec_assessor
 from app.sec.corpus import CorpusChunk
 from app.sec.retrieval import RetrievedSecChunk
@@ -31,8 +32,17 @@ def _make_retrieved_chunk(chunk_id: str, text: str) -> RetrievedSecChunk:
     )
 
 
+def _keyless_config() -> AppConfig:
+    """Return configuration whose primary endpoint has no credential source."""
+    return AppConfig(
+        llm=LLMConfig(models=[ModelEndpointConfig(model="openai/gpt-4o-mini")])
+    )
+
+
 def test_default_assessor_offline_fallback():
-    with patch.dict("os.environ", {}, clear=True):
+    with patch.dict("os.environ", {}, clear=True), patch(
+        "app.config.load_config", return_value=_keyless_config()
+    ):
         assessor = get_default_sec_assessor()
         assert callable(assessor)
 
@@ -48,7 +58,9 @@ def test_default_assessor_offline_fallback():
 
 
 def test_default_assessor_insufficient_evidence():
-    with patch.dict("os.environ", {}, clear=True):
+    with patch.dict("os.environ", {}, clear=True), patch(
+        "app.config.load_config", return_value=_keyless_config()
+    ):
         assessor = get_default_sec_assessor()
         res = assessor("Unrelated aerospace satellite launch", [])
         assert res["verdict"] == "INSUFFICIENT_EVIDENCE"

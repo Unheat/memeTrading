@@ -8,6 +8,7 @@ langgraph>=0.2,<1
 litellm>=1.40.0
 numpy>=2.0,<3
 openai>=1.0,<3
+python-dotenv>=1.0,<2
 rank-bm25>=0.2,<1
 trafilatura>=1.12,<2
 yfinance>=0.2,<2

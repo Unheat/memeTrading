@@ -82,8 +82,17 @@ def test_verify_sec_claim_tool_wires_embedder_and_assessor(tmp_path):
     tools = create_agent_tools(cases_root=tmp_path)
     verify_tool = next(t for t in tools if t.name == "verify_sec_claim")
 
-    # Invoking verify_sec_claim should automatically prepare, index, and verify!
-    output_str = verify_tool.invoke({"corpus_id": case_id, "claim": "Gross margin expanded to 36 percent"})
+    # Invoking verify_sec_claim should automatically prepare, index, and verify.
+    # Force the deterministic assessor so this unit test never reads local secrets or calls a network.
+    from app.sec.default_assessor import get_default_sec_assessor
+    from app.config import AppConfig, LLMConfig, ModelEndpointConfig
+    keyless_config = AppConfig(
+        llm=LLMConfig(models=[ModelEndpointConfig(model="openai/gpt-4o-mini")])
+    )
+    with patch.dict("os.environ", {}, clear=True), patch(
+        "app.config.load_config", return_value=keyless_config
+    ):
+        output_str = verify_tool.invoke({"corpus_id": case_id, "claim": "Gross margin expanded to 36 percent"})
     import json
     data = json.loads(output_str)
     assert data.get("status") == "ok"

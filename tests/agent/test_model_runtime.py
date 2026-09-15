@@ -103,6 +103,23 @@ def test_universal_chat_model_automatic_fallback():
         assert attempts == ["primary-model", "fallback-model"]
 
 
+def test_universal_chat_model_skips_missing_named_credential():
+    """Verify missing endpoint credentials produce one actionable local error."""
+    model = UniversalChatModel(
+        endpoints=[
+            {
+                "model": "openai/stack",
+                "base_url": "http://localhost:20128/v1",
+                "api_key": None,
+                "api_key_env": "NINEROUTER_API_KEY",
+            }
+        ]
+    )
+
+    with pytest.raises(RuntimeError, match="NINEROUTER_API_KEY"):
+        model.invoke([HumanMessage(content="Hello")])
+
+
 def test_create_default_model_runtime_with_endpoints(monkeypatch):
     """Verify runtime resolves a distinct secret for each fallback endpoint."""
     monkeypatch.setenv("NINEROUTER_API_KEY", "nine-secret")
