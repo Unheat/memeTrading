@@ -67,7 +67,7 @@ class AppConfig:
 
 
 def load_config(config_path: Path | str | None = None) -> AppConfig:
-    """Load configuration from a YAML file with environment variable overrides.
+    """Load user settings from a YAML file; environment remains secrets-only.
 
     Args:
         config_path: Optional path to config.yaml. Defaults to 'config.yaml'.
@@ -87,10 +87,10 @@ def load_config(config_path: Path | str | None = None) -> AppConfig:
         except Exception as exc:
             raise ValueError(f"Failed to parse config file at {path}: {exc}") from exc
 
-    # Parse LLM config with env overrides
+    # Parse non-secret LLM settings from config.yaml only.
     raw_llm = data.get("llm", {}) or {}
-    model_name = os.getenv("OUTER_AGENT_MODEL") or raw_llm.get("model") or "gpt-5.3-codex"
-    base_url = os.getenv("OPENAI_BASE_URL") or os.getenv("LLM_BASE_URL") or raw_llm.get("base_url")
+    model_name = raw_llm.get("model") or "gpt-5.3-codex"
+    base_url = raw_llm.get("base_url")
     if base_url:
         base_url = str(base_url).strip()
         if not base_url or base_url.lower() in ("none", "null"):
@@ -99,12 +99,12 @@ def load_config(config_path: Path | str | None = None) -> AppConfig:
 
     llm_cfg = LLMConfig(model=model_name, base_url=base_url, temperature=temp)
 
-    # Parse Media config with env overrides
+    # Parse non-secret media settings from config.yaml only.
     raw_media = data.get("media", {}) or {}
     gen_media = raw_media.get("generate_media", True) if "generate_media" in raw_media else True
-    char_pair = os.getenv("CHARACTER_PAIR") or raw_media.get("character_pair") or "peter_stewie"
-    raw_reel_temp = os.getenv("REEL_TEMPERATURE") or raw_media.get("reel_temperature", 0.4)
-    raw_fish_model = os.getenv("FISH_MODEL") or raw_media.get("fish_model", "s2")
+    char_pair = raw_media.get("character_pair") or "peter_stewie"
+    raw_reel_temp = raw_media.get("reel_temperature", 0.4)
+    raw_fish_model = raw_media.get("fish_model", "s2")
     media_cfg = MediaConfig(
         generate_media=bool(gen_media),
         character_pair=str(char_pair),

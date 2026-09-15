@@ -6,7 +6,7 @@
 
 llm:
   # Model name for the outer research agent (e.g. gpt-5.3-codex, gpt-4o, etc.)
-  model: "gpt-5.3-codex"
+  model: "stack"
 
   # Optional OpenAI-compatible base URL.
   # Leave as null for official OpenAI, or set for OpenRouter, DeepSeek, etc.

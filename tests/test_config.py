@@ -64,15 +64,24 @@ research:
     assert cfg.research.benchmark_ticker == "QQQ"
 
 
-def test_load_config_env_overrides(tmp_path, monkeypatch):
+def test_load_config_ignores_non_secret_environment_settings(tmp_path, monkeypatch):
+    """Verify config.yaml is the sole source for non-secret user settings."""
     yaml_file = tmp_path / "test_config.yaml"
-    yaml_file.write_text("llm:\n  model: 'gpt-4o'\nmedia:\n  character_pair: 'peter_stewie'", encoding="utf-8")
+    yaml_file.write_text(
+        "llm:\n  model: 'gpt-4o'\n  base_url: 'https://provider.example/v1'\n"
+        "media:\n  character_pair: 'peter_stewie'\n  reel_temperature: 0.4\n  fish_model: 's2-free'",
+        encoding="utf-8",
+    )
 
-    monkeypatch.setenv("OUTER_AGENT_MODEL", "gpt-5.3-codex-override")
+    monkeypatch.setenv("OUTER_AGENT_MODEL", "ignored-model")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://ignored.example/v1")
     monkeypatch.setenv("CHARACTER_PAIR", "rick_morty")
-    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.deepseek.com/v1")
+    monkeypatch.setenv("REEL_TEMPERATURE", "1.0")
+    monkeypatch.setenv("FISH_MODEL", "ignored-model")
 
     cfg = load_config(yaml_file)
-    assert cfg.llm.model == "gpt-5.3-codex-override"
-    assert cfg.llm.base_url == "https://api.deepseek.com/v1"
-    assert cfg.media.character_pair == "rick_morty"
+    assert cfg.llm.model == "gpt-4o"
+    assert cfg.llm.base_url == "https://provider.example/v1"
+    assert cfg.media.character_pair == "peter_stewie"
+    assert cfg.media.reel_temperature == pytest.approx(0.4)
+    assert cfg.media.fish_model == "s2-free"
