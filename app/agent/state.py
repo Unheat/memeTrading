@@ -5,7 +5,6 @@ Donor provenance: adapted from reference/ai-financial-research-agent/app/agent/s
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from typing import Annotated, Any, Literal, Sequence, TypedDict
 
@@ -17,7 +16,7 @@ ResearchDepth = Literal["standard", "deep"]
 
 @dataclass(frozen=True)
 class BudgetLimits:
-    """Per-investigation execution limits.
+    """Multi-dimensional hierarchical execution limits (Breadth x Depth).
 
     Args:
         max_total_tool_calls: Hard safety ceiling on total tool executions.
@@ -38,17 +37,17 @@ class BudgetLimits:
 
     @property
     def max_tool_calls(self) -> int:
-        """Alias for backward compatibility with external runners."""
+        """Alias for backward compatibility."""
         return self.max_total_tool_calls
 
 
 @dataclass(frozen=True)
 class ResearchIntent:
-    """Structured scope that informs the graph.
+    """Structured scope derived strictly from model planning without regex heuristics.
 
     Args:
         explicit_subjects: Identifiers explicitly provided by the caller.
-        requested_ranking_count: Explicit ranking count parsed from user prompt.
+        requested_ranking_count: Explicit ranking count parsed from model plan.
         requires_candidate_workspaces: Whether candidate registration is required.
         requested_position_decision: Whether the user explicitly asks for a position decision.
 
@@ -63,7 +62,7 @@ class ResearchIntent:
 
     @classmethod
     def from_plan(cls, plan_dict: dict[str, Any], explicit_subjects: tuple[str, ...] = ()) -> ResearchIntent:
-        """Construct intent directly from a structured ResearchPlanSchema dictionary."""
+        """Construct intent directly from a model-generated ResearchPlanSchema dictionary."""
         ranking_count = plan_dict.get("ranking_count")
         requires_workspaces = bool(
             plan_dict.get("requires_candidate_workspaces")
@@ -79,11 +78,7 @@ class ResearchIntent:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize intent for prompts and persisted case artifacts.
-
-        Returns:
-            JSON-compatible intent data.
-        """
+        """Serialize intent for prompts and persisted case artifacts."""
         return {
             "explicit_subjects": list(self.explicit_subjects),
             "requested_ranking_count": self.requested_ranking_count,
@@ -108,7 +103,7 @@ class ResearchRequest:
         depth: Research breadth policy.
 
     Returns:
-        Normalized immutable request without a mode or profile.
+        Normalized immutable request without hardcoded modes or profiles.
     """
 
     query: str
@@ -120,13 +115,11 @@ class ResearchRequest:
     budget: BudgetLimits = field(default_factory=BudgetLimits)
     template_version: str | None = None
     depth: ResearchDepth = "deep"
+    requested_ranking_count: int | None = None
+    requested_position_decision: bool | None = None
 
     def __post_init__(self) -> None:
-        """Validate input and normalize explicit identifiers.
-
-        Raises:
-            ValueError: If the prompt or depth is invalid.
-        """
+        """Validate input and normalize explicit identifiers."""
         if not self.query or not isinstance(self.query, str) or not self.query.strip():
             raise ValueError("query must be a non-empty string")
         if self.ticker is not None and self.ticker.strip():
@@ -137,32 +130,31 @@ class ResearchRequest:
             raise ValueError("depth must be standard or deep")
 
     def resolve_intent(self) -> ResearchIntent:
-        """Extract structural constraints from user request supporting natural variations."""
-        subjects = tuple(value for value in (self.ticker, self.company) if value)
-        query = self.query
-        # Extract ranking count from both 'top 5' / 'best 5' and '5 best' / '5 stocks' / 'compare 3'
-        m = re.search(r"\b(?:top|best|rank(?:ed|ing)?|compare)\s+(\d+)\b", query, re.IGNORECASE)
-        requested_count = int(m.group(1)) if m and int(m.group(1)) > 0 else None
-        if requested_count is None:
-            m2 = re.search(r"\b(\d+)\s+(?:top|best|stocks?|tech|companies|candidates|opportunities|peers)\b", query, re.IGNORECASE)
-            if m2 and int(m2.group(1)) > 0:
-                requested_count = int(m2.group(1))
+        """Initialize clean baseline research intent from caller-provided entities."""
+        import re
 
-        norm = query.casefold()
-        requires_candidates = bool(
-            requested_count is not None
-            or any(w in norm for w in ("compare", "rank", "stocks", "companies", "candidates", "stocl", "peers"))
-            or (self.ticker is None and self.company is None)
-        )
-        position_words = (
-            "allocate", "position size", "buy now", "sell now",
-            "investment recommendation", "recommendation for", "buy right now",
-        )
+        subjects = tuple(value for value in (self.ticker, self.company) if value)
+        pos_decision = self.requested_position_decision
+        if pos_decision is None:
+            norm = self.query.casefold()
+            pos_decision = bool(
+                self.ticker
+                and any(w in norm for w in ("recommendation", "buy", "sell", "allocate", "position"))
+            )
+
+        ranking_count = self.requested_ranking_count
+        if ranking_count is None:
+            m = re.search(r"\b(?:top|best|rank(?:ed|ing)?|compare)\s+(\d+)\b", self.query, re.IGNORECASE)
+            if not m:
+                m = re.search(r"\b(\d+)\s+(?:top|best|stocks?|companies|candidates|peers)\b", self.query, re.IGNORECASE)
+            if m:
+                ranking_count = int(m.group(1))
+
         return ResearchIntent(
             explicit_subjects=subjects,
-            requested_ranking_count=requested_count,
-            requires_candidate_workspaces=requires_candidates,
-            requested_position_decision=any(word in norm for word in position_words),
+            requested_ranking_count=ranking_count,
+            requires_candidate_workspaces=bool(ranking_count or (not self.ticker and not self.company)),
+            requested_position_decision=pos_decision,
         )
 
 

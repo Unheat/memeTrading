@@ -1,8 +1,11 @@
-"""Multi-stage, model-directed LangGraph workflow for deep research.
+"""Multi-stage, model-directed LangGraph workflow for universal deep research.
 
 Donor provenance: planner and reflection supervisor concepts adapted from
 LangChain Open Deep Research and GPT Researcher (skills/deep_research.py:259-378).
-Local state transitions, candidate isolation, and financial accounting gates are locally written.
+Specialist lenses (expectations, forensic accounting, moat, quant valuation via calculator.mjs,
+bull/bear adversarial debate, and committee deliberation) are adapted from
+reference/investment-research and reference/ai-hedge-fund.
+All stages execute continuously and gracefully without abort tripwires.
 """
 from __future__ import annotations
 
@@ -17,7 +20,7 @@ from langgraph.prebuilt import ToolNode
 
 from app.agent.adversarial import run_adversarial_red_team
 from app.agent.bull import run_bull_advocate
-from app.agent.committee import ICVerdict, run_investment_committee
+from app.agent.committee import run_investment_committee
 from app.agent.context import ModelContextPolicy, TokenCounter, conservative_token_counter, prepare_context
 from app.agent.expectations import run_expectations_analyst
 from app.agent.gate import (
@@ -72,31 +75,14 @@ def _has_evidence_gaps(state: InvestigationState) -> bool:
     return False
 
 
-def _requires_investment_funnel(state: InvestigationState) -> bool:
-    """Return whether explicit single-company position intent may enter G1--G4.
-
-    Args:
-        state: Completed collection state.
-
-    Returns:
-        True only for an explicit position request with one named target.
-    """
-    intent = state.get("research_intent") or {}
-    return (
-        bool(intent.get("requested_position_decision"))
-        and not bool(intent.get("requested_ranking_count"))
-        and bool(state.get("ticker"))
-    )
-
-
-def should_continue_executor(state: InvestigationState) -> Literal["tools", "reflect", "next"]:
-    """Route pending model tool calls, trigger reflection on gaps, or proceed to gates.
+def should_continue_executor(state: InvestigationState) -> Literal["tools", "reflect", "diligence_prep"]:
+    """Route pending model tool calls, trigger reflection on gaps, or proceed to analysis lenses.
 
     Args:
         state: Current investigation state.
 
     Returns:
-        ``tools`` when calls remain, ``reflect`` when model completed turn, otherwise ``next``.
+        ``tools`` when calls remain, ``reflect`` when model completed turn, otherwise ``diligence_prep``.
     """
     messages = state.get("messages", [])
     tool_calls = getattr(messages[-1], "tool_calls", None) if messages else None
@@ -106,7 +92,7 @@ def should_continue_executor(state: InvestigationState) -> Literal["tools", "ref
 
     if tool_calls:
         prior = tool_calls_done - len(tool_calls)
-        return "tools" if prior < max_calls else "next"
+        return "tools" if prior < max_calls else "diligence_prep"
 
     reflection_count = budget.get("reflection_count", 0)
     max_reflections = budget.get("max_reflection_rounds", 2)
@@ -114,31 +100,30 @@ def should_continue_executor(state: InvestigationState) -> Literal["tools", "ref
     if tool_calls_done < max_calls and reflection_count < max_reflections:
         return "reflect"
 
-    return "next"
+    return "diligence_prep"
 
 
-def should_continue_reflection(state: InvestigationState) -> Literal["executor", "next"]:
+def should_continue_reflection(state: InvestigationState) -> Literal["executor", "diligence_prep"]:
     """Decide whether to execute another research round based on reflection output.
 
     Args:
         state: State after reflection node.
 
     Returns:
-        ``executor`` if follow-up work was proposed, else ``next`` to proceed to gate G1.
+        ``executor`` if follow-up work was proposed, else ``diligence_prep`` to proceed forward.
     """
     budget = state.get("budget_state", {})
     max_calls = budget.get("max_tool_calls") if budget.get("max_tool_calls") is not None else budget.get("max_total_tool_calls", 35)
     tool_calls_done = state.get("tool_calls", 0)
 
     if tool_calls_done >= max_calls:
-        return "next"
+        return "diligence_prep"
 
-    # If the last message is a HumanMessage injected by reflection, route back to executor
     messages = state.get("messages", [])
     if messages and isinstance(messages[-1], HumanMessage) and "DEEP RESEARCH GAP REFLECTION" in str(messages[-1].content):
         return "executor"
 
-    return "next"
+    return "diligence_prep"
 
 
 def create_research_graph(
@@ -148,7 +133,7 @@ def create_research_graph(
     context_policy: ModelContextPolicy | None = None,
     token_counter: TokenCounter = conservative_token_counter,
 ):
-    """Compile a multi-stage deep research graph with planning, reflection, and diligence gates.
+    """Compile a multi-stage deep research graph with planning, reflection, and non-blocking specialist lenses.
 
     Args:
         model: Tool-capable research model.
@@ -158,7 +143,7 @@ def create_research_graph(
         token_counter: Context token estimator.
 
     Returns:
-        Compiled StateGraph.
+        Compiled StateGraph with continuous, non-blocking flow.
     """
     model_with_tools = model.bind_tools(tools) if hasattr(model, "bind_tools") else model
     policy = context_policy or ModelContextPolicy()
@@ -173,7 +158,6 @@ def create_research_graph(
         company = state.get("company") or None
         intent_dict = state.get("research_intent") or {}
 
-        # For offline scripted test doubles, construct plan directly from intent without consuming mock turns
         if not hasattr(model, "with_structured_output"):
             plan = ResearchPlanSchema(
                 brief=str(query),
@@ -188,7 +172,7 @@ def create_research_graph(
         try:
             plan = generate_research_plan(model, str(query), ticker=ticker, company=company)
         except Exception as exc:
-            logger.warning("Structured planner failed (%s); using default plan", exc)
+            logger.warning("Structured planner failed (%s); using fallback plan", exc)
             plan = ResearchPlanSchema(
                 brief=str(query),
                 research_type="single_diligence" if ticker else ("multi_candidate_ranking" if intent_dict.get("requires_candidate_workspaces") else "general_deep_dive"),
@@ -260,7 +244,6 @@ def create_research_graph(
             except Exception as exc:
                 logger.warning("Structured reflection failed (%s); using deterministic check", exc)
 
-        # Deterministic checks
         deterministic_gaps = []
         if candidates and not comparisons and len(candidates) > 1:
             deterministic_gaps.append("Cross-candidate comparison matrix is missing; call `compare_candidates`.")
@@ -294,7 +277,6 @@ def create_research_graph(
                     all_gaps.append(g)
 
         is_complete = not all_gaps and (reflection.is_research_complete if reflection else True)
-
         max_reflections = budget.get("max_reflection_rounds", 2)
         if not is_complete and ref_count <= max_reflections:
             prompt_lines = [
@@ -313,47 +295,102 @@ def create_research_graph(
 
         return {"budget_state": new_budget}
 
-    def g1(state: InvestigationState) -> dict[str, Any]:
-        """Stage 4: Evaluate the prompt-appropriate evidence threshold."""
+    def diligence_prep_node(state: InvestigationState) -> dict[str, Any]:
+        """Evaluate evidence completeness audit score before specialist lenses."""
         outcome = evaluate_research_completeness(state)
         return {"evidence_gate": outcome, "status": outcome["status"]}
 
-    def g2(state: InvestigationState) -> dict[str, Any]:
-        """Evaluate accounting completeness for explicit single-company diligence."""
-        outcome = evaluate_accounting_gate(state)
-        return {"accounting_gate": outcome, "status": outcome["status"]}
+    def specialist_diligence_node(state: InvestigationState) -> dict[str, Any]:
+        """Execute expectations, forensic accounting, thematic, sector, and moat lenses."""
+        updates: dict[str, Any] = {}
+        try:
+            updates.update(run_expectations_analyst(state, model))
+        except Exception as exc:
+            logger.warning("run_expectations_analyst failed: %s", exc)
 
-    def g3(state: InvestigationState) -> dict[str, Any]:
-        """Evaluate valuation reproducibility for explicit single-company diligence."""
-        outcome = evaluate_valuation_gate(state)
-        return {"valuation_gate": outcome, "status": outcome["status"]}
+        st = {**state, **updates}
+        try:
+            updates.update(run_forensic_analysis(st, model))
+        except Exception as exc:
+            logger.warning("run_forensic_analysis failed: %s", exc)
 
-    def g4(state: InvestigationState) -> dict[str, Any]:
-        """Evaluate deterministic asymmetry for explicit single-company diligence."""
-        outcome = evaluate_asymmetry_gate(state)
-        return {"asymmetry_gate": outcome, "status": outcome["status"]}
+        st = {**state, **updates}
+        try:
+            updates.update(run_thematic_analysis(st, model))
+        except Exception as exc:
+            logger.warning("run_thematic_analysis failed: %s", exc)
 
-    def validation_finalizer(state: InvestigationState) -> dict[str, Any]:
-        """Finalize a failed diligence gate without inventing a position."""
-        gate = next(
-            (
-                item
-                for item in (state.get("asymmetry_gate"), state.get("valuation_gate"), state.get("accounting_gate"))
-                if item and not item.get("passed")
-            ),
-            {},
-        )
-        reason = gate.get("reason", "required validation is unavailable")
-        verdict = ICVerdict(
-            ticker=state.get("ticker") or "UNKNOWN",
-            verdict="VALIDATION_WATCH",
-            conviction_tier="VALIDATION",
-            reward_to_risk_ratio=None,
-            kelly_position_size_pct=0.0,
-            passing_discipline_checks={"validation_gate": f"FAIL ({reason})"},
-            cio_deliberation_summary=f"Validation required: {reason}. Zero capital allocated.",
-        )
-        return {"ic_verdict": verdict, "status": "validation_required"}
+        st = {**state, **updates}
+        try:
+            updates.update(run_sector_analysis(st, model))
+        except Exception as exc:
+            logger.warning("run_sector_analysis failed: %s", exc)
+
+        st = {**state, **updates}
+        try:
+            updates.update(run_moat_analysis(st, model))
+        except Exception as exc:
+            logger.warning("run_moat_analysis failed: %s", exc)
+
+        st = {**state, **updates}
+        updates["accounting_gate"] = evaluate_accounting_gate(st)
+        return updates
+
+    def quant_valuation_node(state: InvestigationState) -> dict[str, Any]:
+        """Execute deterministic DCF and Beneish M-Score quant modeling."""
+        updates: dict[str, Any] = {}
+        try:
+            updates.update(run_quant_analysis(state))
+        except Exception as exc:
+            logger.warning("run_quant_analysis failed: %s", exc)
+        st = {**state, **updates}
+        updates["valuation_gate"] = evaluate_valuation_gate(st)
+        return updates
+
+    def adversarial_debate_node(state: InvestigationState) -> dict[str, Any]:
+        """Execute air-gapped Bull Advocate and Hostile Short-Seller Red Team."""
+        updates: dict[str, Any] = {}
+        try:
+            updates.update(run_bull_advocate(state, model))
+        except Exception as exc:
+            logger.warning("run_bull_advocate failed: %s", exc)
+
+        st = {**state, **updates}
+        try:
+            updates.update(run_adversarial_red_team(st, model))
+        except Exception as exc:
+            logger.warning("run_adversarial_red_team failed: %s", exc)
+
+        st = {**state, **updates}
+        updates["asymmetry_gate"] = evaluate_asymmetry_gate(st)
+        return updates
+
+    def committee_node(state: InvestigationState) -> dict[str, Any]:
+        """Execute Chief Investment Officer deliberation and evidence audit scoring."""
+        updates: dict[str, Any] = {}
+        try:
+            updates.update(run_investment_committee(state, model))
+        except Exception as exc:
+            logger.warning("run_investment_committee failed: %s", exc)
+
+        st = {**state, **updates}
+        outcome = evaluate_research_completeness(st)
+        updates["evidence_gate"] = outcome
+
+        # For explicit position decision requests, reflect validation status if gates failed
+        if (
+            st.get("accounting_gate", {}).get("passed") is False
+            or st.get("valuation_gate", {}).get("passed") is False
+            or st.get("asymmetry_gate", {}).get("passed") is False
+        ):
+            if (st.get("research_intent") or {}).get("requested_position_decision") and st.get("ticker"):
+                updates["status"] = "validation_required"
+            else:
+                updates["status"] = outcome["status"]
+        else:
+            updates["status"] = outcome["status"]
+
+        return updates
 
     workflow = StateGraph(InvestigationState)
     for name, node in {
@@ -362,24 +399,15 @@ def create_research_graph(
         "tools": ToolNode(tools),
         "ingest": ingest_node,
         "reflect": reflection_node,
-        "gate_g1": g1,
-        "q1_expectations": lambda s: run_expectations_analyst(s, model),
-        "forensic": lambda s: run_forensic_analysis(s, model),
-        "thematic": lambda s: run_thematic_analysis(s, model),
-        "gate_g2": g2,
-        "sector": lambda s: run_sector_analysis(s, model),
-        "moat": lambda s: run_moat_analysis(s, model),
-        "quant": run_quant_analysis,
-        "gate_g3": g3,
-        "bull": lambda s: run_bull_advocate(s, model),
-        "bear": lambda s: run_adversarial_red_team(s, model),
-        "gate_g4": g4,
-        "committee": lambda s: run_investment_committee(s, model),
-        "validation_finalizer": validation_finalizer,
+        "diligence_prep": diligence_prep_node,
+        "specialist_diligence": specialist_diligence_node,
+        "quant_valuation": quant_valuation_node,
+        "adversarial_debate": adversarial_debate_node,
+        "committee": committee_node,
     }.items():
         workflow.add_node(name, node)
 
-    # Workflow entry point is the structured planner
+    # Entry point is structured planning
     workflow.set_entry_point("planner")
     workflow.add_edge("planner", "executor")
 
@@ -387,7 +415,7 @@ def create_research_graph(
     workflow.add_conditional_edges(
         "executor",
         should_continue_executor,
-        {"tools": "tools", "reflect": "reflect", "next": "gate_g1"},
+        {"tools": "tools", "reflect": "reflect", "diligence_prep": "diligence_prep"},
     )
     workflow.add_edge("tools", "ingest")
     workflow.add_edge("ingest", "executor")
@@ -395,41 +423,18 @@ def create_research_graph(
     workflow.add_conditional_edges(
         "reflect",
         should_continue_reflection,
-        {"executor": "executor", "next": "gate_g1"},
+        {"executor": "executor", "diligence_prep": "diligence_prep"},
     )
 
-    # Gate G1 routing
+    # If evidence gate passes, proceed to specialist analysis; if insufficient, stop cleanly
     workflow.add_conditional_edges(
-        "gate_g1",
-        lambda state: "q1_expectations" if state["evidence_gate"].get("passed") and _requires_investment_funnel(state) else "end",
-        {"q1_expectations": "q1_expectations", "end": END},
+        "diligence_prep",
+        lambda s: "specialist_diligence" if s.get("evidence_gate", {}).get("passed") else "end",
+        {"specialist_diligence": "specialist_diligence", "end": END},
     )
-
-    # Diligence pipeline for single-company investment decisions
-    workflow.add_edge("q1_expectations", "forensic")
-    workflow.add_edge("forensic", "thematic")
-    workflow.add_edge("thematic", "gate_g2")
-    workflow.add_conditional_edges(
-        "gate_g2",
-        lambda state: "sector" if state["accounting_gate"].get("passed") else "validation_finalizer",
-        {"sector": "sector", "validation_finalizer": "validation_finalizer"},
-    )
-    workflow.add_edge("sector", "moat")
-    workflow.add_edge("moat", "quant")
-    workflow.add_edge("quant", "gate_g3")
-    workflow.add_conditional_edges(
-        "gate_g3",
-        lambda state: "bull" if state["valuation_gate"].get("passed") else "validation_finalizer",
-        {"bull": "bull", "validation_finalizer": "validation_finalizer"},
-    )
-    workflow.add_edge("bull", "bear")
-    workflow.add_edge("bear", "gate_g4")
-    workflow.add_conditional_edges(
-        "gate_g4",
-        lambda state: "committee" if state["asymmetry_gate"].get("passed") else "validation_finalizer",
-        {"committee": "committee", "validation_finalizer": "validation_finalizer"},
-    )
+    workflow.add_edge("specialist_diligence", "quant_valuation")
+    workflow.add_edge("quant_valuation", "adversarial_debate")
+    workflow.add_edge("adversarial_debate", "committee")
     workflow.add_edge("committee", END)
-    workflow.add_edge("validation_finalizer", END)
 
     return workflow.compile(checkpointer=checkpointer)

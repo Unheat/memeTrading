@@ -289,9 +289,6 @@ def render_forensic_memo(state: InvestigationState, final_text: str) -> str:
     :param final_text: Final synthesis text produced by the model.
     :returns: Formatted Markdown string.
     """
-    if state.get("mode") == "screen":
-        return _render_screen_memo(state)
-
     ticker = state.get("ticker") or "UNKNOWN"
     company = state.get("company") or "N/A"
     gate = state.get("evidence_gate") or {}
@@ -333,6 +330,7 @@ Validation required.
 ## 8. Forensic Conclusion
 Research validation incomplete — no position and no target.
 """
+
     cik = state.get("cik") or "N/A"
     case_id = state.get("case_id") or "N/A"
     confidence = state.get("confidence")
@@ -370,7 +368,6 @@ Research validation incomplete — no position and no target.
             filing_date = ev.get("filing_date") or "N/A"
             source_url = ev.get("source_url") or "N/A"
             quote = ev.get("quote") or "N/A"
-            # Clean newlines in table quotes
             quote_clean = quote.replace("\n", " ").replace("|", "\\|")
             sec_rows.append(f"| {form} | `{accession}` | {filing_date} | [{form} Source]({source_url}) | \"{quote_clean}\" |")
     else:
@@ -400,41 +397,6 @@ Research validation incomplete — no position and no target.
     else:
         bull_items = ["- Fundamental catalysts under evaluation."]
 
-    q1_payload = {
-        "expectation_gap": state.get("expectation_gap") or "Unavailable — not inferred.",
-        "consensus_snapshot": state.get("consensus_snapshot") or "Unavailable — not inferred.",
-    }
-    q2_payload = {
-        "forensic_accounting": state.get("forensic_report") or "Unavailable — not inferred.",
-        "thematic_analysis": state.get("thematic_report") or "Unavailable — not inferred.",
-        "sector_analysis": state.get("sector_report") or "Unavailable — not inferred.",
-        "moat_analysis": state.get("moat_report") or "Unavailable — not inferred.",
-        "quant_valuation": state.get("quant_report") or "Unavailable — not inferred.",
-    }
-    q3_payload = {
-        "bull_advocate": state.get("bull_report") or "Unavailable — not inferred.",
-        "adversarial_red_team": state.get("adversarial_report") or "Unavailable — not inferred.",
-        "investment_committee": state.get("ic_verdict") or "Unavailable — not inferred.",
-    }
-    funnel = f"""## Investment Decision Funnel
-
-### Q1. What is Wall Street pricing in? — Mauboussin
-```json
-{json.dumps(q1_payload, indent=2, default=str)}
-```
-
-### Q2. What is reality actually doing? — Fisher + Lynch
-```json
-{json.dumps(q2_payload, indent=2, default=str)}
-```
-
-### Q3. Is the variant perception tradeable? — Hedge-Fund Asymmetry
-```json
-{json.dumps(q3_payload, indent=2, default=str)}
-```
-"""
-
-
     memo = f"""# Meme Market Forensic Memo: ${ticker}
 
 **Target Company**: {company}  
@@ -442,10 +404,6 @@ Research validation incomplete — no position and no target.
 **Case Reference**: `{case_id}`  
 **Investigation Timestamp**: {now_utc}  
 **Confidence Score**: {conf_str}  
-
----
-
-{funnel}
 
 ---
 
@@ -472,16 +430,15 @@ Research validation incomplete — no position and no target.
 {chr(10).join(sec_rows)}
 
 ## 4. Dilution, Financing & Structural Hazards
-- **Equity Dilution**: Inspect S-1, S-3 shelf registrations, and active ATM (At-The-Market) offering agreements.
-- **Warrant Overhang**: Check convertible preferred equity, cashless exercise terms, and anti-dilution resets.
+- **Equity Dilution**: Inspect S-1, S-3 shelf registrations, and active ATM offering agreements.
+- **Warrant Overhang**: Check convertible preferred equity, cashless exercise terms, and resets.
 
 ## 5. Insider Activity & Management Conduct
-- **Form 4 Oversight**: Differentiate between routine tax-withholding exercises and direct open-market liquidation.
+- **Form 4 Oversight**: Differentiate between routine tax-withholding and open-market liquidation.
 
 ## 6. Market Context & Pricing Check
 - **1-Month Return**: {ret_1m_str}
 - **20-Day Volume Ratio**: {vol_str} (Relative to 20-day baseline)
-- **Expectation Gap**: Compare retail narrative velocity against market price action to determine if the catalyst is already priced in.
 
 {_expectations_section(state)}
 
@@ -511,7 +468,7 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
         final_text: Model synthesis.
 
     Returns:
-        Markdown report with ranking readiness, sources, and evidence gaps.
+        Markdown report with ranking readiness, sources, comparisons, and evidence.
     """
     intent = state.get("research_intent") or {}
     requested_count = intent.get("requested_ranking_count")
@@ -521,13 +478,63 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
         for candidate in candidates.values() if isinstance(candidate, dict)
     ] or ["| None | No registered candidates | no | no |"]
     ranking = "Not requested" if not requested_count else f"Requested ranking count: {requested_count}; registered candidates: {len(candidates)}"
-    # Aggregate all consulted sources: web/articles, candidate SEC filings, and market data
+
+    # 1. Normalized candidate comparisons
+    comparison_section = ""
+    comparisons = state.get("comparisons") or []
+    if comparisons:
+        comp_rows = []
+        for c in comparisons:
+            m_key = c.get("metric_key") or "Metric"
+            vals = c.get("candidate_values") or {}
+            val_strs = [f"${k}: {v}" for k, v in vals.items()]
+            comp_rows.append(f"| {m_key} | {c.get('period_basis', 'N/A')} | {', '.join(val_strs)} | {c.get('comparability', 'N/A')} |")
+        if comp_rows:
+            comparison_section = f"""
+## Normalized Candidate Comparisons
+| Metric | Period Basis | Candidate Values | Comparability |
+| :--- | :--- | :--- | :--- |
+{chr(10).join(comp_rows)}
+"""
+
+    # 2. Institutional specialist insights (Bull, Bear, Committee, Quant)
+    specialist_section = ""
+    specialist_blocks = []
+    bull = state.get("bull_report")
+    if bull and getattr(bull, "catalysts", None):
+        cats = [f"- **Catalyst**: {c}" for c in bull.catalysts]
+        specialist_blocks.append(f"### Bull Case: Operating Leverage Catalysts\n{chr(10).join(cats)}")
+    bear = state.get("adversarial_report")
+    if bear and getattr(bear, "numeric_kill_criteria", None):
+        kills = [f"- **Kill Trigger**: {k}" for k in bear.numeric_kill_criteria]
+        specialist_blocks.append(f"### Adversarial Red Team: Numeric Kill Criteria\n{chr(10).join(kills)}")
+    ic = state.get("ic_verdict")
+    if ic and getattr(ic, "cio_deliberation_summary", None):
+        specialist_blocks.append(f"### Investment Committee Deliberation\n- **Verdict**: {getattr(ic, 'verdict', 'N/A')}\n- **Conviction**: {getattr(ic, 'conviction_tier', 'N/A')}\n- **Summary**: {getattr(ic, 'cio_deliberation_summary', '')}")
+    if specialist_blocks:
+        specialist_section = f"\n## Institutional Specialist Insights\n" + "\n\n".join(specialist_blocks) + "\n"
+
+    # 3. Verified primary citations
+    evidence = [item for item in state.get("evidence", []) if item.get("quote") and item.get("source_url")]
+    evidence_section = ""
+    if evidence:
+        ev_rows = [
+            f"| {e.get('form', 'SEC')} | `{e.get('accession', 'N/A')}` | [{e.get('form', 'Source')}]({e.get('source_url', 'N/A')}) | \"{e.get('quote', '').replace(chr(10), ' ')}\" |"
+            for e in evidence[:10]
+        ]
+        evidence_section = f"""
+## Verified Primary Evidence Citations
+| Document | Accession | URL | Verbatim Excerpt |
+| :--- | :--- | :--- | :--- |
+{chr(10).join(ev_rows)}
+"""
+
+    # 4. Aggregate all consulted sources: web/articles, candidate SEC filings, and market data
     all_sources = list(state.get("source_records", []))
     for cid, cand in candidates.items():
         if isinstance(cand, dict):
             t = cand.get("ticker") or cid
             cik = cand.get("cik")
-            # If candidate has filings listed or corpus
             for filing in cand.get("sec_filings", []):
                 if isinstance(filing, dict):
                     all_sources.append({
@@ -555,6 +562,7 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
         for item in all_sources
     ] or ["| No readable source | unavailable | N/A |"]
     missing = (state.get("evidence_gate") or {}).get("missing_evidence") or state.get("unresolved_questions") or ["No additional gaps recorded."]
+
     return f"""# Deep Research Report
 
 **Case Reference**: `{state.get('case_id') or 'N/A'}`
@@ -566,7 +574,7 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
 
 ## Findings
 {final_text or 'Research completed without a model synthesis.'}
-
+{comparison_section}{specialist_section}{evidence_section}
 ## Candidate Evidence Coverage
 | Ticker | Company | Market evidence | SEC evidence |
 | :--- | :--- | :--- | :--- |
