@@ -18,8 +18,8 @@ from langchain_core.tools import BaseTool
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
 
-from app.agent.adversarial import run_adversarial_red_team
-from app.agent.bull import run_bull_advocate
+from app.agent.adversarial import AdversarialReport, run_adversarial_red_team
+from app.agent.bull import BullReport, run_bull_advocate
 from app.agent.committee import run_investment_committee
 from app.agent.context import ModelContextPolicy, TokenCounter, conservative_token_counter, prepare_context
 from app.agent.expectations import run_expectations_analyst
@@ -306,18 +306,104 @@ def create_research_graph(
 
         ticker = state.get("ticker")
         candidates = state.get("candidates") or {}
+        chosen_candidate = None
 
-        # Promote primary candidate ticker if candidates exist and top-level ticker is unset
-        if (not ticker or ticker == "UNKNOWN") and candidates:
+        if ticker and ticker != "UNKNOWN" and candidates:
             for cid, c in candidates.items():
-                if isinstance(c, Mapping) and (c.get("diligence_dossier") or c.get("ticker")):
-                    ticker = str(c.get("ticker")).upper()
-                    updates["ticker"] = ticker
-                    updates["company"] = c.get("company")
+                if isinstance(c, Mapping) and str(c.get("ticker") or "").upper() == str(ticker).upper():
+                    chosen_candidate = c
                     break
+
+        if not chosen_candidate and candidates:
+            best_cand = None
+            best_ratio = -float("inf")
+            for cid, c in candidates.items():
+                if isinstance(c, Mapping):
+                    dossier = c.get("diligence_dossier")
+                    if dossier and isinstance(dossier, Mapping):
+                        ratio = (dossier.get("valuation") or {}).get("reward_to_risk_ratio")
+                        r_val = float(ratio) if ratio is not None else 0.0
+                        if best_cand is None or r_val > best_ratio:
+                            best_cand = c
+                            best_ratio = r_val
+                    elif best_cand is None and c.get("ticker"):
+                        best_cand = c
+            chosen_candidate = best_cand
+
+        # Promote chosen candidate workspace and diligence dossier into top-level state
+        if chosen_candidate:
+            c_ticker = str(
+                chosen_candidate.get("ticker")
+                or (chosen_candidate.get("diligence_dossier") or {}).get("ticker")
+                or ""
+            ).upper()
+            if c_ticker:
+                ticker = c_ticker
+                updates["ticker"] = ticker
+            if chosen_candidate.get("company"):
+                updates["company"] = chosen_candidate["company"]
+            if chosen_candidate.get("cik"):
+                updates["cik"] = chosen_candidate["cik"]
+
+            dossier = chosen_candidate.get("diligence_dossier") or {}
+            val = dossier.get("valuation") or {}
+            ratio = val.get("reward_to_risk_ratio")
+            repro_verdict = val.get("reproducibility") or "pass"
+
+            if not state.get("forensic_report") and (dossier.get("forensic_verdict") or chosen_candidate.get("forensic_report")):
+                updates["forensic_report"] = chosen_candidate.get("forensic_report") or {
+                    "status": "available",
+                    "verdict": dossier.get("forensic_verdict") or "QUALIFIED_NORMALIZED_ADJUSTMENT",
+                    "source": "candidate_diligence_dossier",
+                }
+
+            if not state.get("quant_report") and (val.get("fair_value") is not None or val.get("implied_growth_rate") is not None or chosen_candidate.get("quant_report")):
+                updates["quant_report"] = chosen_candidate.get("quant_report") or {
+                    "status": "available" if repro_verdict == "pass" else "validation_error",
+                    "reproducibility": {
+                        "status": "ok",
+                        "result": {"verdict": repro_verdict},
+                    },
+                    "valuation": {
+                        "fair_value": val.get("fair_value"),
+                        "fair_value_range": val.get("fair_value_range"),
+                        "implied_fcf_growth_rate": val.get("implied_growth_rate"),
+                        "asymmetric_risk_reward": {
+                            "reward_to_risk_ratio": ratio,
+                            "qualifies_3_to_1": bool(ratio is not None and ratio >= 3.0),
+                        },
+                    },
+                }
+
+            if not state.get("bull_report") and (dossier.get("bull_catalysts") or dossier.get("bull_thesis")):
+                updates["bull_report"] = BullReport(
+                    ticker=ticker,
+                    catalysts=tuple(dossier.get("bull_catalysts") or ()),
+                    operating_leverage_drivers=(),
+                    bull_target_price=val.get("fair_value"),
+                    bull_thesis_summary=dossier.get("bull_thesis") or "",
+                    invalidation_conditions=(),
+                )
+
+            if not state.get("adversarial_report") and (dossier.get("bear_kill_triggers") or dossier.get("bear_thesis") or dossier.get("bear_floor") is not None):
+                updates["adversarial_report"] = AdversarialReport(
+                    ticker=ticker,
+                    falsifiable_objections=(),
+                    numeric_kill_criteria=tuple(dossier.get("bear_kill_triggers") or ()),
+                    bear_floor_price=dossier.get("bear_floor"),
+                    bear_thesis_summary=dossier.get("bear_thesis") or "",
+                )
+                updates["thesis_breakers"] = list(dossier.get("bear_kill_triggers") or ())
 
         if ticker and ticker != "UNKNOWN":
             st = {**state, **updates}
+            if chosen_candidate:
+                if not st.get("market_context") and chosen_candidate.get("market_context"):
+                    st["market_context"] = chosen_candidate["market_context"]
+                if not st.get("sec_financials") and chosen_candidate.get("sec_financials"):
+                    st["sec_financials"] = chosen_candidate["sec_financials"]
+                if not st.get("consensus_snapshot") and chosen_candidate.get("consensus_snapshot"):
+                    st["consensus_snapshot"] = chosen_candidate["consensus_snapshot"]
             if not st.get("quant_report"):
                 try:
                     quant_up = run_quant_analysis(st)

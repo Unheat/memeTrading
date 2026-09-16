@@ -267,3 +267,85 @@ def test_agent_graph_executes_exact_remaining_tool_budget(monkeypatch):
     ]
     assert [call["id"] for call in ai_tool_calls] == ["call-1", "call-2"]
     assert [message.tool_call_id for message in tool_messages] == ["call-1", "call-2"]
+
+
+def test_candidate_diligence_dossier_promoted_without_redundant_execution(monkeypatch):
+    """Prove completed candidate diligence dossier is promoted and skips duplicate engine runs in Stage 5."""
+    class DirectFinishModel:
+        def __init__(self):
+            self.call_count = 0
+
+        def bind_tools(self, tools):
+            return self
+
+        def invoke(self, messages):
+            self.call_count += 1
+            return AIMessage(content="Research finished.")
+
+    def bomb_quant(state):
+        raise AssertionError("run_quant_analysis was redundantly invoked in Stage 5!")
+
+    def bomb_bull(state, model):
+        raise AssertionError("run_bull_advocate was redundantly invoked in Stage 5!")
+
+    def bomb_bear(state, model):
+        raise AssertionError("run_adversarial_red_team was redundantly invoked in Stage 5!")
+
+    observed_committee_state = {}
+
+    def mock_committee(state, model):
+        observed_committee_state.update(state)
+        return {"ic_verdict": "approved"}
+
+    monkeypatch.setattr(graph_module, "run_quant_analysis", bomb_quant)
+    monkeypatch.setattr(graph_module, "run_bull_advocate", bomb_bull)
+    monkeypatch.setattr(graph_module, "run_adversarial_red_team", bomb_bear)
+    monkeypatch.setattr(graph_module, "run_investment_committee", mock_committee)
+
+    graph = create_research_graph(model=DirectFinishModel(), tools=[])
+    req = ResearchRequest(query="Rank candidates", ticker=None)
+    state = create_initial_state(req, case_id="dossier_promo")
+    _add_sufficient_mocked_evidence(state)
+
+    state["candidates"] = {
+        "cand_msft": {
+            "candidate_id": "cand_msft",
+            "ticker": "MSFT",
+            "company": "Microsoft Corp",
+            "cik": "0000789019",
+            "market_context": state["market_context"],
+            "sec_financials": state["sec_financials"],
+            "diligence_dossier": {
+                "status": "ok",
+                "ticker": "MSFT",
+                "candidate_id": "cand_msft",
+                "company": "Microsoft Corp",
+                "valuation": {
+                    "fair_value": 450.0,
+                    "implied_growth_rate": 0.12,
+                    "reward_to_risk_ratio": 3.5,
+                    "reproducibility": "pass",
+                },
+                "bull_catalysts": ["Azure AI acceleration", "Copilot adoption"],
+                "bull_thesis": "Strong cloud operating leverage.",
+                "bear_kill_triggers": ["Azure growth below 20%", "CapEx exceeding $80B"],
+                "bear_thesis": "AI CapEx overspend.",
+                "bear_floor": 320.0,
+                "forensic_verdict": "QUALIFIED_NORMALIZED_ADJUSTMENT",
+                "moat_rating": "WIDE",
+            },
+        }
+    }
+
+    final_state = graph.invoke(state)
+
+    assert final_state["ticker"] == "MSFT"
+    assert final_state["company"] == "Microsoft Corp"
+    assert final_state["accounting_gate"]["passed"] is True
+    assert final_state["valuation_gate"]["passed"] is True
+    assert final_state["asymmetry_gate"]["passed"] is True
+    assert final_state["ic_verdict"] == "approved"
+    assert "Azure growth below 20%" in final_state["thesis_breakers"]
+    assert observed_committee_state["bull_report"].ticker == "MSFT"
+    assert observed_committee_state["adversarial_report"].bear_floor_price == 320.0
+
