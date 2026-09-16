@@ -152,6 +152,10 @@ def read_document(
     parsed = urlparse(clean_url)
     if parsed.scheme not in ("http", "https"):
         return {"status": "error", "message": "url must start with http:// or https://"}
+    if parsed.username or parsed.password:
+        return {"status": "error", "message": "URL must not contain embedded user credentials"}
+
+    effective_max_pages = max(1, min(int(max_pages or 20), 50))
 
     try:
         body, content_type = _fetch_bytes(clean_url)
@@ -159,7 +163,7 @@ def read_document(
         is_pdf = "pdf" in content_type or clean_url.lower().endswith(".pdf") or body.startswith(b"%PDF")
 
         if is_pdf:
-            text, tables, pages_read = _extract_pdf(body, max_pages=max_pages)
+            text, tables, pages_read = _extract_pdf(body, max_pages=effective_max_pages)
             return {
                 "status": "ok",
                 "url": clean_url,

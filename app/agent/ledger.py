@@ -6,7 +6,7 @@ local ledger, source provenance, and budget semantics are locally written.
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
@@ -88,6 +88,42 @@ class SourceExcerpt:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the excerpt for durable storage."""
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class ClaimRecord:
+    """Auditable factual claim linked to durable source excerpts."""
+
+    claim_id: str
+    statement: str
+    claim_type: str
+    status: Literal["supported", "unsupported", "contradicted", "inconclusive"]
+    subject_id: str | None = None
+    as_of: str | None = None
+    evidence_link_ids: tuple[str, ...] = field(default_factory=tuple)
+    limitations: tuple[str, ...] = field(default_factory=tuple)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the claim record for durable storage."""
+        return {
+            **asdict(self),
+            "evidence_link_ids": list(self.evidence_link_ids),
+            "limitations": list(self.limitations),
+        }
+
+
+@dataclass(frozen=True)
+class EvidenceLink:
+    """Explicit relationship between an excerpt and a claim."""
+
+    evidence_link_id: str
+    claim_id: str
+    excerpt_id: str
+    relation: Literal["supports", "contradicts", "context"] = "supports"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the link for durable storage."""
         return asdict(self)
 
 

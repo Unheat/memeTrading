@@ -11,11 +11,16 @@ from typing import Any
 
 from langchain_core.messages import ToolMessage
 
-_ERROR_STATUSES = frozenset({"error", "duplicate_suppressed"})
+from app.agent.contracts import ADMISSIBLE_EVIDENCE_STATUSES, ToolResultEnvelope
+
+_NON_ROUTABLE_STATUSES = frozenset({
+    "not_applicable", "unavailable", "paywalled", "invalid_input",
+    "entity_conflict", "duplicate_suppressed", "error",
+})
 _CANDIDATE_SCOPED_TOOLS = frozenset({
     "get_market_data", "get_sec_financials", "get_company_research", "list_sec_filings",
     "pull_sec_filings", "verify_sec_claim", "search_sec_evidence", "read_sec_evidence",
-    "get_ownership_and_insider_activity", "read_document",
+    "get_ownership_and_insider_activity",
 })
 
 
@@ -58,13 +63,32 @@ def ingest_tool_results(state: Mapping[str, Any], messages: Sequence[ToolMessage
     confidences = [float(state["confidence"])] if isinstance(state.get("confidence"), (int, float)) and not isinstance(state.get("confidence"), bool) else []
     for message in messages:
         payload, parse_error = _parse_payload(message.content)
-        status = _result_status(payload, parse_error)
-        ownership_error = _candidate_ownership_error(update, message.name or "", payload) if status == "ok" else None
+        if parse_error:
+            envelope = ToolResultEnvelope(status="error", payload=payload, reason=parse_error)
+        else:
+            envelope = ToolResultEnvelope.from_payload(payload)
+
+        ownership_error = (
+            _candidate_ownership_error(update, message.name or "", envelope.payload)
+            if envelope.status in ADMISSIBLE_EVIDENCE_STATUSES
+            else None
+        )
         if ownership_error:
-            status = "error"
-        update["searches_performed"].append(_build_receipt(message, payload, status, parse_error or ownership_error))
-        if status not in _ERROR_STATUSES:
-            _route_success(update, message.name or "", payload, confidences)
+            envelope = envelope.model_copy(update={
+                "status": "error",
+                "code": "entity_conflict",
+                "reason": ownership_error,
+            })
+
+        update["searches_performed"].append(_build_receipt(message, envelope))
+        if envelope.status in ADMISSIBLE_EVIDENCE_STATUSES:
+            _route_success(
+                update,
+                message.name or "",
+                envelope.payload,
+                confidences,
+                allow_partial=envelope.status == "partial",
+            )
     if confidences:
         update["confidence"] = min(confidences)
     return update
@@ -81,25 +105,27 @@ def _parse_payload(content: Any) -> tuple[dict[str, Any], str | None]:
     return (value, None) if isinstance(value, dict) else ({}, "tool result JSON must be an object")
 
 
-def _result_status(payload: Mapping[str, Any], parse_error: str | None) -> str:
-    """Normalize payload status into a stable receipt status."""
-    if parse_error:
-        return "error"
-    status = str(payload.get("status", "ok")).lower()
-    return status if status in _ERROR_STATUSES else "ok"
-
-
-def _build_receipt(message: ToolMessage, payload: Mapping[str, Any], status: str, error: str | None) -> dict[str, Any]:
-    """Create an auditable compact receipt with returned routing identity."""
-    receipt = {"tool": message.name or "unknown", "tool_call_id": message.tool_call_id, "status": status}
-    routing = {key: payload.get(key) for key in ("candidate_id", "ticker", "cik", "corpus_id") if payload.get(key) is not None}
+def _build_receipt(message: ToolMessage, envelope: ToolResultEnvelope) -> dict[str, Any]:
+    """Create an auditable compact receipt preserving normalized tool status."""
+    receipt = {
+        "tool": message.name or "unknown",
+        "tool_call_id": message.tool_call_id,
+        "status": envelope.status,
+    }
+    routing = {
+        key: value for key, value in {
+            "candidate_id": envelope.candidate_id,
+            "ticker": envelope.ticker,
+            "cik": envelope.cik,
+            "corpus_id": envelope.corpus_id,
+        }.items() if value is not None
+    }
     if routing:
         receipt["routing"] = routing
-    detail = error or (payload.get("message") if status in _ERROR_STATUSES else None)
-    if detail:
-        receipt["error"] = str(detail)
-    if status == "error" and payload.get("code"):
-        receipt["code"] = str(payload["code"])
+    if envelope.reason and envelope.status in _NON_ROUTABLE_STATUSES | {"partial"}:
+        receipt["error"] = str(envelope.reason)
+    if envelope.code:
+        receipt["code"] = str(envelope.code)
     return receipt
 
 
@@ -116,10 +142,22 @@ def _candidate_ownership_error(update: Mapping[str, Any], tool_name: str, payloa
     candidate = (update.get("candidates") or {}).get(str(candidate_id))
     if not isinstance(candidate, Mapping):
         return f"unknown candidate_id: {candidate_id}"
-    payload_ticker = str(payload.get("ticker") or "").upper().strip()
+    corpus = payload.get("corpus") if isinstance(payload.get("corpus"), Mapping) else {}
+    payload_ticker = str(payload.get("ticker") or corpus.get("ticker") or "").upper().strip()
     candidate_ticker = str(candidate.get("ticker") or "").upper().strip()
     if payload_ticker and candidate_ticker and payload_ticker != candidate_ticker:
         return f"candidate ticker mismatch: {candidate_ticker} != {payload_ticker}"
+
+    payload_cik = str(_payload_cik(payload) or "").lstrip("0")
+    candidate_cik = str(candidate.get("cik") or "").lstrip("0")
+    if payload_cik and candidate_cik and payload_cik != candidate_cik:
+        return f"candidate CIK mismatch: {candidate_cik} != {payload_cik}"
+
+    corpus = payload.get("corpus")
+    corpus_id = payload.get("corpus_id") or (corpus.get("corpus_id") if isinstance(corpus, Mapping) else None)
+    allowed_corpora = set(str(item) for item in candidate.get("sec_corpora", ()) if item)
+    if corpus_id and allowed_corpora and str(corpus_id) not in allowed_corpora:
+        return f"candidate corpus mismatch: {corpus_id} is not owned by {candidate_id}"
     return None
 
 
@@ -129,9 +167,21 @@ def _candidate(update: dict[str, Any], payload: Mapping[str, Any]) -> dict[str, 
     return update["candidates"].get(str(candidate_id)) if candidate_id else None
 
 
-def _route_success(update: dict[str, Any], tool_name: str, payload: Mapping[str, Any], confidences: list[float]) -> None:
-    """Route one validated successful tool payload into its owning workspace."""
+def _route_success(
+    update: dict[str, Any],
+    tool_name: str,
+    payload: Mapping[str, Any],
+    confidences: list[float],
+    allow_partial: bool = False,
+) -> None:
+    """Route a validated tool payload while preserving partial-data limitations.
+
+    Partial data is useful for research, but it cannot establish corpora or claim
+    verification until a later complete evidence receipt confirms it.
+    """
     clean = _clean_non_finite(dict(payload))
+    if allow_partial:
+        clean["status"] = "partial"
     ticker = str(payload.get("ticker") or "").upper().strip()
     candidate = _candidate(update, payload)
     multi_candidate = bool((update.get("research_intent") or {}).get("requires_candidate_workspaces"))
@@ -155,7 +205,7 @@ def _route_success(update: dict[str, Any], tool_name: str, payload: Mapping[str,
             _append_unique_mapping(update["comparisons"], clean)
         return
     if tool_name in _CANDIDATE_SCOPED_TOOLS and candidate is not None:
-        _route_candidate_tool(candidate, tool_name, clean, confidences)
+        _route_candidate_tool(candidate, tool_name, clean, confidences, allow_partial=allow_partial)
         return
     if tool_name in _CANDIDATE_SCOPED_TOOLS and multi_candidate:
         return
@@ -169,14 +219,16 @@ def _route_success(update: dict[str, Any], tool_name: str, payload: Mapping[str,
         update["consensus_snapshot"] = clean
     elif tool_name == "list_sec_filings":
         update["cik"] = _payload_cik(clean) or update.get("cik")
+        if clean.get("filings") and isinstance(clean["filings"], list):
+            update["sec_filings"] = list(clean["filings"])
     elif tool_name == "pull_sec_filings":
         corpus = clean.get("corpus")
-        if isinstance(corpus, Mapping) and corpus.get("corpus_id"):
+        if not allow_partial and isinstance(corpus, Mapping) and corpus.get("corpus_id"):
             _append_unique(update["sec_corpora"], str(corpus["corpus_id"]))
             update["cik"] = str(corpus.get("cik") or update.get("cik") or "") or None
     elif tool_name == "verify_sec_claim":
         verification = clean.get("verification")
-        if isinstance(verification, Mapping):
+        if not allow_partial and isinstance(verification, Mapping):
             _ingest_verification(update, verification, confidences)
     elif tool_name == "get_macro_context":
         update.setdefault("capability_outputs", {})["macro_context"] = clean
@@ -188,8 +240,14 @@ def _route_success(update: dict[str, Any], tool_name: str, payload: Mapping[str,
         _record_source_payload(update, tool_name, clean)
 
 
-def _route_candidate_tool(candidate: dict[str, Any], tool_name: str, payload: Mapping[str, Any], confidences: list[float]) -> None:
-    """Write a company-specific payload only to its validated candidate workspace."""
+def _route_candidate_tool(
+    candidate: dict[str, Any],
+    tool_name: str,
+    payload: Mapping[str, Any],
+    confidences: list[float],
+    allow_partial: bool = False,
+) -> None:
+    """Write validated company-specific payloads to their owning workspace."""
     if tool_name == "get_market_data":
         candidate["market_context"] = dict(payload)
     elif tool_name == "get_sec_financials":
@@ -198,14 +256,21 @@ def _route_candidate_tool(candidate: dict[str, Any], tool_name: str, payload: Ma
         candidate["consensus_snapshot"] = dict(payload)
     elif tool_name == "list_sec_filings":
         candidate["cik"] = _payload_cik(payload) or candidate.get("cik")
+        if payload.get("filings") and isinstance(payload["filings"], list):
+            candidate["sec_filings"] = list(payload["filings"])
     elif tool_name == "pull_sec_filings":
         corpus = payload.get("corpus")
-        if isinstance(corpus, Mapping) and corpus.get("corpus_id"):
+        if not allow_partial and isinstance(corpus, Mapping) and corpus.get("corpus_id"):
             _append_unique(candidate.setdefault("sec_corpora", []), str(corpus["corpus_id"]))
             if corpus.get("cik"):
                 candidate["cik"] = str(corpus["cik"])
+        elif allow_partial:
+            candidate.setdefault("limitations", []).append("SEC corpus pull returned partial data and was not admitted as a verified corpus.")
     elif tool_name == "verify_sec_claim" and isinstance(payload.get("verification"), Mapping):
-        _ingest_verification(candidate, payload["verification"], confidences)
+        if not allow_partial:
+            _ingest_verification(candidate, payload["verification"], confidences)
+        else:
+            candidate.setdefault("limitations", []).append("SEC claim verification returned partial data and was not admitted as verified evidence.")
     elif tool_name == "get_ownership_and_insider_activity":
         candidate["insider_activity"] = dict(payload)
     elif tool_name == "read_document":
@@ -225,26 +290,72 @@ def _payload_cik(payload: Mapping[str, Any]) -> str | None:
 
 
 def _record_source_payload(update: dict[str, Any], tool_name: str, payload: Mapping[str, Any]) -> None:
-    """Persist discovery/read outputs as generic source records."""
-    items = [payload] if tool_name in {"read_article", "read_document"} else payload.get("articles") or payload.get("results") or payload.get("posts") or []
+    """Persist discovery/read outputs as generic source records and durable ledger items."""
+    import hashlib
+    from app.agent.ledger import SourceDocument, SourceExcerpt
+
+    items = (
+        [payload]
+        if tool_name in {"read_article", "read_document"}
+        else (payload.get("articles") or payload.get("results") or payload.get("records") or payload.get("posts") or [])
+    )
     if not isinstance(items, list):
         return
     for item in items:
         if not isinstance(item, Mapping):
             continue
         url = item.get("url") or item.get("source_url")
-        record = {"tool": tool_name, "url": url, "title": item.get("title"), "published_at": item.get("published_at") or item.get("published"), "provider": payload.get("provider"), "status": "read" if tool_name in {"read_article", "read_document"} else "discovered"}
-        if url and not any(existing.get("url") == url for existing in update["source_records"]):
-            update["source_records"].append(record)
+        if not url:
+            continue
+        title = str(item.get("title") or "Discovered source")
+        status = "read" if tool_name in {"read_article", "read_document"} else "discovered"
+        content_text = str(item.get("text") or item.get("content") or item.get("snippet") or "")
+        content_sha = hashlib.sha256(content_text.encode("utf-8")).hexdigest()
+
+        # Build stable source ID
+        src_id = f"src_{hashlib.sha256(url.encode('utf-8')).hexdigest()[:12]}"
+        doc_record = {
+            "source_id": src_id,
+            "tool": tool_name,
+            "url": str(url),
+            "title": title,
+            "published_at": item.get("published_at") or item.get("published"),
+            "provider": payload.get("provider"),
+            "status": status,
+            "content_sha256": content_sha,
+            "candidate_id": payload.get("candidate_id") or item.get("candidate_id"),
+        }
+
+        # Deduplicate by URL in source_records
+        existing = next((s for s in update["source_records"] if s.get("url") == url), None)
+        if not existing:
+            update["source_records"].append(doc_record)
+        elif status == "read" and existing.get("status") == "discovered":
+            existing["status"] = "read"
+            existing["content_sha256"] = content_sha
+
+        # If document was read, extract source-local citation excerpt
+        if tool_name in {"read_article", "read_document"} and content_text:
+            excerpt_id = f"exc_{hashlib.sha256((url + content_text[:200]).encode('utf-8')).hexdigest()[:12]}"
+            update.setdefault("evidence", []).append({
+                "excerpt_id": excerpt_id,
+                "source_id": src_id,
+                "source_url": str(url),
+                "title": title,
+                "quote": content_text[:500],
+                "candidate_id": payload.get("candidate_id"),
+            })
 
     # If read_document discovered new document/PDF links on the page, harvest them into source_records
     for doc in payload.get("discovered_documents", []) if isinstance(payload.get("discovered_documents"), list) else []:
         if isinstance(doc, Mapping) and doc.get("url"):
             d_url = doc["url"]
             if not any(existing.get("url") == d_url for existing in update["source_records"]):
+                d_src_id = f"src_{hashlib.sha256(str(d_url).encode('utf-8')).hexdigest()[:12]}"
                 update["source_records"].append({
+                    "source_id": d_src_id,
                     "tool": "read_document_discovery",
-                    "url": d_url,
+                    "url": str(d_url),
                     "title": doc.get("title") or "Discovered Document",
                     "published_at": None,
                     "provider": "document_link_harvest",

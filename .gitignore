@@ -21,3 +21,4 @@ node_modules/
 .codebase-memory/
 .zcode/
 cases/
+temp_plan/

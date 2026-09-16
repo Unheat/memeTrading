@@ -111,3 +111,47 @@ def test_tool_name_controls_routing_and_corpus_ids_are_deduplicated() -> None:
     assert "market_context" not in update
     assert update["sec_corpora"] == ["same"]
     assert len(update["searches_performed"]) == 3
+
+
+def test_non_admissible_statuses_are_receipts_not_evidence() -> None:
+    """Verify paywalled, unavailable, and not_applicable statuses do not create evidence."""
+    messages = [
+        _message("read_article", "pw-1", {"status": "paywalled", "url": "https://wsj.com/article", "reason": "subscription required"}),
+        _message("get_sec_financials", "un-1", {"status": "unavailable", "ticker": "XYZ", "reason": "no 10-K filed"}),
+        _message("get_macro_context", "na-1", {"status": "not_applicable", "reason": "not an equity prompt"}),
+    ]
+
+    update = ingest_tool_results({}, messages)
+
+    assert update["evidence"] == []
+    assert update["source_records"] == []
+    assert len(update["searches_performed"]) == 3
+    statuses = [r["status"] for r in update["searches_performed"]]
+    assert "paywalled" in statuses
+    assert "unavailable" in statuses
+    assert "not_applicable" in statuses
+
+
+def test_candidate_ownership_mismatch_quarantined_with_entity_conflict() -> None:
+    """Verify data from another entity is rejected as entity_conflict and not routed."""
+    state = {
+        "candidates": {
+            "cand_msft": {"candidate_id": "cand_msft", "ticker": "MSFT", "cik": "789019"}
+        }
+    }
+    messages = [
+        _message("get_market_data", "mkt-bad", {
+            "status": "ok",
+            "candidate_id": "cand_msft",
+            "ticker": "NVDA",  # mismatched ticker
+            "quote": {"price": 120.0},
+        })
+    ]
+
+    update = ingest_tool_results(state, messages)
+
+    receipt = update["searches_performed"][-1]
+    assert receipt["status"] == "error"
+    assert receipt["code"] == "entity_conflict"
+    # MSFT candidate workspace was NOT polluted with NVDA market data
+    assert update["candidates"]["cand_msft"].get("market_context") is None

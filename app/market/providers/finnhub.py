@@ -35,9 +35,9 @@ class FinnhubClient:
         """Fetch one Finnhub endpoint; raises MarketDataError on failure."""
         if not self.is_configured:
             return None
-        query = f"token={self.api_key}"
-        for key, value in (params or {}).items():
-            query += f"&{key}={value}"
+        safe_params = dict(params or {})
+        safe_params["token"] = self.api_key
+        query = urllib.parse.urlencode(safe_params)
         url = f"{BASE_URL}{path}?{query}"
         headers = {
             "Accept": "application/json",
@@ -50,7 +50,9 @@ class FinnhubClient:
                 body = response.read().decode("utf-8")
                 return json.loads(body)
         except Exception as exc:
-            raise MarketDataError("finnhub", f"{path} request failed: {exc}") from exc
+            import re
+            sanitized = re.sub(r"token=[^&\s]+", "token=REDACTED", str(exc))
+            raise MarketDataError("finnhub", f"{path} request failed: {sanitized}") from None
 
     def get_recommendation_trends(self, ticker: str) -> list[dict[str, Any]]:
         """Return consensus recommendation trends (newest first)."""

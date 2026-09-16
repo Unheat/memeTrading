@@ -149,13 +149,24 @@ def run_investigation(
             except Exception as exc:
                 logger.warning("Media generation failed for %s: %s", case_id, exc)
 
+        candidates_map = final_state.get("candidates") or {}
+        total_sources = len(final_state.get("source_records", []))
+        total_evidence = len(final_state.get("evidence", []))
+        for cand in candidates_map.values():
+            if isinstance(cand, Mapping):
+                total_evidence += len(cand.get("evidence", []))
+                if cand.get("market_context"):
+                    total_evidence += 1
+                if cand.get("sec_financials"):
+                    total_evidence += 1
+
         manifest.update({
             "status": "completed", "finished_at": datetime.now(timezone.utc).isoformat(),
             "last_stage": "rendered", "research_status": final_state["status"],
             "artifacts": ["memo.md", "investigation.json"] + (["article.md"] if article_md else []),
             "receipt_summary": final_state.get("searches_performed", []),
-            "source_count": len(final_state.get("source_records", [])),
-            "evidence_count": len(final_state.get("evidence", [])),
+            "source_count": total_sources,
+            "evidence_count": total_evidence,
             "provider_failures": [receipt for receipt in final_state.get("searches_performed", []) if receipt.get("status") == "error"],
         })
         write_run_manifest(target_case_dir, manifest)
