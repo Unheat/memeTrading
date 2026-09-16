@@ -499,20 +499,22 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
 
     # 2. Institutional specialist insights (Bull, Bear, Committee, Quant)
     specialist_section = ""
-    specialist_blocks = []
-    bull = state.get("bull_report")
-    if bull and getattr(bull, "catalysts", None):
-        cats = [f"- **Catalyst**: {c}" for c in bull.catalysts]
-        specialist_blocks.append(f"### Bull Case: Operating Leverage Catalysts\n{chr(10).join(cats)}")
-    bear = state.get("adversarial_report")
-    if bear and getattr(bear, "numeric_kill_criteria", None):
-        kills = [f"- **Kill Trigger**: {k}" for k in bear.numeric_kill_criteria]
-        specialist_blocks.append(f"### Adversarial Red Team: Numeric Kill Criteria\n{chr(10).join(kills)}")
-    ic = state.get("ic_verdict")
-    if ic and getattr(ic, "cio_deliberation_summary", None):
-        specialist_blocks.append(f"### Investment Committee Deliberation\n- **Verdict**: {getattr(ic, 'verdict', 'N/A')}\n- **Conviction**: {getattr(ic, 'conviction_tier', 'N/A')}\n- **Summary**: {getattr(ic, 'cio_deliberation_summary', '')}")
-    if specialist_blocks:
-        specialist_section = f"\n## Institutional Specialist Insights\n" + "\n\n".join(specialist_blocks) + "\n"
+    has_equity_subject = bool(state.get("ticker") and state.get("ticker") != "UNKNOWN") or bool(state.get("candidates"))
+    if has_equity_subject:
+        specialist_blocks = []
+        bull = state.get("bull_report")
+        if bull and getattr(bull, "catalysts", None):
+            cats = [f"- **Catalyst**: {c}" for c in bull.catalysts]
+            specialist_blocks.append(f"### Bull Case: Operating Leverage Catalysts\n{chr(10).join(cats)}")
+        bear = state.get("adversarial_report")
+        if bear and getattr(bear, "numeric_kill_criteria", None):
+            kills = [f"- **Kill Trigger**: {k}" for k in bear.numeric_kill_criteria]
+            specialist_blocks.append(f"### Adversarial Red Team: Numeric Kill Criteria\n{chr(10).join(kills)}")
+        ic = state.get("ic_verdict")
+        if ic and getattr(ic, "cio_deliberation_summary", None):
+            specialist_blocks.append(f"### Investment Committee Deliberation\n- **Verdict**: {getattr(ic, 'verdict', 'N/A')}\n- **Conviction**: {getattr(ic, 'conviction_tier', 'N/A')}\n- **Summary**: {getattr(ic, 'cio_deliberation_summary', '')}")
+        if specialist_blocks:
+            specialist_section = f"\n## Institutional Specialist Insights\n" + "\n\n".join(specialist_blocks) + "\n"
 
     # 3. Verified primary citations
     evidence = [item for item in state.get("evidence", []) if item.get("quote") and item.get("source_url")]
@@ -563,6 +565,15 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
     ] or ["| No readable source | unavailable | N/A |"]
     missing = (state.get("evidence_gate") or {}).get("missing_evidence") or state.get("unresolved_questions") or ["No additional gaps recorded."]
 
+    coverage_section = ""
+    if candidates:
+        coverage_section = f"""
+## Candidate Evidence Coverage
+| Ticker | Company | Market evidence | SEC evidence |
+| :--- | :--- | :--- | :--- |
+{chr(10).join(rows)}
+"""
+
     return f"""# Deep Research Report
 
 **Case Reference**: `{state.get('case_id') or 'N/A'}`
@@ -574,12 +585,7 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
 
 ## Findings
 {final_text or 'Research completed without a model synthesis.'}
-{comparison_section}{specialist_section}{evidence_section}
-## Candidate Evidence Coverage
-| Ticker | Company | Market evidence | SEC evidence |
-| :--- | :--- | :--- | :--- |
-{chr(10).join(rows)}
-
+{comparison_section}{specialist_section}{evidence_section}{coverage_section}
 ## Sources Consulted
 | Source | Status | URL |
 | :--- | :--- | :--- |
