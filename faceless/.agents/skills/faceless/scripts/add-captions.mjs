@@ -5,8 +5,8 @@ import {join, resolve} from 'node:path';
 import {ensureFfmpeg} from './ffmpeg.mjs';
 
 const VOICE_IDS = new Set([
-  'e34b4e061b874623a08f41e5c4fecfb9',
-  'fdffd3722cd040fcb3f95eec5a7f29f3',
+  'a84d19016bc34098b3c89d78f9299e33',
+  'e91c4f5974f149478a35affe820d02ac',
   'd2e75a3e3fd6419893057c02a375a113',
   '3d445d095ba04681bcba7177faedf55a',
 ]);

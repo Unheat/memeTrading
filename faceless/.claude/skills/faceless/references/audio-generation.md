@@ -37,7 +37,7 @@ No local video generation begins until every line and the combined file are pres
   "topic": "claude-video",
   "combinedAudio": "full-dialogue.mp3",
   "lines": [
-    {"index": 0, "voiceId": "e34b4e061b874623a08f41e5c4fecfb9", "file": "000.mp3"}
+    {"index": 0, "voiceId": "a84d19016bc34098b3c89d78f9299e33", "file": "000.mp3"}
   ]
 }
 ```

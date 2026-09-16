@@ -7,8 +7,8 @@ import {loadFishApiKey} from './fish-config.mjs';
 
 const FISH_TTS_URL = 'https://api.fish.audio/v1/tts';
 const FISH_MODEL = process.env.FISH_MODEL?.trim() || 's2';
-const PETER_VOICE_ID = 'e34b4e061b874623a08f41e5c4fecfb9';
-const STEWIE_VOICE_ID = 'fdffd3722cd040fcb3f95eec5a7f29f3';
+const PETER_VOICE_ID = 'a84d19016bc34098b3c89d78f9299e33';
+const STEWIE_VOICE_ID = 'e91c4f5974f149478a35affe820d02ac';
 const RICK_VOICE_ID = 'd2e75a3e3fd6419893057c02a375a113';
 const MORTY_VOICE_ID = '3d445d095ba04681bcba7177faedf55a';
 const ALLOWED_VOICE_IDS = new Set([PETER_VOICE_ID, STEWIE_VOICE_ID, RICK_VOICE_ID, MORTY_VOICE_ID]);
