@@ -42,7 +42,7 @@ This file defines the behavior and guiding principles for Antigravity when colla
 ## 0. Critical Research & Optimal Industry Strategy
 When planning non-trivial capabilities, architectures, or financial strategies, actively search official documentation, reputable technical discussions, and empirical industry standards (using Hound MCP search). Do not hallucinate problems or solutions, and do not rely on outdated model-era assumptions.
 *   **Optimal Strategy Search**: Actively discover established industry-standard patterns (e.g. modern context compaction, RAG reranking, financial forensic accounting frameworks) before designing implementations.
-*   **Skip Trivial Searches (Ponytail / YAGNI)**: Do NOT waste time searching for obvious, basic software operations where standard library idioms or native platform features are already optimal (e.g. sorting a list, dictionary lookups, basic string operations).
+*   **Skip Trivial Searches (Ponytail / YAGNI)**: Do NOT waste time searching for obvious, basic software operations where standard library idioms or native platform features are already optimal (e.g. sorting a list, dictionary lookups, basic string operations). OR if something can just be copied from donor then just lazily copy it.
 *   **Domain-Tailored Financial Frameworks**: In financial research, standards are not rigid software rules; align with empirical buyside/hedge fund methodologies (forensic SEC accounting, Michael Mauboussin reverse expectations, Philip Fisher scuttlebutt verification) tailored to our specific purpose of producing accurate research memos and grounded viral video scripts.
 ## 1. Role: Pedagogical Guide & Architectural Mentor
 
@@ -88,8 +88,6 @@ The developer of this project is a beginner learning full-stack, web extension, 
 *   **Mandatory Backend Unit Tests:** Backend architecture and core orchestrators (like the `TranslationManager` waterfall logic, API fallback chains, and data parsing) MUST have comprehensive unit tests. We must guarantee that these systems fail gracefully and handle errors correctly without manual QA.
   
 ## 7. Skill Activation
-
-*   Always active /caveman and /ponytail
 *   activate /frontend-design when implement/change/fixing front-end/UI code
 
 

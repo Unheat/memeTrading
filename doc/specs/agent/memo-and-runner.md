@@ -31,8 +31,21 @@ Generates the complete JSON audit trail suitable for programmatic analysis or st
 ## `app/agent/runner.py`
 
 ### `run_investigation(request: ResearchRequest, model=None, cases_root=None) -> InvestigationResult`
-1. Creates case ID and folder in `cases/<case_id>/` via `app.storage.cases`.
+1. Atomically claims a distinct `cases/<case_id>/` directory via `app.storage.cases` and immediately writes a `run-manifest.json` in `running` state.
 2. Initializes `InvestigationState` with request metadata and initial human prompt.
-3. Compiles and executes the LangGraph agent graph.
-4. Renders `memo.md` and `investigation.json` and writes them atomically to the case folder.
-5. Returns `InvestigationResult(case_id, ticker, status, memo_markdown, final_state)`.
+3. Compiles and executes the LangGraph agent graph. A deterministic research-completeness gate runs after the tool loop and before red-team/committee stages.
+4. If required identity, market, and SEC evidence is absent, terminal state is `insufficient_evidence` with deterministic `NO_POSITION`; it bypasses red-team/committee and optional media.
+5. Renders `memo.md` and `investigation.json`, preserving gate state, tool/source receipts, corpus references, consensus, expectation gap, adversarial report, and committee verdict. Core artifacts are atomically written.
+6. Marks `run-manifest.json` `completed` on every rendered research outcome, or `failed` with sanitized diagnostic data when graph/core rendering fails. Existing cases are never deleted or overwritten.
+7. Returns `InvestigationResult(case_id, ticker, status, memo_markdown, final_state)`.
+
+42	### Incomplete and validation rendering
+43	`render_forensic_memo` always renders sections 1–8. For `insufficient_evidence` or G2/G3/G4 validation outcomes it sets `NO_POSITION` and 0.0% allocation, lists unavailable prerequisites, and does not embed raw model final text, price targets, entries, bear floors, rankings, generic numeric kill triggers, or any generated/uncited financial number. Unknown fields render `Unavailable — not inferred`.
+
+## Donor code provenance
+
+| Local symbol | Reuse type | Exact donor location | Deliberate changes |
+| --- | --- | --- | --- |
+| `app.agent.gate.evaluate_research_completeness` | adapted | `reference/ai-hedge-fund/hedge_fund/signals/llm_agent.py:54-95,164-172`, outcome handling | Local deterministic evidence checks; no signal/backtest architecture or LLM decision parsing. |
+| `app.agent.runner.run_investigation` manifest transitions | adapted | `reference/ai-financial-research-agent/app/api/schemas.py:13-19,64-84`, `reference/ai-financial-research-agent/app/api/service.py:81-94,163-198` | Local filesystem manifest only; no FastAPI, SQLite, threads, or event fanout. |
+| `app.agent.memo.render_forensic_memo` missing-value display | adapted | `reference/financial-research-workshop/skills/earnings-summary/SKILL.md:8-28`, `reference/financial-research-workshop/skills/investor-note/SKILL.md:8-21` | Uses deterministic `Unavailable — not inferred`; raw model prose is blocked for insufficient evidence. |

@@ -2,71 +2,28 @@
 
 ## Responsibility
 
-Define the typed request, budget, investigation, and model-context policy state for LangGraph, along with the dynamic forensic prompt generator. Context management targets models with context windows up to 1M tokens without assuming every configured model or provider exposes that capacity.
+Define the public research request, bounded execution budget, universal investigation state, and the one LLM-directed research prompt. No request profile or mode chooses an execution graph.
 
-## `app/agent/state.py`
+## `ResearchRequest` and intent
 
-### `BudgetLimits`
-- `max_tool_calls: int = 15`
-- `max_identical_calls: int = 2`
+`query` is required. Optional `ticker`, `company`, `theme`, and `mandate` are caller facts, not routing controls. `depth` is `standard` or `deep`; `BudgetLimits` defaults to 35 total tool calls and two identical calls.
 
-### `ResearchRequest`
-- `query: str`: User's research request.
-- `ticker: str | None`: Optional uppercase ticker.
-- `company: str | None`: Optional company name.
-- `theme: str | None`: Optional theme/narrative.
-- `mandate: str | None`: Optional mandate (e.g. "catalyst_nowcast").
-- `time_boundary: str | None`: Optional time window.
-- `budget: BudgetLimits`: Budget configuration.
-- `template_version: str | None`: Version of prompt template if automated.
+`resolve_intent()` preserves only explicit structural requirements: caller-provided subjects, a requested count (`top 10`, `best 5`, `rank 3`, or `compare 4`), candidate-workspace requirement, and an explicit capital-allocation request. It never classifies prompt keywords, picks a research graph, creates candidates, or decides a recommendation.
 
-### `InvestigationState(TypedDict)`
-- `messages: Annotated[list[BaseMessage], add_messages]`
-- `case_id: str`
-- `ticker: str`
-- `company: str | None`
-- `cik: str | None`
-- `trigger: dict[str, Any]`
-- `root_claims: list[str]`
-- `evidence: list[dict[str, Any]]`
-- `contradictions: list[dict[str, Any]]`
-- `unresolved_questions: list[str]`
-- `sec_corpora: list[str]`
-- `searches_performed: list[dict[str, Any]]`
-- `confidence: float | None`
-- `tool_calls: int`
-- `status: str`
-- `causal_chain: dict[str, str] | None`
-- `market_context: dict[str, Any] | None`
-- `thesis_breakers: list[str]`
-- `budget_state: dict[str, Any]`
+`InvestigationState` stores `research_intent`, universal source/evidence/receipt containers, optional single-company facts, and candidate-owned workspaces. It does not contain `profile` or `mode`.
 
-### `ModelContextPolicy`
-- Adaptive policy for the investigator model's ephemeral message context; it does not change permanent structured forensic state.
-- Supports model context windows up to 1M tokens, while using a conservative default pruning threshold of 200,000 tokens when model/provider metadata does not establish a safer higher limit.
-- Counts tokens with a model-aware counter when the configured model exposes one. A documented conservative estimator is the fallback, and threshold decisions must identify which counting mode was used.
-- Preserves assistant tool-call messages together with all corresponding tool-result messages. Tool exchanges are pair-safe and must never be split into invalid or semantically orphaned history.
-- Applies context reduction in order: prune older completed tool exchanges first, then compact eligible retained material only if pruning is insufficient. Permanent structured facts remain available through the dynamic prompt.
-- Provider-native context management is optional and capability-gated. It may be used only when the selected provider/model explicitly supports the required API; portable local policy remains the fallback and no provider-specific feature is assumed.
+## Prompt contract
+
+`build_research_system_prompt(state)` provides the LLM with its full user-directed intent, current evidence, candidate state, contradictions, and remaining tool budget. For comparisons/rankings it instructs the LLM to register each candidate before company-specific tool calls and to pass the registered candidate ID to all market/SEC/corpus operations. The LLM decides the plan and sources; deterministic code only enforces budgets and identity ownership.
+
+## Context policy
+
+`ModelContextPolicy` supports up to a 1M-token context window with a conservative 200,000-token compaction threshold when reliable provider metadata is unavailable. Assistant tool calls and their matching results are retained/pruned as complete pairs; permanent structured facts are reprojected through the universal prompt.
 
 ## Donor code provenance
 
-The `ModelContextPolicy` contract and any new symbols introduced to implement it are locally written for this project. They are not copied or adapted from repositories under `reference/`. Existing symbols retain their previously recorded provenance; ordinary LangChain/LangGraph or provider API use is black-box dependency use, not donor-code reuse.
-
-## `app/agent/prompts.py`
-
-### `FORENSIC_CHARTER_PROMPT`
-Defines the agent's identity:
-- Forensic equities research investigator testing speculative hype against authoritative primary sources.
-- Hierarchy of evidence: SEC filings > regulatory sources > company primary announcements > reputable financial press > social chatter.
-- Skepticism and contradiction-seeking: check for non-binding terms, dilution capacity (S-1/S-3/ATM), warrants, insider sales (Form 4).
-- Analytical lenses: Druckenmiller pricing check (is this priced in?), Lynch categorization, causal chain `signal -> demand/bottleneck -> beneficiary -> financial mechanism -> expectation gap`.
-
-### `build_dynamic_system_prompt(state: InvestigationState) -> SystemMessage`
-Injects the current structured facts into the prompt:
-- Ticker, CIK, Company
-- Verified Evidence so far
-- Contradictions observed
-- Remaining Unresolved Questions
-- Remaining tool call budget
-This ensures that even if old tool output messages are trimmed from `messages`, the model never loses the factual context.
+| Local symbol | Reuse type | Exact donor location | Deliberate changes |
+| --- | --- | --- | --- |
+| `app.agent.state.InvestigationState` baseline message state | adapted | `reference/ai-financial-research-agent/app/agent/state.py:10-35`, `SimpleAgentState` | Local universal research intent, evidence ledger, budget, candidate isolation, and forensic fields replace the donor's simple state. |
+| `app.agent.state.ResearchIntent` | locally written | N/A | Preserves explicit prompt constraints without implementing keyword routing. |
+| `app.agent.prompts.build_research_system_prompt` | locally written | N/A | One prompt-directed contract with candidate ownership and no profile/mode branch. |

@@ -30,6 +30,14 @@ Output: direct child path below `cases_root`. The function creates no directory.
 
 Failure: invalid case ID or failed containment raises `ValueError`.
 
+### `allocate_case(cases_root, ticker, case_date=None)`
+
+Atomically creates a unique direct case directory by trying daily sequence IDs with `mkdir(exist_ok=False)`. It never reuses, deletes, or overwrites an existing case and raises `StorageError` after sequence exhaustion.
+
+### `write_run_manifest(case_directory, manifest)` / `read_run_manifest(case_directory)`
+
+Atomically persists and validates `run-manifest.json` in an existing case directory. A manifest records version, request snapshot, `running`/`completed`/`failed` lifecycle status, timestamps, stage, sanitized error, artifact inventory, and receipt summary. No database or network access occurs.
+
 ### `write_corpus_manifest(case_directory, corpus)`
 
 Input: existing case directory and valid `PulledCorpus`.
@@ -57,7 +65,11 @@ Failure: absent path, malformed JSON, or invalid contract data raises `StorageEr
 
 ## Donor code provenance
 
-No function, class, or method in this module copies or adapts code from a repository under `reference/`. Local atomic-manifest behavior is owned by this project.
+| Local symbol | Reuse type | Exact donor location | Deliberate changes |
+| --- | --- | --- | --- |
+| `app.storage.cases.write_run_manifest` and `read_run_manifest` | adapted | `reference/ai-financial-research-agent/app/api/schemas.py:13-19,64-84`, `reference/ai-financial-research-agent/app/api/service.py:81-94,163-198` | Compact local JSON lifecycle with atomic replacement; no FastAPI, database, threads, or events. |
+
+All other symbols are local filesystem contracts. No donor code is copied for corpus storage or atomic allocation.
 
 ## Tests
 

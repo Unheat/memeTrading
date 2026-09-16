@@ -2,53 +2,275 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "Meme Market Forensics — Planned Architecture",
+    "title": "Meme Market Forensics — Universal Deep Research Architecture",
     "quality_profile": "showcase",
-    "viewBox": [1115, 600],
+    "viewBox": [1200, 440],
     "views": [
       {
-        "id": "investigation-loop",
-        "label": "Investigation loop",
-        "focus": ["researcher", "state", "tools", "sources", "memo"],
-        "note": "Outer model selects next evidence-gathering action from compact case state."
+        "id": "collection-loop",
+        "label": "Collection and tool loop",
+        "focus": ["cli-intake", "collection-agent", "tool-registry", "state-ledger"],
+        "note": "Outer model receives full tool access with pair-safe context and execution budget."
       },
       {
-        "id": "sec-verification",
-        "label": "SEC verification boundary",
-        "focus": ["researcher", "sec-tool", "case-files", "sec-verifier"],
-        "note": "Verifier retrieves only case-local SEC documents and cannot access network sources."
+        "id": "three-question-funnel",
+        "label": "Three-question investment funnel",
+        "focus": ["q1-expectations", "q2-reality", "q3-debate", "ic-committee"],
+        "note": "Mauboussin expectations, Fisher and Lynch reality check, and hedge-fund trade construction."
+      },
+      {
+        "id": "sec-evidence-boundary",
+        "label": "SEC evidence boundary",
+        "focus": ["tool-registry", "sec-corpus", "q2-reality"],
+        "note": "Offline case-local corpus provides verifiable citations for forensic accounting and DCF."
+      },
+      {
+        "id": "governance-artifacts",
+        "label": "Governance & audit artifacts",
+        "focus": ["ic-committee", "artifacts-output", "state-ledger"],
+        "note": "Asymmetry hurdles, Kelly sizing, and immutable case ledger with zero unverified claims."
       }
     ]
   },
   "components": [
-    { "id": "trigger", "type": "external", "label": "Research trigger", "sublabel": "Ticker or unusual social signal", "pos": [25, 185], "size": [145, 70] },
-    { "id": "researcher", "type": "backend", "label": "Outer research model", "sublabel": "Chooses next question and tool", "pos": [215, 185], "size": [165, 70], "tag": "one agent" },
-    { "id": "state", "type": "database", "label": "Case state", "sublabel": "Claims, evidence, open questions", "pos": [215, 45], "size": [165, 70], "tag": "compact context" },
-    { "id": "tools", "type": "backend", "label": "Research tools", "sublabel": "Social, articles, web, market, SEC", "pos": [450, 185], "size": [170, 70] },
-    { "id": "sources", "type": "external", "label": "Live information sources", "sublabel": "Web, social, news, market, SEC", "pos": [685, 185], "size": [175, 70] },
-    { "id": "sec-tool", "type": "backend", "label": "SEC corpus tool", "sublabel": "Lists and pulls relevant filings", "pos": [450, 330], "size": [170, 70] },
-    { "id": "case-files", "type": "database", "label": "Case-local files", "sublabel": "SEC documents, manifest, index", "pos": [685, 330], "size": [175, 70], "tag": "filesystem only" },
-    { "id": "sec-verifier", "type": "security", "label": "Local SEC verifier", "sublabel": "Hybrid RAG and cited verdict", "pos": [685, 460], "size": [175, 70], "tag": "no network" },
-    { "id": "memo", "type": "external", "label": "Forensic memo", "sublabel": "Citations and uncertainty", "pos": [880, 185], "size": [195, 70] }
+    {
+      "id": "cli-intake",
+      "type": "external",
+      "label": "Stage 0: Intake Router",
+      "sublabel": "main.py · resolve_brief()",
+      "pos": [30, 160],
+      "size": [175, 68],
+      "tag": "No prompt · Auto router"
+    },
+    {
+      "id": "collection-agent",
+      "type": "backend",
+      "label": "Stage 1: Investigator",
+      "sublabel": "graph.py · Tool loop & budget",
+      "pos": [265, 160],
+      "size": [175, 68],
+      "tag": "FORENSIC_CHARTER_PROMPT"
+    },
+    {
+      "id": "state-ledger",
+      "type": "database",
+      "label": "Stage 1b: Case Ledger",
+      "sublabel": "tool_result_ingestion.py",
+      "pos": [265, 290],
+      "size": [175, 68],
+      "tag": "Deterministic ingress"
+    },
+    {
+      "id": "tool-registry",
+      "type": "backend",
+      "label": "12 Research Tools",
+      "sublabel": "tools.py · Duplicate guard",
+      "pos": [500, 160],
+      "size": [175, 68],
+      "tag": "Full 12-tool access"
+    },
+    {
+      "id": "sec-corpus",
+      "type": "database",
+      "label": "Case-Local SEC Corpus",
+      "sublabel": "sec/pull.py & verifier.py",
+      "pos": [500, 290],
+      "size": [175, 68],
+      "tag": "Offline FAISS RAG"
+    },
+    {
+      "id": "q1-expectations",
+      "type": "security",
+      "label": "Q1: Wall St Pricing",
+      "sublabel": "expectations.py & gate.py",
+      "pos": [740, 35],
+      "size": [180, 68],
+      "tag": "VALUATION_MODELER_PROMPT"
+    },
+    {
+      "id": "q2-reality",
+      "type": "backend",
+      "label": "Q2: Reality & DCF",
+      "sublabel": "specialists.py & engine.py",
+      "pos": [740, 160],
+      "size": [180, 68],
+      "tag": "FORENSIC_ACCOUNTING_PROMPT"
+    },
+    {
+      "id": "q3-debate",
+      "type": "security",
+      "label": "Q3: Asymmetric Debate",
+      "sublabel": "bull.py & adversarial.py",
+      "pos": [740, 290],
+      "size": [180, 68],
+      "tag": "BULL & ADVERSARIAL PROMPTS"
+    },
+    {
+      "id": "ic-committee",
+      "type": "backend",
+      "label": "Investment Committee",
+      "sublabel": "committee.py · CIO deliberation",
+      "pos": [980, 290],
+      "size": [175, 68],
+      "tag": "CIO_SYSTEM_PROMPT"
+    },
+    {
+      "id": "artifacts-output",
+      "type": "external",
+      "label": "Artifacts & Reports",
+      "sublabel": "runner.py & memo.py",
+      "pos": [980, 160],
+      "size": [175, 68],
+      "tag": "memo.md · 3-Question Funnel"
+    }
+
   ],
   "boundaries": [
-    { "kind": "security-group", "label": "Offline evidence boundary", "wraps": ["case-files", "sec-verifier"], "pad": 28 }
+    {
+      "kind": "region",
+      "label": "Three-Question Institutional Funnel",
+      "wraps": ["q1-expectations", "q2-reality", "q3-debate"],
+      "pad": 18
+    },
+    {
+      "kind": "security-group",
+      "label": "Air-Gapped SEC Evidence",
+      "wraps": ["sec-corpus"],
+      "pad": 16
+    }
   ],
   "connections": [
-    { "id": "trigger-to-researcher", "from": "trigger", "to": "researcher", "label": "start case", "variant": "emphasis", "labelDy": -29 },
-    { "id": "researcher-to-state", "from": "researcher", "to": "state", "label": "read / update", "fromSide": "top", "toSide": "bottom", "labelDx": -110 },
-    { "id": "researcher-to-tools", "from": "researcher", "to": "tools", "label": "choose next call", "variant": "emphasis", "labelDy": 59 },
-    { "id": "tools-to-sources", "from": "tools", "to": "sources", "label": "targeted retrieval", "labelDy": 59 },
-    { "id": "sources-to-tools", "from": "sources", "to": "tools", "label": "normalized evidence", "variant": "dashed", "fromSide": "bottom", "toSide": "bottom", "via": [[772.5, 305], [535, 305]] },
-    { "id": "tools-to-sec-tool", "from": "tools", "to": "sec-tool", "label": "pull filing corpus", "fromSide": "bottom", "toSide": "top", "labelDy": 169 },
-    { "id": "sec-tool-to-case-files", "from": "sec-tool", "to": "case-files", "label": "save documents", "labelDy": 59 },
-    { "id": "case-files-to-sec-verifier", "from": "case-files", "to": "sec-verifier", "label": "local retrieval only", "variant": "security", "fromSide": "bottom", "toSide": "top", "labelDy": 24 },
-    { "id": "sec-verifier-to-researcher", "from": "sec-verifier", "to": "researcher", "label": "cited verdict", "variant": "security", "fromSide": "left", "toSide": "bottom", "via": [[635, 495], [405, 495], [405, 290], [297.5, 290]] },
-    { "id": "researcher-to-memo", "from": "researcher", "to": "memo", "label": "finish when material questions resolved", "variant": "emphasis", "fromSide": "top", "toSide": "left", "via": [[297.5, 135], [870, 135], [870, 220]] }
+    {
+      "id": "intake-to-collector",
+      "from": "cli-intake",
+      "to": "collection-agent",
+      "label": "brief",
+      "variant": "emphasis",
+      "labelDy": -20
+    },
+    {
+      "id": "collector-to-tools",
+      "from": "collection-agent",
+      "to": "tool-registry",
+      "label": "tool call",
+      "variant": "emphasis",
+      "labelDy": -20
+    },
+    {
+      "id": "tools-to-ledger",
+      "from": "tool-registry",
+      "to": "state-ledger",
+      "label": "receipts",
+      "fromSide": "bottom",
+      "toSide": "right",
+      "labelDx": 10
+    },
+    {
+      "id": "ledger-to-collector",
+      "from": "state-ledger",
+      "to": "collection-agent",
+      "label": "facts",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelDx": -25
+    },
+    {
+      "id": "tools-to-sec",
+      "from": "tool-registry",
+      "to": "sec-corpus",
+      "label": "filings",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDx": 25,
+      "labelDy": 30
+    },
+    {
+      "id": "collector-to-q1",
+      "from": "collection-agent",
+      "to": "q1-expectations",
+      "label": "equity path",
+      "fromSide": "top",
+      "toSide": "left",
+      "via": [[352.5, 69]]
+    },
+    {
+      "id": "q1-to-q2",
+      "from": "q1-expectations",
+      "to": "q2-reality",
+      "label": "G1 pass",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 28
+    },
+    {
+      "id": "sec-to-q2",
+      "from": "sec-corpus",
+      "to": "q2-reality",
+      "label": "citations",
+      "variant": "security",
+      "fromSide": "right",
+      "toSide": "left",
+      "via": [[705, 324], [705, 194]]
+    },
+    {
+      "id": "q2-to-q3",
+      "from": "q2-reality",
+      "to": "q3-debate",
+      "label": "G2 & G3",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 30
+    },
+    {
+      "id": "q3-to-committee",
+      "from": "q3-debate",
+      "to": "ic-committee",
+      "label": "G4 pass",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": -20
+    },
+    {
+      "id": "committee-to-artifacts",
+      "from": "ic-committee",
+      "to": "artifacts-output",
+      "label": "verdict",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelDy": -30
+    }
   ],
   "cards": [
-    { "dot": "cyan", "title": "Outer model", "items": ["Gets compact state, not every document", "Selects next question and tool", "Treats social posts as hypotheses"] },
-    { "dot": "emerald", "title": "Evidence", "items": ["Live tools fetch current context", "SEC corpus is stored under one case", "Memo records sources and uncertainty"] },
-    { "dot": "rose", "title": "SEC boundary", "items": ["Verifier cannot browse or download", "Verdicts require citations from local filings", "GraphRAG is future optional case-local retrieval"] }
+    {
+      "dot": "cyan",
+      "title": "Stage 0 & 1: Intake, Prompts & 12 Tools",
+      "items": [
+        "Files: main.py (CLI prompt intake) & app/agent/graph.py (autonomous loop)",
+        "Prompts: FORENSIC_CHARTER_PROMPT (equity) or GENERIC_RESEARCH_PROMPT (general)",
+        "Tool Access: All 12 tools (search_web, read_article, market, SEC filings, XBRL, candidates)",
+        "Ingest: app/agent/tool_result_ingestion.py converts tool JSON into immutable receipts & facts"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Stage 2 & 3: Q1 What's Priced In & Q2 Reality",
+      "items": [
+        "Q1 (expectations.py): VALUATION_MODELER_PROMPT solves reverse DCF g_implied; authors DCF assumptions",
+        "Q2 Forensics (specialists.py): FORENSIC_ACCOUNTING_PROMPT evaluates Beneish M-Score, accruals, dilution",
+        "Q2 Specialists: SECTOR_SPECIALIST_PROMPT (concentration/BOM) & MACRO_THEMATIC_PROMPT (capex cycles)",
+        "Math: app/valuation/engine.py executes calculator.mjs for deterministic 3-case DCF & sensitivities"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Stage 4, 5 & 6: Q3 Asymmetry, CIO & Reports",
+      "items": [
+        "Q3 Debate: BULL_SYSTEM_PROMPT (3 catalysts, target price) vs. ADVERSARIAL_SYSTEM_PROMPT (4 objections, kill triggers)",
+        "Committee (committee.py): CIO_SYSTEM_PROMPT deliberates on Bull vs Bear under 3:1 hurdle & passing discipline",
+        "Position Sizing: Fractional Kelly criterion calculates exact portfolio allocation percentage",
+        "Artifacts (memo.py & runner.py): memo.md with 3-Question Funnel, investigation.json, and run-manifest.json"
+      ]
+    }
   ]
 }

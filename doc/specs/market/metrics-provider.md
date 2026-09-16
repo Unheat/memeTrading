@@ -11,7 +11,7 @@
 ## `provider.py` — yfinance boundary (black-box dependency)
 
 - `PROVIDER_NAME = "yfinance"`; `DEFAULT_PERIOD = "6mo"`.
-- `fetch_history(ticker, period) -> dict` — returns `{"dates": [...], "open": [...], "high": [...], "low": [...], "close": [...], "volume": [...]}` from `yfinance.Ticker(ticker).history(period=period)`; empty/missing data -> `MarketDataError("yfinance", ...)`.
+- `fetch_history(ticker, period) -> dict` — validates a yfinance-supported fetch period before calling `yfinance.Ticker(ticker).history(period=period)`. The calculated output label `3m` normalizes to fetch period `6mo`; malformed values raise `ValueError` without an upstream request. Returns `{"dates": [...], "open": [...], "high": [...], "low": [...], "close": [...], "volume": [...]}`; empty/missing data -> `MarketDataError("yfinance", ...)`.
 - `fetch_info(ticker) -> dict` — subset of `Ticker().info`: `market_cap`, `shares_outstanding`, `short_interest_pct`, `currency`, `exchange`; missing keys -> None. Failures -> `MarketDataError`.
 - `fetch_history_benchmark(ticker, period)` — same as `fetch_history` for benchmark.
 - Tests mock the yfinance seam (`_yf_history`, `_yf_info`).
@@ -27,6 +27,10 @@
 ## Donor code provenance
 
 See plan 10 table: `_sma` and `_atr` adapted from `reference/stock-market-intelligence/backend/app/services/technicals.py`; yfinance is a black-box dependency.
+
+| Local symbol | Reuse type | Exact donor location | Deliberate changes |
+| --- | --- | --- | --- |
+| `app.market.provider._normalize_period` | adapted | `reference/yfinance/yfinance/utils.py:496-503`, `reference/yfinance/yfinance/scrapers/history.py:105-119` | Local fixed supported-period set plus `3m` calculated-label normalization to `6mo`; no yfinance internals copied. |
 
 ## Tests
 

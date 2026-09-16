@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="generator" content="archify 2.17.0-dev.0">
-  <title>Meme Market Forensics — Planned Architecture Diagram</title>
+  <title>Meme Market Forensics — Universal Deep Research Architecture Diagram</title>
   <script>
     // Resolve the theme before first paint so light-preference users don't
     // see a dark flash. The toolbar script below re-applies with UI state.
@@ -4955,11 +4955,11 @@
            data-preset-badge-blueprint="BLUEPRINT / REV 01"
            data-preset-badge-editorial="EDITORIAL / FIELD NOTE">
         <div class="pulse-dot"></div>
-        <h1>Meme Market Forensics — Planned Architecture</h1>
+        <h1>Meme Market Forensics — Universal Deep Research Architecture</h1>
       </div>
     </div>
 
-    <script id="archify-guided-views-data" type="application/json">[{"id":"investigation-loop","label":"Investigation loop","focus":["researcher","state","tools","sources","memo"],"note":"Outer model selects next evidence-gathering action from compact case state."},{"id":"sec-verification","label":"SEC verification boundary","focus":["researcher","sec-tool","case-files","sec-verifier"],"note":"Verifier retrieves only case-local SEC documents and cannot access network sources."}]</script>
+    <script id="archify-guided-views-data" type="application/json">[{"id":"collection-loop","label":"Collection and tool loop","focus":["cli-intake","collection-agent","tool-registry","state-ledger"],"note":"Outer model receives full tool access with pair-safe context and execution budget."},{"id":"three-question-funnel","label":"Three-question investment funnel","focus":["q1-expectations","q2-reality","q3-debate","ic-committee"],"note":"Mauboussin expectations, Fisher and Lynch reality check, and hedge-fund trade construction."},{"id":"sec-evidence-boundary","label":"SEC evidence boundary","focus":["tool-registry","sec-corpus","q2-reality"],"note":"Offline case-local corpus provides verifiable citations for forensic accounting and DCF."},{"id":"governance-artifacts","label":"Governance \u0026 audit artifacts","focus":["ic-committee","artifacts-output","state-ledger"],"note":"Asymmetry hurdles, Kelly sizing, and immutable case ledger with zero unverified claims."}]</script>
 
     <script id="archify-i18n-data" type="application/json">{"locale":"en","messages":{"viewer.kind.frontend":"Frontend","viewer.kind.backend":"Backend","viewer.kind.database":"Database","viewer.kind.cloud":"Cloud","viewer.kind.security":"Security","viewer.kind.messagebus":"Message bus","viewer.kind.external":"External","viewer.kind.neutral":"Neutral","viewer.kind.node":"Node","viewer.kind.start":"Start","viewer.kind.active":"Active","viewer.kind.waiting":"Waiting","viewer.kind.decision":"Decision","viewer.kind.success":"Success","viewer.kind.failure":"Failure","viewer.toolbar.actions":"Diagram actions","viewer.theme.toggle.title":"Toggle theme (T)","viewer.theme.toggle":"Toggle color theme","viewer.theme.dark":"Dark","viewer.theme.light":"Light","viewer.preset.choose.title":"Choose visual style (S cycles)","viewer.preset.choose":"Choose visual style","viewer.preset.style":"Style","viewer.preset.menu":"Visual style","viewer.preset.identity":"Visual identity","viewer.preset.cycles":"S cycles","viewer.preset.classic":"Classic","viewer.preset.classic.short":"Classic","viewer.preset.classic.hint":"Stable technical default","viewer.preset.flow":"Signal Flow","viewer.preset.flow.short":"Flow","viewer.preset.flow.hint":"Motion-forward presentation","viewer.preset.blueprint":"Blueprint","viewer.preset.blueprint.hint":"Engineering review","viewer.preset.editorial":"Editorial","viewer.preset.editorial.hint":"Publication and launch notes","viewer.preset.badge.signalFlow":"SIGNAL FLOW","viewer.preset.badge.blueprint":"BLUEPRINT / REV 01","viewer.preset.badge.editorial":"EDITORIAL / FIELD NOTE","viewer.preset.badge.editorialPlate":"ARCHIFY / PLATE 04","viewer.preset.current":"Visual style: {style}. Choose visual style","viewer.motion.live":"Live","viewer.motion.still":"Still","viewer.motion.pause":"Pause motion","viewer.motion.resume":"Resume motion","viewer.motion.reduced":"Motion paused by reduced-motion preference","viewer.motion.hidden":"Motion paused while this page is hidden","viewer.motion.yielding":"Pause motion; currently yielding to {owner}","viewer.motion.yielding.title":"Live preview enabled · yielding to {owner}","viewer.owner.story":"the guided story","viewer.owner.chapter":"the active chapter","viewer.owner.chapterPreview":"the chapter delta preview","viewer.owner.handoff":"the chapter handoff","viewer.owner.route":"Route Probe","viewer.owner.lens":"Semantic Lens","viewer.owner.relationship":"Relationship Preview","viewer.owner.intent":"Intent Trace","viewer.owner.focus":"semantic focus","viewer.owner.legend":"legend preview","viewer.owner.reader":"reader interaction","viewer.present.enter":"Enter presentation stage","viewer.present.enter.title":"Presentation stage (F)","viewer.present.exit":"Exit presentation stage","viewer.present.exit.title":"Exit presentation stage (F or Escape)","viewer.present.present":"Present","viewer.present.exit.label":"Exit","viewer.export.button":"Export","viewer.export.button.title":"Export diagram (E)","viewer.export.diagram":"Export diagram","viewer.export.menu":"Export","viewer.export.subtitle":"Portable, clean outputs","viewer.export.share":"Share","viewer.export.shareCard":"Share Card","viewer.export.routeShareCard":"Route Share Card","viewer.export.reachShareCard":"Reach Share Card","viewer.export.copyShareCard":"Copy Share Card","viewer.export.copyDiagram":"Copy diagram","viewer.export.clipboardPng":"PNG to clipboard","viewer.export.raster":"Raster images","viewer.export.image":"Image","viewer.export.lossless":"Lossless image","viewer.export.compact":"Compact image","viewer.export.modern":"Modern image","viewer.export.vectorMotion":"Vector and motion","viewer.export.vectorMotion.heading":"Vector \u0026 motion","viewer.export.editable":"Editable vector","viewer.export.motion6s":"6s motion","viewer.export.unsupported":"Not supported by this browser","viewer.export.clipboardUnsupported":"Clipboard image write not supported by this browser","viewer.export.clipboardUnsupported.period":"Clipboard image write not supported by this browser.","viewer.export.clipboardUnsupported.short":"Clipboard image write not supported in this browser.","viewer.export.motionUnavailable":"Motion capture unavailable in this browser","viewer.export.webmUnavailable":"WebM unavailable in this browser","viewer.export.failed":"Export failed: {message}","viewer.export.unknownVariant":"Unknown Share Card variant: {variant}","viewer.export.routeRequired":"Trace a route before exporting a Route Share Card","viewer.export.reachRequired":"Trace authored reach before exporting a Reach Share Card","viewer.export.unknown":"unknown","viewer.export.routeFailed":"Route Share Card export failed: {message}","viewer.export.reachFailed":"Reach Share Card export failed: {message}","viewer.export.copyFailed":"Copy failed: {message}","viewer.export.copiedPng":"Copied PNG to clipboard","viewer.export.copiedShare":"Copied Share Card","viewer.export.downloadedShare":"Downloaded Share Card","viewer.export.downloadedRoute":"Downloaded Route Share Card","viewer.export.downloadedReach":"Downloaded Reach Share Card","viewer.export.downloadedWebm":"Downloaded WebM","viewer.export.recording":"Recording 6 seconds of motion…","viewer.export.card.routeSummary.one":"Route: {source} → {target} · {count} directed hop","viewer.export.card.routeSummary.other":"Route: {source} → {target} · {count} directed hops","viewer.export.card.reachSummary":"Authored {direction} from {origin} · {nodes} · {links} · max {hops}","viewer.export.card.node.one":"{count} node","viewer.export.card.node.other":"{count} nodes","viewer.export.card.link.one":"{count} link","viewer.export.card.link.other":"{count} links","viewer.export.card.hop.one":"{count} hop","viewer.export.card.hop.other":"{count} hops","viewer.export.card.routeBadge":"ARCHIFY · ROUTE · {hops}","viewer.export.card.reachBadge":"ARCHIFY · {direction} REACH","viewer.export.card.defaultBadge":"ARCHIFY · {preset} · {theme}","viewer.export.direction.upstream":"Upstream","viewer.export.direction.downstream":"Downstream","viewer.export.error.canvasUnavailable":"Canvas unavailable for {label}","viewer.export.error.contextUnavailable":"2D canvas context unavailable for {label}","viewer.export.error.toBlobUnavailable":"canvas.toBlob unavailable for {label}","viewer.export.error.toBlobNull":"canvas.toBlob returned no data for {label}","viewer.export.error.variantsCombined":"Share Card variants cannot be combined","viewer.export.error.viewerState":"Share Card export could not remove temporary viewer state","viewer.export.error.routeState":"Route Card export could not preserve the resolved route safely","viewer.export.error.reachState":"Reach Card export could not preserve authored reach safely","viewer.export.error.webmRequirements":"WebM motion export requires a trace animation and browser MediaRecorder support","viewer.export.error.mediaRecorder":"MediaRecorder failed","viewer.export.error.emptyWebm":"MediaRecorder produced an empty WebM","viewer.export.error.webmBackground":"SVG background could not be loaded for WebM export","viewer.guided.region":"Guided diagram views","viewer.guided.previous":"Previous guided view","viewer.guided.previous.title":"Previous guided view ([)","viewer.guided.next":"Next guided view","viewer.guided.next.title":"Next guided view (])","viewer.guided.views":"Guided views","viewer.guided.explore":"Explore this system","viewer.guided.intro":"Step through curated paths without changing the source diagram.","viewer.guided.trail":"Story trail","viewer.guided.beat":"Beat","viewer.guided.nextBeat":"Next","viewer.guided.play":"Play guided story","viewer.guided.play.title":"Play guided story (P)","viewer.guided.pause":"Pause guided story","viewer.guided.pause.title":"Pause guided story (P)","viewer.guided.replay":"Replay guided story","viewer.guided.replay.title":"Replay guided story (P)","viewer.guided.playStory":"Play story","viewer.guided.pauseStory":"Pause","viewer.guided.replayStory":"Replay story","viewer.guided.motionUnavailable":"Story playback unavailable while motion is Still","viewer.guided.enableMotion":"Switch motion to Live to play the guided story","viewer.guided.selectBeatLink":"Select a Story Beat to copy its exact link","viewer.guided.copyMoment":"Copy moment","viewer.guided.momentCopied":"Moment link copied","viewer.guided.momentCopyFailed":"Could not copy story moment link","viewer.guided.copied":"Copied","viewer.guided.copyFailed":"Copy failed","viewer.guided.showAll":"Show all","viewer.guided.showAll.aria":"Show entire diagram","viewer.guided.chapters":"Story chapters","viewer.guided.storyTrail":"Story trail for {label}: {count} beats","viewer.guided.chapter.open":"Open chapter {index} of {total}: {label}, {count} stops","viewer.guided.chapter.current":"Current chapter {index} of {total}: {label}, {count} stops","viewer.guided.chapter.selectedNodes":"{count} selected nodes","viewer.guided.chapter.stops":"{count} stops","viewer.guided.chapter.stop.one":"{count} stop","viewer.guided.chapter.stop.other":"{count} stops","viewer.guided.chapter.current.title":"{label} — current chapter, {count} stops","viewer.guided.chapter.delta.expanded":"{stay} stay, {enter} enter, {leave} leave","viewer.guided.chapter.delta.aria":"Open chapter {index} of {total}: {label}. Chapter focus delta: {delta}","viewer.guided.chapter.delta.title":"{label} — {delta} chapter focus","viewer.guided.handoff":"{from} → {to} · via {label}","viewer.guided.share.chapter":"Chapter {index} / {total}","viewer.guided.share.initial":"Chapter 01 / 01","viewer.guided.share.default":"Guided chapter","viewer.guided.state.ready":"Ready","viewer.guided.state.playing":"Playing","viewer.guided.state.settled":"Settled","viewer.guided.state.paused":"Paused","viewer.guided.state.pinned":"Pinned","viewer.guided.state.still":"Still","viewer.guided.share.step":"Step {index} / {total} · {label}","viewer.guided.share.staticMoment":"{step} · Static moment","viewer.guided.share.complete":"{count} steps complete · {note}","viewer.guided.share.settled":"Path settled for reading.","viewer.guided.share.staticPath":"{count} steps · Static path","viewer.guided.share.ready":"{count} steps · Ready","viewer.guided.share.aria":"{state} chapter {index} of {total}: {label}. {beat}. {route}","viewer.guided.beat.start":"Beat {index} / {total} · {label} · starting point","viewer.guided.beat.forward":"Beat {index} / {total} · {from} → {to}","viewer.guided.beat.reverse":"Beat {index} / {total} · {from} → {to} · reverse authored link","viewer.guided.beat.multiple":"Beat {index} / {total} · {from} ⇄ {to} · {count} authored links","viewer.guided.beat.group":"Beat {index} / {total} · {from} · {to} · grouped · no direct link","viewer.guided.beat.aria.prefix":"Story beat {index} of {total}: {label}. ","viewer.guided.beat.aria.start":"Starting point.","viewer.guided.beat.aria.forward":"From {from} through one authored forward relationship.","viewer.guided.beat.aria.reverse":"From {from}; the authored relationship points from {to} to {from}.","viewer.guided.beat.aria.multiple":"From {from} through {count} authored relationships; shown without arbitrary motion.","viewer.guided.beat.aria.group":"Grouped from {from} with no direct authored relationship.","viewer.guided.caption.start":"Starting point","viewer.guided.caption.grouped":"Grouped transition · no direct authored link","viewer.guided.caption.more":" +{count} more","viewer.guided.caption.reverse":"Reverse authored relationship","viewer.guided.caption.relationships":"{count} authored relationships","viewer.guided.caption.relationship":"Authored relationship","viewer.guided.caption.direction":"authored direction: {from} → {to}","viewer.guided.caption.starting":"Authored starting point","viewer.guided.beatLink":"Copy link to current story moment: Beat {index} of {total}: {label}","viewer.guided.noStory":"This diagram has no authored guided story.","viewer.guide.eyebrow":"Diagram guide","viewer.guide.close":"Close diagram guide","viewer.guide.inspecting":"Inspecting compiled semantics","viewer.guide.actions":"Diagram exploration actions","viewer.guide.find":"Find any node","viewer.guide.find.hint":"Search labels, responsibilities, kinds, and stable IDs.","viewer.guide.route":"Trace a route","viewer.guide.route.aria":"Trace a directed route","viewer.guide.route.hint":"Ask how two semantic nodes connect in authored direction.","viewer.guide.map":"See the whole system","viewer.guide.map.hint":"Open Semantic Radar with a live viewport and stable nodes.","viewer.guide.lens":"Compare semantic kinds","viewer.guide.lens.hint":"Count roles, reveal their traffic, and compare direct authored links.","viewer.guide.story":"Play the guided story","viewer.guide.story.hint":"Walk the authored chapters and real relationships.","viewer.guide.present":"Enter Presentation Stage","viewer.guide.present.hint":"Give the live diagram the viewport without changing export.","viewer.guide.shortcuts":"Additional keyboard shortcuts","viewer.guide.shortcut.export":"Export","viewer.guide.shortcut.theme":"Theme","viewer.guide.shortcut.style":"Style","viewer.guide.shortcut.reset":"Reset","viewer.guide.shortcut.zoomIn":"Zoom in","viewer.guide.shortcut.zoomOut":"Zoom out","viewer.guide.shortcut.close":"Close","viewer.guide.facts":"{nodes} · {relationships} · {views}","viewer.guide.fact.node.one":"{count} semantic node","viewer.guide.fact.node.other":"{count} semantic nodes","viewer.guide.fact.relationship.one":"{count} relationship","viewer.guide.fact.relationship.other":"{count} relationships","viewer.guide.fact.view.one":"{count} guided view","viewer.guide.fact.view.other":"{count} guided views","viewer.guide.story.available.one":"Walk {count} authored chapter and its real relationships.","viewer.guide.story.available.other":"Walk {count} authored chapters and their real relationships.","viewer.guide.story.unavailable":"No authored guided story in this diagram.","viewer.guide.open":"Open diagram guide","viewer.guide.noStory":"This diagram has no authored guided story.","viewer.finder.title":"Find a node","viewer.finder.close":"Close node finder","viewer.finder.placeholder":"Search labels or IDs","viewer.finder.search":"Search diagram nodes","viewer.finder.results":"Diagram nodes","viewer.finder.empty":"No matching nodes","viewer.finder.result.focus":"Focus {label}","viewer.finder.result.routeStart":"Choose {label} as route start","viewer.finder.result.routeTarget":"Choose {label} as route destination, {links}","viewer.finder.status.empty":"No matching nodes","viewer.finder.status.count.one":"{count} matching node","viewer.finder.status.count.other":"{count} matching nodes","viewer.finder.noun.nodes":"nodes","viewer.finder.link.one":"{count} link","viewer.finder.link.other":"{count} links","viewer.finder.result.focus.one":"Focus {label}, {count} related connection","viewer.finder.result.focus.other":"Focus {label}, {count} related connections","viewer.finder.status.filtered":"{visible} of {available} {noun}","viewer.finder.status.all":"{available} {noun}","viewer.passport.eyebrow":"Semantic passport","viewer.passport.metadata":"Node metadata","viewer.passport.evidence":"Verified source evidence","viewer.passport.verified":"Verified source","viewer.passport.reach":"Authored reach","viewer.passport.reach.trace":"Trace authored reachability","viewer.passport.upstream":"Upstream","viewer.passport.downstream":"Downstream","viewer.passport.upstream.trace":"Trace upstream authored reachability","viewer.passport.downstream.trace":"Trace downstream authored reachability","viewer.passport.close":"Close semantic passport","viewer.passport.copy":"Copy link","viewer.passport.copy.focus":"Copy link to focused node","viewer.passport.relations":"Relations","viewer.passport.relations.show":"Show connected relationships","viewer.passport.relations.hide":"Hide connected relationships","viewer.passport.relations.list":"Connected relationships","viewer.passport.copyRelation":"Copy relation","viewer.passport.copyNode":"Copy node","viewer.passport.copyPinned":"Copy link to pinned relationship","viewer.passport.copySource":"Copy link to source node","viewer.passport.copy.focused.success":"Focused node link copied","viewer.passport.copy.pinned.success":"Pinned relationship link copied","viewer.passport.copy.focused.failed":"Could not copy focused node link","viewer.passport.copy.pinned.failed":"Could not copy pinned relationship link","viewer.passport.relationship.none":"No connected relationships","viewer.passport.relationship.count.one":"{count} relation","viewer.passport.relationship.count.other":"{count} relations","viewer.passport.relationship.show.one":"Show {count} connected relationship","viewer.passport.relationship.show.other":"Show {count} connected relationships","viewer.passport.relationship.summary":"{out} outgoing · {in} incoming{loops}","viewer.passport.relationship.loops":" · {count} loop","viewer.passport.relationship.explorer":"Direct relationship explorer","viewer.passport.relationship.help":"Use arrow keys to explore relationships. Press Enter or Space to pin details; Escape clears.","viewer.passport.relationship.loopsBack":"loops back","viewer.passport.relationship.connectsTo":"connects to","viewer.passport.relationship.connectsFrom":"connects from","viewer.passport.relationship.pinned":"Pinned relationship · {from} → {to} · {label}","viewer.passport.relationship.inspect":"Inspect relationship {index} of {total}: {from} to {to}, {label}. Press Enter for details.","viewer.passport.relationship.group.out":"Outgoing","viewer.passport.relationship.group.in":"Incoming","viewer.passport.relationship.group.loop":"Self loops","viewer.passport.relationship.row":"{group}: {relationship}, {neighbor}","viewer.passport.relationship.direction.out":"OUT →","viewer.passport.relationship.direction.in":"← IN","viewer.passport.relationship.direction.loop":"LOOP","viewer.passport.sourceCount.one":"{count} verified source reference","viewer.passport.sourceCount.other":"{count} verified source references","viewer.passport.sourceMarker":"SRC","viewer.passport.beacon.one":"{count} verified source; focus this node to inspect","viewer.passport.beacon.other":"{count} verified sources; focus this node to inspect","viewer.passport.repository.open":"Open verified repository revision {revision}","viewer.passport.source.open":"Open verified source {path} at revision {revision}","viewer.passport.source.openLink":"Open ↗","viewer.passport.reach.upstream.one":"Trace {count} upstream authored node","viewer.passport.reach.upstream.other":"Trace {count} upstream authored nodes","viewer.passport.reach.downstream.one":"Trace {count} downstream authored node","viewer.passport.reach.downstream.other":"Trace {count} downstream authored nodes","viewer.passport.reach.noUpstream":"No upstream authored nodes","viewer.passport.reach.noDownstream":"No downstream authored nodes","viewer.passport.reach.status":"{direction} · {nodes} nodes · {links} links · max {hops} hops","viewer.route.eyebrow":"Route probe","viewer.route.start":"Choose a start node","viewer.route.start.find":"Find start","viewer.route.start.find.aria":"Find a route start","viewer.route.copy":"Copy link","viewer.route.copy.aria":"Copy link to traced route","viewer.route.clear":"Clear","viewer.route.clear.aria":"Clear route probe","viewer.route.traced":"Traced route","viewer.route.pickTwo":"Pick two semantic nodes on the diagram","viewer.route.pickOne":"Pick a semantic node on the diagram","viewer.route.controls":"Route journey controls","viewer.route.previous":"Previous route position","viewer.route.play":"Play route journey","viewer.route.pause":"Pause route journey","viewer.route.replay":"Replay route journey","viewer.route.next":"Next route position","viewer.route.journey":"Journey","viewer.route.pause.label":"Pause","viewer.route.replay.label":"Replay","viewer.route.overview":"Overview","viewer.route.overview.aria":"Show complete route overview","viewer.route.instructions":"Choose the source, then the destination. Direction matters.","viewer.route.destination":"Choose a destination from {label}","viewer.route.destination.find":"Find target","viewer.route.destination.find.aria":"Find a reachable route destination","viewer.route.differentDestination":"Choose a different destination","viewer.route.distinct":"A route needs two distinct semantic nodes.","viewer.route.unreachable":"No directed route to {label}","viewer.route.unreachable.detail":"{target} is not reachable from {source}. Pick a highlighted destination.","viewer.route.start.instructions":"Select the source. The next step will reveal only directed destinations.","viewer.route.copy.success":"Traced route link copied","viewer.route.copy.failed":"Could not copy traced route link","viewer.route.position":"Route position {index} of {total}: {label}","viewer.route.step":"Step {index} of {total} · {phase} · {label}","viewer.route.motionRequired":"Automatic journey requires Live motion","viewer.route.trigger.clear":"Clear traced route","viewer.route.overview.status":"{nodes} · {hops} · shortest authored route","viewer.route.overview.node.one":"{count} node","viewer.route.overview.node.other":"{count} nodes","viewer.route.overview.hop.one":"{count} directed hop","viewer.route.overview.hop.other":"{count} directed hops","viewer.route.phase.playing":"Playing","viewer.route.phase.complete":"Complete","viewer.route.phase.inspecting":"Inspecting","viewer.route.destination.count.one":"{count} directed destination available. Pick a highlighted node.","viewer.route.destination.count.other":"{count} directed destinations available. Pick a highlighted node.","viewer.route.noOutgoing":"No outgoing route starts here. Clear and choose another source.","viewer.route.result.title":"{source} to {target}","viewer.route.finder.source.title":"Choose route start","viewer.route.finder.source.placeholder":"Search route sources","viewer.route.finder.source.empty":"No matching route sources","viewer.route.finder.source.results":"Nodes that can start a route","viewer.route.finder.source.noun":"route sources","viewer.route.finder.source.badge":"start","viewer.route.finder.target.title":"Destination from {label}","viewer.route.finder.target.placeholder":"Search reachable destinations","viewer.route.finder.target.empty":"No matching reachable destinations","viewer.route.finder.target.results":"Reachable route destinations","viewer.route.finder.target.noun":"reachable destinations","viewer.route.hop.one":"{count} hop","viewer.route.hop.other":"{count} hops","viewer.lens.eyebrow":"Semantic lens","viewer.lens.title":"Compare system roles","viewer.lens.close":"Close semantic lens","viewer.lens.instruction":"Choose up to two semantic kinds. One reveals its real traffic; two compare only direct authored relationships.","viewer.lens.kinds":"Semantic kinds","viewer.lens.choose":"Choose a kind to inspect its nodes and touching relationships.","viewer.lens.copy":"Copy link to semantic lens","viewer.lens.clear":"Clear semantic lens","viewer.lens.open":"Open semantic lens","viewer.lens.openActive":"Open active semantic lens","viewer.lens.legend":"Semantic legend","viewer.lens.legend.inspect.one":"Inspect {label}, {count} node","viewer.lens.legend.inspect.other":"Inspect {label}, {count} nodes","viewer.lens.kind.count.one":"{label}, {count} node","viewer.lens.kind.count.other":"{label}, {count} nodes","viewer.lens.compare.one":"{first} → {second}: {forward} · {second} → {first}: {reverse} · {count} direct relationship","viewer.lens.compare.other":"{first} → {second}: {forward} · {second} → {first}: {reverse} · {count} direct relationships","viewer.lens.single":"{nodes} · {relationships} · connected peers remain visible","viewer.lens.node.one":"{count} {label} node","viewer.lens.node.other":"{count} {label} nodes","viewer.lens.relationship.one":"{count} touching relationship","viewer.lens.relationship.other":"{count} touching relationships","viewer.radar.title":"Semantic radar","viewer.radar.building":"Building overview","viewer.radar.openFull":"Open full semantic radar","viewer.radar.open":"Open radar","viewer.radar.close":"Close semantic radar","viewer.radar.surface":"Diagram overview. Click a node to focus it, or use arrow keys to pan.","viewer.radar.click":"Click node","viewer.radar.drag":"Drag to pan","viewer.radar.space":"Semantic radar needs more MAP space.","viewer.radar.nodes":"Semantic diagram radar nodes","viewer.radar.focus":"Focus {label} from Semantic Radar","viewer.radar.status":"{count} nodes · {viewport}","viewer.radar.fullMap":"{count} nodes · full map","viewer.radar.compacted":"Radar compacted to avoid covering the Semantic Passport or MAP controls.","viewer.radar.cancelWaiting":"Cancel semantic radar waiting for more MAP space","viewer.radar.needsSpace":"Semantic radar needs more visible MAP space","viewer.radar.viewport.full":"full map","viewer.radar.viewport.width":"{percent}% width","viewer.radar.viewport.scale":"{percent}% viewport","viewer.nav.controls":"Diagram view controls","viewer.nav.route":"Trace a directed route","viewer.nav.route.title":"Trace route (R)","viewer.nav.route.short":"PATH","viewer.nav.radar":"Open semantic radar","viewer.nav.radar.title":"Semantic radar (M)","viewer.nav.radar.short":"MAP","viewer.nav.lens":"Open semantic lens","viewer.nav.lens.title":"Semantic lens (L)","viewer.nav.lens.short":"LENS","viewer.nav.find":"Find a node","viewer.nav.find.title":"Find a node (/)","viewer.nav.guide":"Open diagram guide","viewer.nav.guide.title":"Diagram guide (?)","viewer.nav.zoomOut":"Zoom out","viewer.nav.zoomOut.title":"Zoom out (-)","viewer.nav.reset":"Reset diagram view","viewer.nav.reset.title":"Reset view (0)","viewer.nav.read":"READ","viewer.nav.zoomIn":"Zoom in","viewer.nav.zoomIn.title":"Zoom in (+)","viewer.nav.camera":"{hint}. Reset diagram view","viewer.nav.camera.title":"{semantic}{hint} · reset view (0)","viewer.nav.camera.semantic":"Semantic camera active · ","viewer.nav.level.map":"MAP","viewer.nav.level.read":"READ","viewer.nav.level.full":"FULL","viewer.nav.level.auto":"AUTO","viewer.nav.detail.map":"Zoom in to reveal relationship labels and node context","viewer.nav.detail.read":"Zoom in again to reveal tags and annotations","viewer.nav.detail.full":"Full diagram detail","viewer.intent.summary":"{label}. {out} outgoing, {in} incoming{loops}. {total} connections. Press Enter for details.","viewer.intent.loops":", {count} self loop","viewer.common.copied":"Copied","viewer.common.copyFailed":"Copy failed","viewer.common.copyLink":"Copy link","viewer.common.clear":"Clear","viewer.common.close":"Close"}}</script>
     <div class="guided-views no-print" id="guided-views" hidden aria-label="Guided diagram views">
@@ -5004,8 +5004,8 @@
     <!-- Main Diagram -->
     <div class="diagram-container" data-detail-level="read"
          data-preset-badge-editorial-plate="ARCHIFY / PLATE 04">
-      <svg viewBox="0 0 1115 600" role="img" lang="en" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="showcase">
-        <title id="archify-diagram-title">Meme Market Forensics — Planned Architecture</title>
+      <svg viewBox="0 0 1200 430" role="img" lang="en" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="showcase">
+        <title id="archify-diagram-title">Meme Market Forensics — Universal Deep Research Architecture</title>
         <desc id="archify-diagram-description">An architecture diagram generated by Archify.</desc>
         <!-- Definitions -->
         <defs>
@@ -5030,180 +5030,227 @@
         <rect width="100%" height="100%" fill="url(#grid)" />
 
         <!-- Boundaries (behind everything) -->
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="0" data-composition-frame-label="Offline evidence boundary" x="657" y="302" width="231" height="248" rx="8" class="c-security-group" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="0" data-composition-frame-label="Three-Question Institutional Funnel" x="722" y="11" width="216" height="354" rx="12" class="c-region" stroke-width="1"/>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="1" data-composition-frame-label="Air-Gapped SEC Evidence" x="484" y="256" width="207" height="109" rx="8" class="c-security-group" stroke-width="1"/>
 
         <!-- Connection paths (before components for correct z-order) -->
-        <path data-edge-from="trigger" data-edge-to="researcher" data-edge-label="start case" data-edge-key="0" data-edge-id="trigger-to-researcher" data-composition-points="170,220;215,220" d="M 170 220 L 215 220" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="researcher" data-edge-to="state" data-edge-label="read / update" data-edge-key="1" data-edge-id="researcher-to-state" data-composition-points="297.5,185;297.5,115" d="M 297.5 185 L 297.5 115" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="researcher" data-edge-to="tools" data-edge-label="choose next call" data-edge-key="2" data-edge-id="researcher-to-tools" data-composition-points="380,220;450,220" d="M 380 220 L 450 220" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="tools" data-edge-to="sources" data-edge-label="targeted retrieval" data-edge-key="3" data-edge-id="tools-to-sources" data-composition-points="620,220;685,220" d="M 620 220 L 685 220" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="sources" data-edge-to="tools" data-edge-label="normalized evidence" data-edge-key="4" data-edge-id="sources-to-tools" data-composition-points="772.5,255;772.5,305;535,305;535,255" d="M 772.5 255 L 772.5 297 Q 772.5 305 764.5 305 L 543 305 Q 535 305 535 297 L 535 255" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="tools" data-edge-to="sec-tool" data-edge-label="pull filing corpus" data-edge-key="5" data-edge-id="tools-to-sec-tool" data-composition-points="535,255;535,330" d="M 535 255 L 535 330" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="sec-tool" data-edge-to="case-files" data-edge-label="save documents" data-edge-key="6" data-edge-id="sec-tool-to-case-files" data-composition-points="620,365;685,365" d="M 620 365 L 685 365" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="case-files" data-edge-to="sec-verifier" data-edge-label="local retrieval only" data-edge-key="7" data-edge-id="case-files-to-sec-verifier" data-composition-points="772.5,400;772.5,460" d="M 772.5 400 L 772.5 460" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
-        <path data-edge-from="sec-verifier" data-edge-to="researcher" data-edge-label="cited verdict" data-edge-key="8" data-edge-id="sec-verifier-to-researcher" data-composition-points="685,495;635,495;405,495;405,290;297.5,290;297.5,255" d="M 685 495 L 643 495 Q 635 495 627 495 L 413 495 Q 405 495 405 487 L 405 298 Q 405 290 397 290 L 305.5 290 Q 297.5 290 297.5 282 L 297.5 255" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
-        <path data-edge-from="researcher" data-edge-to="memo" data-edge-label="finish when material questions resolved" data-edge-key="9" data-edge-id="researcher-to-memo" data-composition-points="297.5,185;297.5,135;870,135;870,220;880,220" d="M 297.5 185 L 297.5 143 Q 297.5 135 305.5 135 L 862 135 Q 870 135 870 143 L 870 215 Q 870 220 875 220 L 880 220" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="cli-intake" data-edge-to="collection-agent" data-edge-label="brief" data-edge-key="0" data-edge-id="intake-to-collector" data-composition-points="205,187.5;265,187.5" d="M 205 187.5 L 265 187.5" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="collection-agent" data-edge-to="tool-registry" data-edge-label="tool call" data-edge-key="1" data-edge-id="collector-to-tools" data-composition-points="440,187.5;500,187.5" d="M 440 187.5 L 500 187.5" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="tool-registry" data-edge-to="state-ledger" data-edge-label="receipts" data-edge-key="2" data-edge-id="tools-to-ledger" data-composition-points="580.5,220;580.5,244;464,244;464,312.5;440,312.5" d="M 580.5 220 L 580.5 236 Q 580.5 244 572.5 244 L 472 244 Q 464 244 464 252 L 464 304.5 Q 464 312.5 456 312.5 L 440 312.5" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="state-ledger" data-edge-to="collection-agent" data-edge-label="facts" data-edge-key="3" data-edge-id="ledger-to-collector" data-composition-points="352.5,280;352.5,220" d="M 352.5 280 L 352.5 220" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="tool-registry" data-edge-to="sec-corpus" data-edge-label="filings" data-edge-key="4" data-edge-id="tools-to-sec" data-composition-points="594.5,220;594.5,280" d="M 594.5 220 L 594.5 280" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="collection-agent" data-edge-to="q1-expectations" data-edge-label="equity path" data-edge-key="5" data-edge-id="collector-to-q1" data-composition-points="352.5,155;352.5,67.5;740,67.5" d="M 352.5 155 L 352.5 75.5 Q 352.5 67.5 360.5 67.5 L 740 67.5" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="q1-expectations" data-edge-to="q2-reality" data-edge-label="G1 pass" data-edge-key="6" data-edge-id="q1-to-q2" data-composition-points="830,100;830,155" d="M 830 100 L 830 155" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="sec-corpus" data-edge-to="q2-reality" data-edge-label="citations" data-edge-key="7" data-edge-id="sec-to-q2" data-composition-points="675,312.5;705,312.5;705,187.5;740,187.5" d="M 675 312.5 L 697 312.5 Q 705 312.5 705 304.5 L 705 195.5 Q 705 187.5 713 187.5 L 740 187.5" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
+        <path data-edge-from="q2-reality" data-edge-to="q3-debate" data-edge-label="G2 &amp; G3" data-edge-key="8" data-edge-id="q2-to-q3" data-composition-points="830,220;830,280" d="M 830 220 L 830 280" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="q3-debate" data-edge-to="ic-committee" data-edge-label="G4 pass" data-edge-key="9" data-edge-id="q3-to-committee" data-composition-points="920,312.5;980,312.5" d="M 920 312.5 L 980 312.5" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="ic-committee" data-edge-to="artifacts-output" data-edge-label="verdict" data-edge-key="10" data-edge-id="committee-to-artifacts" data-composition-points="1067.5,280;1067.5,220" d="M 1067.5 280 L 1067.5 220" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
 
         <!-- Components -->
-        <g id="node-trigger" data-node-id="trigger" data-node-label="Research trigger" tabindex="0" role="button" aria-label="Focus Research trigger, Ticker or unusual social signal, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="Ticker or unusual social signal" data-node-context="Architecture component">
-          <title>Research trigger · Ticker or unusual social signal · Architecture component</title>
-          <rect x="25" y="185" width="145" height="70" rx="6" class="c-mask"/>
-          <rect x="25" y="185" width="145" height="70" rx="6" class="c-external" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(31 191) scale(0.6875)">
+        <g id="node-cli-intake" data-node-id="cli-intake" data-node-label="Research Intake &amp; Router" tabindex="0" role="button" aria-label="Focus Research Intake &amp; Router, Single prompt · Auto routing, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="Single prompt · Auto routing" data-node-tag="Stage 0 · Auto routing" data-node-context="Architecture component">
+          <title>Research Intake &amp; Router · Single prompt · Auto routing · Architecture component · Stage 0 · Auto routing</title>
+          <rect x="30" y="155" width="175" height="65" rx="6" class="c-mask"/>
+          <rect x="30" y="155" width="175" height="65" rx="6" class="c-external" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(36 161) scale(0.6875)">
             <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="97.5" y="218" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Research trigger</text>
-        <text data-detail="context" x="97.5" y="234" class="t-muted" font-size="7.3" text-anchor="middle">Ticker or unusual social signal</text>
+          <text data-node-label="" data-detail-anchor="" x="117.5" y="185.5" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Research Intake &amp; Router</text>
+        <text data-detail="context" x="117.5" y="201.5" class="t-muted" font-size="9" text-anchor="middle">Single prompt · Auto routing</text>
+        <text data-detail="fine" x="117.5" y="212" class="t-external" font-size="7" text-anchor="middle">Stage 0 · Auto routing</text>
         </g>
 
-        <g id="node-researcher" data-node-id="researcher" data-node-label="Outer research model" tabindex="0" role="button" aria-label="Focus Outer research model, Chooses next question and tool, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Chooses next question and tool" data-node-tag="one agent" data-node-context="Architecture component">
-          <title>Outer research model · Chooses next question and tool · Architecture component · one agent</title>
-          <rect x="215" y="185" width="165" height="70" rx="6" class="c-mask"/>
-          <rect x="215" y="185" width="165" height="70" rx="6" class="c-backend" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(221 191) scale(0.6875)">
+        <g id="node-collection-agent" data-node-id="collection-agent" data-node-label="Autonomous Investigator" tabindex="0" role="button" aria-label="Focus Autonomous Investigator, All 12 tools · Budget cap, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="All 12 tools · Budget cap" data-node-tag="Stage 1 · Dynamic prompt" data-node-context="Architecture component">
+          <title>Autonomous Investigator · All 12 tools · Budget cap · Architecture component · Stage 1 · Dynamic prompt</title>
+          <rect x="265" y="155" width="175" height="65" rx="6" class="c-mask"/>
+          <rect x="265" y="155" width="175" height="65" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(271 161) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="297.5" y="218" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Outer research model</text>
-        <text data-detail="context" x="297.5" y="234" class="t-muted" font-size="8.7" text-anchor="middle">Chooses next question and tool</text>
-        <text data-detail="fine" x="297.5" y="247" class="t-backend" font-size="7" text-anchor="middle">one agent</text>
+          <text data-node-label="" data-detail-anchor="" x="352.5" y="185.5" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Autonomous Investigator</text>
+        <text data-detail="context" x="352.5" y="201.5" class="t-muted" font-size="9" text-anchor="middle">All 12 tools · Budget cap</text>
+        <text data-detail="fine" x="352.5" y="212" class="t-backend" font-size="7" text-anchor="middle">Stage 1 · Dynamic prompt</text>
         </g>
 
-        <g id="node-state" data-node-id="state" data-node-label="Case state" tabindex="0" role="button" aria-label="Focus Case state, Claims, evidence, open questions, Architecture component" aria-pressed="false" data-node-kind="database" data-node-sublabel="Claims, evidence, open questions" data-node-tag="compact context" data-node-context="Architecture component">
-          <title>Case state · Claims, evidence, open questions · Architecture component · compact context</title>
-          <rect x="215" y="45" width="165" height="70" rx="6" class="c-mask"/>
-          <rect x="215" y="45" width="165" height="70" rx="6" class="c-database" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(221 51) scale(0.6875)">
+        <g id="node-state-ledger" data-node-id="state-ledger" data-node-label="Case State &amp; Ledger" tabindex="0" role="button" aria-label="Focus Case State &amp; Ledger, Sources, claims, receipts, Architecture component" aria-pressed="false" data-node-kind="database" data-node-sublabel="Sources, claims, receipts" data-node-tag="Stage 1b · Deterministic" data-node-context="Architecture component">
+          <title>Case State &amp; Ledger · Sources, claims, receipts · Architecture component · Stage 1b · Deterministic</title>
+          <rect x="265" y="280" width="175" height="65" rx="6" class="c-mask"/>
+          <rect x="265" y="280" width="175" height="65" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(271 286) scale(0.6875)">
             <ellipse cx="8" cy="4" rx="5" ry="2"/>
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="297.5" y="78" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Case state</text>
-        <text data-detail="context" x="297.5" y="94" class="t-muted" font-size="8.1" text-anchor="middle">Claims, evidence, open questions</text>
-        <text data-detail="fine" x="297.5" y="107" class="t-database" font-size="7" text-anchor="middle">compact context</text>
+          <text data-node-label="" data-detail-anchor="" x="352.5" y="310.5" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Case State &amp; Ledger</text>
+        <text data-detail="context" x="352.5" y="326.5" class="t-muted" font-size="9" text-anchor="middle">Sources, claims, receipts</text>
+        <text data-detail="fine" x="352.5" y="337" class="t-database" font-size="7" text-anchor="middle">Stage 1b · Deterministic</text>
         </g>
 
-        <g id="node-tools" data-node-id="tools" data-node-label="Research tools" tabindex="0" role="button" aria-label="Focus Research tools, Social, articles, web, market, SEC, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Social, articles, web, market, SEC" data-node-context="Architecture component">
-          <title>Research tools · Social, articles, web, market, SEC · Architecture component</title>
-          <rect x="450" y="185" width="170" height="70" rx="6" class="c-mask"/>
-          <rect x="450" y="185" width="170" height="70" rx="6" class="c-backend" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(456 191) scale(0.6875)">
+        <g id="node-tool-registry" data-node-id="tool-registry" data-node-label="12 Research Tools" tabindex="0" role="button" aria-label="Focus 12 Research Tools, Web, news, social, SEC, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Web, news, social, SEC" data-node-tag="12 normalized tools" data-node-context="Architecture component">
+          <title>12 Research Tools · Web, news, social, SEC · Architecture component · 12 normalized tools</title>
+          <rect x="500" y="155" width="175" height="65" rx="6" class="c-mask"/>
+          <rect x="500" y="155" width="175" height="65" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(506 161) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="535" y="218" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Research tools</text>
-        <text data-detail="context" x="535" y="234" class="t-muted" font-size="7.9" text-anchor="middle">Social, articles, web, market, SEC</text>
+          <text data-node-label="" data-detail-anchor="" x="587.5" y="185.5" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">12 Research Tools</text>
+        <text data-detail="context" x="587.5" y="201.5" class="t-muted" font-size="9" text-anchor="middle">Web, news, social, SEC</text>
+        <text data-detail="fine" x="587.5" y="212" class="t-backend" font-size="7" text-anchor="middle">12 normalized tools</text>
         </g>
 
-        <g id="node-sources" data-node-id="sources" data-node-label="Live information sources" tabindex="0" role="button" aria-label="Focus Live information sources, Web, social, news, market, SEC, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="Web, social, news, market, SEC" data-node-context="Architecture component">
-          <title>Live information sources · Web, social, news, market, SEC · Architecture component</title>
-          <rect x="685" y="185" width="175" height="70" rx="6" class="c-mask"/>
-          <rect x="685" y="185" width="175" height="70" rx="6" class="c-external" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(691 191) scale(0.6875)">
-            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
-            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="772.5" y="218" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Live information sources</text>
-        <text data-detail="context" x="772.5" y="234" class="t-muted" font-size="9" text-anchor="middle">Web, social, news, market, SEC</text>
-        </g>
-
-        <g id="node-sec-tool" data-node-id="sec-tool" data-node-label="SEC corpus tool" tabindex="0" role="button" aria-label="Focus SEC corpus tool, Lists and pulls relevant filings, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Lists and pulls relevant filings" data-node-context="Architecture component">
-          <title>SEC corpus tool · Lists and pulls relevant filings · Architecture component</title>
-          <rect x="450" y="330" width="170" height="70" rx="6" class="c-mask"/>
-          <rect x="450" y="330" width="170" height="70" rx="6" class="c-backend" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(456 336) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="535" y="363" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">SEC corpus tool</text>
-        <text data-detail="context" x="535" y="379" class="t-muted" font-size="8.4" text-anchor="middle">Lists and pulls relevant filings</text>
-        </g>
-
-        <g id="node-case-files" data-node-id="case-files" data-node-label="Case-local files" tabindex="0" role="button" aria-label="Focus Case-local files, SEC documents, manifest, index, Offline evidence boundary" aria-pressed="false" data-node-kind="database" data-node-sublabel="SEC documents, manifest, index" data-node-tag="filesystem only" data-node-context="Offline evidence boundary">
-          <title>Case-local files · SEC documents, manifest, index · Offline evidence boundary · filesystem only</title>
-          <rect x="685" y="330" width="175" height="70" rx="6" class="c-mask"/>
-          <rect x="685" y="330" width="175" height="70" rx="6" class="c-database" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(691 336) scale(0.6875)">
+        <g id="node-sec-corpus" data-node-id="sec-corpus" data-node-label="Case-Local SEC Corpus" tabindex="0" role="button" aria-label="Focus Case-Local SEC Corpus, Local filings &amp; verifier, Air-Gapped SEC Evidence" aria-pressed="false" data-node-kind="database" data-node-sublabel="Local filings &amp; verifier" data-node-tag="Offline FAISS RAG" data-node-context="Air-Gapped SEC Evidence">
+          <title>Case-Local SEC Corpus · Local filings &amp; verifier · Air-Gapped SEC Evidence · Offline FAISS RAG</title>
+          <rect x="500" y="280" width="175" height="65" rx="6" class="c-mask"/>
+          <rect x="500" y="280" width="175" height="65" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(506 286) scale(0.6875)">
             <ellipse cx="8" cy="4" rx="5" ry="2"/>
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="772.5" y="363" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Case-local files</text>
-        <text data-detail="context" x="772.5" y="379" class="t-muted" font-size="9" text-anchor="middle">SEC documents, manifest, index</text>
-        <text data-detail="fine" x="772.5" y="392" class="t-database" font-size="7" text-anchor="middle">filesystem only</text>
+          <text data-node-label="" data-detail-anchor="" x="587.5" y="310.5" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Case-Local SEC Corpus</text>
+        <text data-detail="context" x="587.5" y="326.5" class="t-muted" font-size="9" text-anchor="middle">Local filings &amp; verifier</text>
+        <text data-detail="fine" x="587.5" y="337" class="t-database" font-size="7" text-anchor="middle">Offline FAISS RAG</text>
         </g>
 
-        <g id="node-sec-verifier" data-node-id="sec-verifier" data-node-label="Local SEC verifier" tabindex="0" role="button" aria-label="Focus Local SEC verifier, Hybrid RAG and cited verdict, Offline evidence boundary" aria-pressed="false" data-node-kind="security" data-node-sublabel="Hybrid RAG and cited verdict" data-node-tag="no network" data-node-context="Offline evidence boundary">
-          <title>Local SEC verifier · Hybrid RAG and cited verdict · Offline evidence boundary · no network</title>
-          <rect x="685" y="460" width="175" height="70" rx="6" class="c-mask"/>
-          <rect x="685" y="460" width="175" height="70" rx="6" class="c-security" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(691 466) scale(0.6875)">
+        <g id="node-q1-expectations" data-node-id="q1-expectations" data-node-label="Q1: Wall St Expectations" tabindex="0" role="button" aria-label="Focus Q1: Wall St Expectations, Reverse expectations · G1, Three-Question Institutional Funnel" aria-pressed="false" data-node-kind="security" data-node-sublabel="Reverse expectations · G1" data-node-tag="Q1 · Mauboussin" data-node-context="Three-Question Institutional Funnel">
+          <title>Q1: Wall St Expectations · Reverse expectations · G1 · Three-Question Institutional Funnel · Q1 · Mauboussin</title>
+          <rect x="740" y="35" width="180" height="65" rx="6" class="c-mask"/>
+          <rect x="740" y="35" width="180" height="65" rx="6" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(746 41) scale(0.6875)">
             <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
             <path d="m5.8 8 1.5 1.5 3-3"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="772.5" y="493" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Local SEC verifier</text>
-        <text data-detail="context" x="772.5" y="509" class="t-muted" font-size="9" text-anchor="middle">Hybrid RAG and cited verdict</text>
-        <text data-detail="fine" x="772.5" y="522" class="t-security" font-size="7" text-anchor="middle">no network</text>
+          <text data-node-label="" data-detail-anchor="" x="830" y="65.5" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Q1: Wall St Expectations</text>
+        <text data-detail="context" x="830" y="81.5" class="t-muted" font-size="9" text-anchor="middle">Reverse expectations · G1</text>
+        <text data-detail="fine" x="830" y="92" class="t-security" font-size="7" text-anchor="middle">Q1 · Mauboussin</text>
         </g>
 
-        <g id="node-memo" data-node-id="memo" data-node-label="Forensic memo" tabindex="0" role="button" aria-label="Focus Forensic memo, Citations and uncertainty, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="Citations and uncertainty" data-node-context="Architecture component">
-          <title>Forensic memo · Citations and uncertainty · Architecture component</title>
-          <rect x="880" y="185" width="195" height="70" rx="6" class="c-mask"/>
-          <rect x="880" y="185" width="195" height="70" rx="6" class="c-external" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(886 191) scale(0.6875)">
+        <g id="node-q2-reality" data-node-id="q2-reality" data-node-label="Q2: Ground Reality &amp; DCF" tabindex="0" role="button" aria-label="Focus Q2: Ground Reality &amp; DCF, XBRL forensics · DCF math, Three-Question Institutional Funnel" aria-pressed="false" data-node-kind="backend" data-node-sublabel="XBRL forensics · DCF math" data-node-tag="Q2 · Fisher &amp; Lynch" data-node-context="Three-Question Institutional Funnel">
+          <title>Q2: Ground Reality &amp; DCF · XBRL forensics · DCF math · Three-Question Institutional Funnel · Q2 · Fisher &amp; Lynch</title>
+          <rect x="740" y="155" width="180" height="65" rx="6" class="c-mask"/>
+          <rect x="740" y="155" width="180" height="65" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(746 161) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="830" y="185.5" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Q2: Ground Reality &amp; DCF</text>
+        <text data-detail="context" x="830" y="201.5" class="t-muted" font-size="9" text-anchor="middle">XBRL forensics · DCF math</text>
+        <text data-detail="fine" x="830" y="212" class="t-backend" font-size="7" text-anchor="middle">Q2 · Fisher &amp; Lynch</text>
+        </g>
+
+        <g id="node-q3-debate" data-node-id="q3-debate" data-node-label="Q3: Asymmetric Debate" tabindex="0" role="button" aria-label="Focus Q3: Asymmetric Debate, Bull vs Bear · 3:1 hurdle, Three-Question Institutional Funnel" aria-pressed="false" data-node-kind="security" data-node-sublabel="Bull vs Bear · 3:1 hurdle" data-node-tag="Q3 · Asymmetry G4" data-node-context="Three-Question Institutional Funnel">
+          <title>Q3: Asymmetric Debate · Bull vs Bear · 3:1 hurdle · Three-Question Institutional Funnel · Q3 · Asymmetry G4</title>
+          <rect x="740" y="280" width="180" height="65" rx="6" class="c-mask"/>
+          <rect x="740" y="280" width="180" height="65" rx="6" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(746 286) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
+            <path d="m5.8 8 1.5 1.5 3-3"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="830" y="310.5" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Q3: Asymmetric Debate</text>
+        <text data-detail="context" x="830" y="326.5" class="t-muted" font-size="9" text-anchor="middle">Bull vs Bear · 3:1 hurdle</text>
+        <text data-detail="fine" x="830" y="337" class="t-security" font-size="7" text-anchor="middle">Q3 · Asymmetry G4</text>
+        </g>
+
+        <g id="node-ic-committee" data-node-id="ic-committee" data-node-label="Investment Committee" tabindex="0" role="button" aria-label="Focus Investment Committee, Liquidity check · Kelly, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Liquidity check · Kelly" data-node-tag="Stage 5 · CIO verdict" data-node-context="Architecture component">
+          <title>Investment Committee · Liquidity check · Kelly · Architecture component · Stage 5 · CIO verdict</title>
+          <rect x="980" y="280" width="175" height="65" rx="6" class="c-mask"/>
+          <rect x="980" y="280" width="175" height="65" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(986 286) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="1067.5" y="310.5" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Investment Committee</text>
+        <text data-detail="context" x="1067.5" y="326.5" class="t-muted" font-size="9" text-anchor="middle">Liquidity check · Kelly</text>
+        <text data-detail="fine" x="1067.5" y="337" class="t-backend" font-size="7" text-anchor="middle">Stage 5 · CIO verdict</text>
+        </g>
+
+        <g id="node-artifacts-output" data-node-id="artifacts-output" data-node-label="Case Artifacts &amp; Report" tabindex="0" role="button" aria-label="Focus Case Artifacts &amp; Report, memo.md, JSON, manifest, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="memo.md, JSON, manifest" data-node-tag="Stage 6 · Reports" data-node-context="Architecture component">
+          <title>Case Artifacts &amp; Report · memo.md, JSON, manifest · Architecture component · Stage 6 · Reports</title>
+          <rect x="980" y="155" width="175" height="65" rx="6" class="c-mask"/>
+          <rect x="980" y="155" width="175" height="65" rx="6" class="c-external" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(986 161) scale(0.6875)">
             <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="977.5" y="218" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Forensic memo</text>
-        <text data-detail="context" x="977.5" y="234" class="t-muted" font-size="9" text-anchor="middle">Citations and uncertainty</text>
+          <text data-node-label="" data-detail-anchor="" x="1067.5" y="185.5" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Case Artifacts &amp; Report</text>
+        <text data-detail="context" x="1067.5" y="201.5" class="t-muted" font-size="9" text-anchor="middle">memo.md, JSON, manifest</text>
+        <text data-detail="fine" x="1067.5" y="212" class="t-external" font-size="7" text-anchor="middle">Stage 6 · Reports</text>
         </g>
 
         <!-- Connection labels -->
-        <g data-detail="context" data-edge-from="trigger" data-edge-to="researcher" data-edge-label="start case" data-edge-key="0" data-edge-id="trigger-to-researcher">
-          <rect x="163.5" y="171" width="58" height="14" rx="3" class="c-mask"/>
-          <text x="192.5" y="181" class="t-backend" font-size="8" text-anchor="middle">start case</text>
+        <g data-detail="context" data-edge-from="cli-intake" data-edge-to="collection-agent" data-edge-label="brief" data-edge-key="0" data-edge-id="intake-to-collector">
+          <rect x="218" y="147.5" width="34" height="14" rx="3" class="c-mask"/>
+          <text x="235" y="157.5" class="t-backend" font-size="8" text-anchor="middle">brief</text>
         </g>
-        <g data-detail="context" data-edge-from="researcher" data-edge-to="state" data-edge-label="read / update" data-edge-key="1" data-edge-id="researcher-to-state">
-          <rect x="151.3" y="165" width="72.4" height="14" rx="3" class="c-mask"/>
-          <text x="187.5" y="175" class="t-muted" font-size="8" text-anchor="middle">read / update</text>
+        <g data-detail="context" data-edge-from="collection-agent" data-edge-to="tool-registry" data-edge-label="tool call" data-edge-key="1" data-edge-id="collector-to-tools">
+          <rect x="443.4" y="147.5" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
+          <text x="470" y="157.5" class="t-backend" font-size="8" text-anchor="middle">tool call</text>
         </g>
-        <g data-detail="context" data-edge-from="researcher" data-edge-to="tools" data-edge-label="choose next call" data-edge-key="2" data-edge-id="researcher-to-tools">
-          <rect x="371.6" y="259" width="86.8" height="14" rx="3" class="c-mask"/>
-          <text x="415" y="269" class="t-backend" font-size="8" text-anchor="middle">choose next call</text>
+        <g data-detail="context" data-edge-from="tool-registry" data-edge-to="state-ledger" data-edge-label="receipts" data-edge-key="2" data-edge-id="tools-to-ledger">
+          <rect x="508.05" y="224" width="48.4" height="14" rx="3" class="c-mask"/>
+          <text x="532.25" y="234" class="t-muted" font-size="8" text-anchor="middle">receipts</text>
         </g>
-        <g data-detail="context" data-edge-from="tools" data-edge-to="sources" data-edge-label="targeted retrieval" data-edge-key="3" data-edge-id="tools-to-sources">
-          <rect x="604.3" y="259" width="96.39999999999999" height="14" rx="3" class="c-mask"/>
-          <text x="652.5" y="269" class="t-muted" font-size="8" text-anchor="middle">targeted retrieval</text>
+        <g data-detail="context" data-edge-from="state-ledger" data-edge-to="collection-agent" data-edge-label="facts" data-edge-key="3" data-edge-id="ledger-to-collector">
+          <rect x="310.5" y="260" width="34" height="14" rx="3" class="c-mask"/>
+          <text x="327.5" y="270" class="t-muted" font-size="8" text-anchor="middle">facts</text>
         </g>
-        <g data-detail="context" data-edge-from="sources" data-edge-to="tools" data-edge-label="normalized evidence" data-edge-key="4" data-edge-id="sources-to-tools">
-          <rect x="603.15" y="285" width="101.2" height="14" rx="3" class="c-mask"/>
-          <text x="653.75" y="295" class="t-messagebus" font-size="8" text-anchor="middle">normalized evidence</text>
+        <g data-detail="context" data-edge-from="tool-registry" data-edge-to="sec-corpus" data-edge-label="filings" data-edge-key="4" data-edge-id="tools-to-sec">
+          <rect x="597.7" y="230" width="43.6" height="14" rx="3" class="c-mask"/>
+          <text x="619.5" y="240" class="t-muted" font-size="8" text-anchor="middle">filings</text>
         </g>
-        <g data-detail="context" data-edge-from="tools" data-edge-to="sec-tool" data-edge-label="pull filing corpus" data-edge-key="5" data-edge-id="tools-to-sec-tool">
-          <rect x="486.8" y="404" width="96.39999999999999" height="14" rx="3" class="c-mask"/>
-          <text x="535" y="414" class="t-muted" font-size="8" text-anchor="middle">pull filing corpus</text>
+        <g data-detail="context" data-edge-from="collection-agent" data-edge-to="q1-expectations" data-edge-label="equity path" data-edge-key="5" data-edge-id="collector-to-q1">
+          <rect x="514.85" y="47.5" width="62.8" height="14" rx="3" class="c-mask"/>
+          <text x="546.25" y="57.5" class="t-muted" font-size="8" text-anchor="middle">equity path</text>
         </g>
-        <g data-detail="context" data-edge-from="sec-tool" data-edge-to="case-files" data-edge-label="save documents" data-edge-key="6" data-edge-id="sec-tool-to-case-files">
-          <rect x="613.9" y="404" width="77.2" height="14" rx="3" class="c-mask"/>
-          <text x="652.5" y="414" class="t-muted" font-size="8" text-anchor="middle">save documents</text>
+        <g data-detail="context" data-edge-from="q1-expectations" data-edge-to="q2-reality" data-edge-label="G1 pass" data-edge-key="6" data-edge-id="q1-to-q2">
+          <rect x="808.2" y="108" width="43.6" height="14" rx="3" class="c-mask"/>
+          <text x="830" y="118" class="t-muted" font-size="8" text-anchor="middle">G1 pass</text>
         </g>
-        <g data-detail="context" data-edge-from="case-files" data-edge-to="sec-verifier" data-edge-label="local retrieval only" data-edge-key="7" data-edge-id="case-files-to-sec-verifier">
-          <rect x="719.5" y="404" width="106" height="14" rx="3" class="c-mask"/>
-          <text x="772.5" y="414" class="t-security" font-size="8" text-anchor="middle">local retrieval only</text>
+        <g data-detail="context" data-edge-from="sec-corpus" data-edge-to="q2-reality" data-edge-label="citations" data-edge-key="7" data-edge-id="sec-to-q2">
+          <rect x="678.4" y="230" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
+          <text x="705" y="240" class="t-security" font-size="8" text-anchor="middle">citations</text>
         </g>
-        <g data-detail="context" data-edge-from="sec-verifier" data-edge-to="researcher" data-edge-label="cited verdict" data-edge-key="8" data-edge-id="sec-verifier-to-researcher">
-          <rect x="483.8" y="475" width="72.4" height="14" rx="3" class="c-mask"/>
-          <text x="520" y="485" class="t-security" font-size="8" text-anchor="middle">cited verdict</text>
+        <g data-detail="context" data-edge-from="q2-reality" data-edge-to="q3-debate" data-edge-label="G2 &amp; G3" data-edge-key="8" data-edge-id="q2-to-q3">
+          <rect x="808.2" y="230" width="43.6" height="14" rx="3" class="c-mask"/>
+          <text x="830" y="240" class="t-muted" font-size="8" text-anchor="middle">G2 &amp; G3</text>
         </g>
-        <g data-detail="context" data-edge-from="researcher" data-edge-to="memo" data-edge-label="finish when material questions resolved" data-edge-key="9" data-edge-id="researcher-to-memo">
-          <rect x="485.15" y="115" width="197.2" height="14" rx="3" class="c-mask"/>
-          <text x="583.75" y="125" class="t-backend" font-size="8" text-anchor="middle">finish when material questions resolved</text>
+        <g data-detail="context" data-edge-from="q3-debate" data-edge-to="ic-committee" data-edge-label="G4 pass" data-edge-key="9" data-edge-id="q3-to-committee">
+          <rect x="928.2" y="272.5" width="43.6" height="14" rx="3" class="c-mask"/>
+          <text x="950" y="282.5" class="t-muted" font-size="8" text-anchor="middle">G4 pass</text>
+        </g>
+        <g data-detail="context" data-edge-from="ic-committee" data-edge-to="artifacts-output" data-edge-label="verdict" data-edge-key="10" data-edge-id="committee-to-artifacts">
+          <rect x="1045.7" y="230" width="43.6" height="14" rx="3" class="c-mask"/>
+          <text x="1067.5" y="240" class="t-backend" font-size="8" text-anchor="middle">verdict</text>
         </g>
 
         <!-- Boundary labels (foreground masks keep routes out of titles) -->
-        <g data-graph-role="structural-frame-label" data-composition-frame-id="0" data-composition-frame-kind="security-group" data-composition-frame-label="Offline evidence boundary">
-          <rect data-graph-role="structural-frame-label-mask" x="661" y="310" width="145" height="16" rx="3" class="c-mask"/>
-          <text data-boundary-label="" x="665" y="323" class="t-security" font-size="9" font-weight="600">Offline evidence boundary</text>
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="0" data-composition-frame-kind="region" data-composition-frame-label="Three-Question Institutional Funnel">
+          <rect data-graph-role="structural-frame-label-mask" x="726" y="15" width="199" height="16" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="730" y="28" class="t-cloud" font-size="9" font-weight="600">Three-Question Institutional Funnel</text>
+        </g>
+
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="1" data-composition-frame-kind="security-group" data-composition-frame-label="Air-Gapped SEC Evidence">
+          <rect data-graph-role="structural-frame-label-mask" x="488" y="260" width="134.2" height="16" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="492" y="273" class="t-security" font-size="9" font-weight="600">Air-Gapped SEC Evidence</text>
         </g>
 
         <!-- Legend -->
-
+        <g data-legend="" data-legend-bridge="">
+          <text x="40" y="394" class="t-primary" font-size="12" font-weight="650">Legend</text>
+          <g data-legend-semantic-kind="backend" data-legend-kind="backend" data-legend-label="Backend" data-legend-x="40" data-legend-baseline="414" data-legend-width="78">
+            <rect x="40" y="405" width="16" height="10" rx="2.5" class="c-backend" stroke-width="1"/>
+            <text x="62" y="414" class="t-muted" font-size="10" font-weight="500">Backend</text>
+          </g>
+          <g data-legend-semantic-kind="database" data-legend-kind="database" data-legend-label="Database" data-legend-x="140" data-legend-baseline="414" data-legend-width="83">
+            <rect x="140" y="405" width="16" height="10" rx="2.5" class="c-database" stroke-width="1"/>
+            <text x="162" y="414" class="t-muted" font-size="10" font-weight="500">Database</text>
+          </g>
+          <g data-legend-semantic-kind="security" data-legend-kind="security" data-legend-label="Security" data-legend-x="245" data-legend-baseline="414" data-legend-width="83">
+            <rect x="245" y="405" width="16" height="10" rx="2.5" class="c-security" stroke-width="1"/>
+            <text x="267" y="414" class="t-muted" font-size="10" font-weight="500">Security</text>
+          </g>
+          <g data-legend-semantic-kind="external" data-legend-kind="external" data-legend-label="External" data-legend-x="350" data-legend-baseline="414" data-legend-width="83">
+            <rect x="350" y="405" width="16" height="10" rx="2.5" class="c-external" stroke-width="1"/>
+            <text x="372" y="414" class="t-muted" font-size="10" font-weight="500">External</text>
+          </g>
+        </g>
       </svg>
       <p class="intent-trace-status no-print" id="intent-trace-status" role="status" aria-live="polite" aria-atomic="true"></p>
       <div class="share-chapter-cue no-print" id="share-chapter-cue" hidden role="status" aria-live="polite">
@@ -5393,36 +5440,37 @@
       <div class="card">
         <div class="card-header">
           <div class="card-dot cyan"></div>
-          <h3>Outer model</h3>
+          <h3>Stage 0 &amp; 1: Intake, Prompts &amp; 12 Tools</h3>
         </div>
         <ul>
-          <li>&bull; Gets compact state, not every document</li>
-          <li>&bull; Selects next question and tool</li>
-          <li>&bull; Treats social posts as hypotheses</li>
+          <li>&bull; Intake: Single prompt resolves profile (generic / screen / equity) without ticker bias</li>
+          <li>&bull; Collector: Model tool loop with FORENSIC_CHARTER_PROMPT or GENERIC_RESEARCH_PROMPT</li>
+          <li>&bull; Tool Access: All 12 tools (search_web, read_article, market, SEC filings, XBRL, candidates)</li>
+          <li>&bull; Ledger: Deterministic ingest converts tool JSON into immutable receipts, sources, and facts</li>
         </ul>
       </div>
 
       <div class="card">
         <div class="card-header">
           <div class="card-dot emerald"></div>
-          <h3>Evidence</h3>
+          <h3>Stage 2, 3 &amp; 4: Three-Question Institutional Funnel</h3>
         </div>
         <ul>
-          <li>&bull; Live tools fetch current context</li>
-          <li>&bull; SEC corpus is stored under one case</li>
-          <li>&bull; Memo records sources and uncertainty</li>
+          <li>&bull; Q1 Priced-In: Reverse expectations via market price vs. consensus EPS &amp; revenue (Gate G1)</li>
+          <li>&bull; Q2 Reality: SEC XBRL forensics (margins, CFO, CapEx) and deterministic DCF math (Gates G2/G3)</li>
+          <li>&bull; Q3 Asymmetry: Air-gapped Bull catalysts vs. Bear kill criteria with 3:1 hurdle (Gate G4)</li>
         </ul>
       </div>
 
       <div class="card">
         <div class="card-header">
           <div class="card-dot rose"></div>
-          <h3>SEC boundary</h3>
+          <h3>Stage 5 &amp; 6: Committee, Kelly Sizing &amp; Artifacts</h3>
         </div>
         <ul>
-          <li>&bull; Verifier cannot browse or download</li>
-          <li>&bull; Verdicts require citations from local filings</li>
-          <li>&bull; GraphRAG is future optional case-local retrieval</li>
+          <li>&bull; Committee: CIO prompt, liquidity gate (ADDV &gt;= $1M), earnings blackout gate (&lt;= 7 days)</li>
+          <li>&bull; Position Sizing: Fractional Kelly criterion calculates exact portfolio allocation percentage</li>
+          <li>&bull; Artifacts: memo.md (3-Question Funnel), investigation.json, manifest, and verified media</li>
         </ul>
       </div>
     </div>

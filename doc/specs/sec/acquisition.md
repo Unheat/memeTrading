@@ -34,7 +34,7 @@ Inputs:
 
 - `ticker`: 1–10 alphabetic characters, normalized to uppercase.
 - `forms`: optional non-empty iterable of form strings. Normalized to uppercase; empty list means no form filter.
-- `since`: optional `date`; filing date is included when equal or later.
+- `since`: optional `date` or JSON-native ISO `YYYY-MM-DD` string; filing date is included when equal or later.
 - `company_factory`: optional test seam accepting normalized ticker and returning a company-like object.
 
 Output: `FilingDiscoveryResult`; expected upstream and input failures are never raised to callers.
@@ -56,4 +56,4 @@ Behavior:
 
 ## Test cases
 
-`tests/sec/test_acquisition.py` must cover normal listing, omitted form filter, normalized form filter, inclusive date filter, newest-first ordering, invalid ticker/date, missing company CIK, unavailable provider, incomplete filing metadata, and proof that fake filings expose no document-download behavior.
+`tests/sec/test_acquisition.py` must cover normal listing, omitted form filter, normalized form filter, inclusive date filtering for direct `date` and model-facing ISO strings, malformed date rejection, newest-first ordering, invalid ticker, missing company CIK, unavailable provider, incomplete filing metadata, and proof that fake filings expose no document-download behavior.
