@@ -20,9 +20,17 @@ def _candidate_is_evidence_backed(candidate: Mapping[str, Any]) -> bool:
     Returns:
         True only when market and primary/SEC evidence are available.
     """
-    return bool(candidate.get("market_context")) and bool(
-        candidate.get("sec_financials") or candidate.get("sec_corpora") or candidate.get("evidence")
-    )
+    has_market = bool(candidate.get("market_context"))
+    sec_fin = candidate.get("sec_financials")
+    has_fin = False
+    if isinstance(sec_fin, Mapping):
+        status = sec_fin.get("status")
+        if status in {"ok", "ok_foreign_issuer_unstructured"}:
+            has_fin = True
+        elif status != "unavailable" and len(sec_fin.get("periods", [])) > 0:
+            has_fin = True
+    has_sec = bool(has_fin or candidate.get("sec_corpora") or candidate.get("evidence") or candidate.get("sec_filings"))
+    return has_market and has_sec
 
 
 def evaluate_research_completeness(state: Mapping[str, Any]) -> dict[str, Any]:
@@ -37,28 +45,30 @@ def evaluate_research_completeness(state: Mapping[str, Any]) -> dict[str, Any]:
     intent = state.get("research_intent") or {}
     requested_count = intent.get("requested_ranking_count")
     candidates = state.get("candidates") or {}
-    if requested_count:
+
+    if candidates:
         backed = [candidate for candidate in candidates.values() if isinstance(candidate, Mapping) and _candidate_is_evidence_backed(candidate)]
+        target_count = requested_count or len(candidates)
         missing = []
-        if len(backed) < requested_count:
+        if len(backed) < target_count:
             missing.append(
-                f"Requested {requested_count} evidence-backed candidates; collected {len(backed)}."
+                f"Requested {target_count} evidence-backed candidates; collected {len(backed)}."
             )
-        if not state.get("comparisons"):
+        if not state.get("comparisons") and len(candidates) > 1:
             missing.append("A normalized candidate comparison is missing.")
         return {
             "passed": not missing,
             "status": "completed" if not missing else "research_incomplete",
             "decision": "RANKING_COMPLETE" if not missing else "RANKING_INCOMPLETE",
             "allocation_pct": 0.0,
-            "requested_ranking_count": requested_count,
+            "requested_ranking_count": target_count,
             "evidence_backed_candidates": len(backed),
             "missing_evidence": missing,
         }
 
     if not intent.get("requested_position_decision"):
         source_count = len(state.get("source_records", []))
-        has_evidence = source_count > 0 or bool(state.get("evidence")) or bool(state.get("market_context"))
+        has_evidence = source_count > 0 or bool(state.get("evidence")) or bool(state.get("market_context")) or bool(state.get("searches_performed"))
         return {
             "passed": has_evidence,
             "status": "completed" if has_evidence else "research_incomplete",

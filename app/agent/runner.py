@@ -111,7 +111,7 @@ def run_investigation(
             runtime.model, tools, context_policy=runtime.context_policy, token_counter=runtime.token_counter,
         )
         logger.info("Starting deep research investigation %s for %s", case_id, ticker)
-        final_state = dict(graph.invoke(initial_state))
+        final_state = dict(graph.invoke(initial_state, config={"recursion_limit": 100}))
 
         messages = final_state.get("messages", [])
         last_message = messages[-1] if messages else None

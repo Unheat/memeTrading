@@ -127,9 +127,7 @@ def main() -> int:
 
     preview_request = ResearchRequest(query=query, ticker=ticker, company=company, theme=theme, mandate=args.mandate, depth=args.depth)
     preview_intent = preview_request.resolve_intent()
-    print("\n[1/3] Initializing Deep Research...")
-    if preview_intent.requested_ranking_count:
-        print(f"  • Requested ranking count: {preview_intent.requested_ranking_count}")
+    print("\n[1/3] Initializing Deep Research Engine...")
     print(f"  • Prompt:  {query}")
     if ticker:
         print(f"  • Ticker:  {ticker}")
@@ -138,7 +136,8 @@ def main() -> int:
     if company:
         print(f"  • Company: {company}")
     print(f"  • Model:   {config.llm.model}")
-    print(f"  • Budget:  {config.research.max_tool_calls} max tool calls")
+    print("  • Engine:  Multi-Stage Deep Research (Plan -> Execute -> Reflect -> Synthesize)")
+    print(f"  • Depth:   {args.depth.capitalize()}")
     print("-" * 70)
 
     request = ResearchRequest(

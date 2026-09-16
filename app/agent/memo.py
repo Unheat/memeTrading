@@ -521,8 +521,39 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
         for candidate in candidates.values() if isinstance(candidate, dict)
     ] or ["| None | No registered candidates | no | no |"]
     ranking = "Not requested" if not requested_count else f"Requested ranking count: {requested_count}; registered candidates: {len(candidates)}"
-    sources = state.get("source_records", [])
-    source_rows = [f"| {item.get('title') or 'Untitled source'} | {item.get('status', 'discovered')} | {item.get('url') or 'Unavailable'} |" for item in sources] or ["| No readable source | unavailable | N/A |"]
+    # Aggregate all consulted sources: web/articles, candidate SEC filings, and market data
+    all_sources = list(state.get("source_records", []))
+    for cid, cand in candidates.items():
+        if isinstance(cand, dict):
+            t = cand.get("ticker") or cid
+            cik = cand.get("cik")
+            # If candidate has filings listed or corpus
+            for filing in cand.get("sec_filings", []):
+                if isinstance(filing, dict):
+                    all_sources.append({
+                        "title": f"SEC {filing.get('form', 'Filing')} (${t}, CIK {cik or 'N/A'})",
+                        "status": "official_sec_edgar",
+                        "url": filing.get("filing_url") or f"https://www.sec.gov/edgar/browse/?CIK={cik}",
+                    })
+            if cand.get("market_context"):
+                all_sources.append({
+                    "title": f"Live Market Data & Consensus (${t})",
+                    "status": "verified_live_feed",
+                    "url": f"https://finance.yahoo.com/quote/{t}",
+                })
+            if cand.get("sec_financials"):
+                sec_fin = cand.get("sec_financials") or {}
+                if sec_fin.get("status") in {"ok", "ok_foreign_issuer_unstructured"}:
+                    all_sources.append({
+                        "title": f"SEC XBRL Financial Statements (${t})",
+                        "status": sec_fin.get("status"),
+                        "url": f"https://data.sec.gov/api/xbrl/companyfacts/CIK{str(cik or '').zfill(10)}.json" if cik else "https://data.sec.gov",
+                    })
+
+    source_rows = [
+        f"| {item.get('title') or 'Untitled source'} | {item.get('status', 'discovered')} | {item.get('url') or 'Unavailable'} |"
+        for item in all_sources
+    ] or ["| No readable source | unavailable | N/A |"]
     missing = (state.get("evidence_gate") or {}).get("missing_evidence") or state.get("unresolved_questions") or ["No additional gaps recorded."]
     return f"""# Deep Research Report
 

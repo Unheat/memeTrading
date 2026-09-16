@@ -10,6 +10,13 @@ Keep specs updated — If requirements or design decisions change during impleme
 
 Do not jump directly into implementation when requirements are unclear. Treat the spec as the source of truth and keep code, tests, and documentation consistent with it.
 
+## LLM Structured Outputs vs Deterministic Pipeline Boundary
+
+- **Never use regex or keyword heuristics on language**: Never use regex pattern matching, substring searching, or hand-rolled heuristics on natural language user queries or LLM responses (e.g., do NOT use patterns like `_REQUESTED_RANKING_PATTERN` or word lists to infer intent, ranking counts, entities, or position requests).
+- **Deterministic Pipeline Structure**: The pipeline execution structure, state machine transitions, candidate workspaces, tool call admissions, and accounting gates MUST be deterministic code.
+- **Structured Outputs for Model Reasoning**: All model-driven intent parsing, research planning, sub-question generation, candidate identification, and gap reflection MUST use industry-standard structured outputs (`response_format` / Pydantic schemas via LangChain/LangGraph).
+- **Fail Gracefully with Clean Schemas**: Deterministic code verifies schema validity, enforces budgets/timeouts, and records immutable evidence; it never guesses user intent from prompt substrings.
+
 ## Donor Code Provenance
 
 When production code is copied or adapted from any repository under `reference/`, record it in the matching per-file module spec **before** writing that code. Add a `## Donor code provenance` table with one row per copied/adapted local function, class, or method:

@@ -74,7 +74,7 @@ research:
   #   - Standard deep audit (Recommended): 35 calls (multiple sources and SEC claims)
   #   - Broad multi-company/theme investigation: 50 calls
   # Runtime depends on provider latency and chosen tools; these are depth guides, not timers.
-  max_tool_calls: 35
+  max_tool_calls: 50
 
   # Exact-Duplicate Guard: Number of times the exact same tool call with identical arguments
   # may execute. A refined query is different and does not count as an identical call.

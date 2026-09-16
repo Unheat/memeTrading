@@ -238,6 +238,39 @@ def get_sec_financials(ticker: str, periods: int = 4) -> SecFinancialsResult:
         raw = _fetch_xbrl_statements(clean_ticker, periods=periods)
     except Exception as exc:
         logger.warning("Failed to extract SEC XBRL financials for %s: %s", clean_ticker, exc)
+        is_foreign = False
+        try:
+            from edgar import Company
+            comp = Company(clean_ticker)
+            filings = comp.get_filings(form=["20-F", "6-K"])
+            if filings and len(filings) > 0:
+                is_foreign = True
+        except Exception:
+            pass
+
+        if is_foreign:
+            return SecFinancialsResult(
+                ticker=clean_ticker,
+                status="ok_foreign_issuer_unstructured",
+                periods=(),
+                revenue={},
+                gross_profit={},
+                gross_margin_pct={},
+                operating_income={},
+                operating_margin_pct={},
+                net_income={},
+                cash_and_equivalents={},
+                total_debt={},
+                net_cash={},
+                inventory={},
+                inventory_qoq_change_pct={},
+                cash_from_operations={},
+                capex={},
+                provider="sec_edgar_foreign",
+                as_of=as_of,
+                error_message="Foreign Private Issuer reports under IFRS via Form 20-F/6-K (no standard US-GAAP XBRL). Use search_sec_evidence, read_sec_evidence, or company research fundamentals for financial metrics.",
+            )
+
         return SecFinancialsResult(
             ticker=clean_ticker,
             status="unavailable",

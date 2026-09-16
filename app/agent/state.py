@@ -1,7 +1,7 @@
-"""Request, research-intent, and durable state schemas for the research agent.
+"""Request, research-intent, and durable state schemas for the deep research agent.
 
 Donor provenance: adapted from reference/ai-financial-research-agent/app/agent/state.py:10-35
-(SimpleAgentState). The intent and candidate-isolation fields are locally written.
+(SimpleAgentState). Planning, intent, and candidate-isolation schemas are locally written.
 """
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.graph.message import add_messages
 
 ResearchDepth = Literal["standard", "deep"]
-_REQUESTED_RANKING_PATTERN = re.compile(r"\b(?:top|best|rank(?:ed|ing)?|compare)\s+(\d+)\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -21,35 +20,63 @@ class BudgetLimits:
     """Per-investigation execution limits.
 
     Args:
-        max_tool_calls: Maximum tool calls the graph may execute.
+        max_total_tool_calls: Hard safety ceiling on total tool executions.
         max_identical_calls: Maximum repeated identical tool signatures.
+        max_reflection_rounds: Maximum gap reflection and follow-up rounds.
+        breadth_limit: Maximum breadth candidate searches admitted.
+        depth_limit: Maximum deep primary/filing acquisitions admitted per candidate.
 
     Returns:
-        Immutable budget configuration.
+        Immutable multi-stage budget configuration.
     """
 
-    max_tool_calls: int = 35
+    max_total_tool_calls: int = 35
     max_identical_calls: int = 2
+    max_reflection_rounds: int = 2
+    breadth_limit: int = 10
+    depth_limit: int = 5
+
+    @property
+    def max_tool_calls(self) -> int:
+        """Alias for backward compatibility with external runners."""
+        return self.max_total_tool_calls
 
 
 @dataclass(frozen=True)
 class ResearchIntent:
-    """Prompt-derived scope that informs the model without selecting a graph route.
+    """Structured scope that informs the graph.
 
     Args:
         explicit_subjects: Identifiers explicitly provided by the caller.
-        requested_ranking_count: Explicit ranking count parsed from the user prompt.
+        requested_ranking_count: Explicit ranking count parsed from user prompt.
         requires_candidate_workspaces: Whether candidate registration is required.
         requested_position_decision: Whether the user explicitly asks for a position decision.
 
     Returns:
-        JSON-serializable research guidance; it is not a routing profile.
+        JSON-serializable research guidance derived from LLM structured planning.
     """
 
     explicit_subjects: tuple[str, ...] = ()
     requested_ranking_count: int | None = None
     requires_candidate_workspaces: bool = False
     requested_position_decision: bool = False
+
+    @classmethod
+    def from_plan(cls, plan_dict: dict[str, Any], explicit_subjects: tuple[str, ...] = ()) -> ResearchIntent:
+        """Construct intent directly from a structured ResearchPlanSchema dictionary."""
+        ranking_count = plan_dict.get("ranking_count")
+        requires_workspaces = bool(
+            plan_dict.get("requires_candidate_workspaces")
+            or ranking_count is not None
+            or plan_dict.get("research_type") == "multi_candidate_ranking"
+            or (plan_dict.get("candidate_entities") and len(plan_dict.get("candidate_entities", [])) > 1)
+        )
+        return cls(
+            explicit_subjects=explicit_subjects,
+            requested_ranking_count=ranking_count,
+            requires_candidate_workspaces=requires_workspaces,
+            requested_position_decision=bool(plan_dict.get("requested_position_decision")),
+        )
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize intent for prompts and persisted case artifacts.
@@ -110,28 +137,32 @@ class ResearchRequest:
             raise ValueError("depth must be standard or deep")
 
     def resolve_intent(self) -> ResearchIntent:
-        """Extract only explicit structural constraints from the user request.
-
-        The model determines the research plan, sources, entities, and conclusions.
-        This parser exists solely to preserve an explicitly requested output count and
-        to activate deterministic identity isolation for multi-candidate research.
-
-        Returns:
-            Durable prompt guidance that never chooses a graph or vetoes research.
-        """
+        """Extract structural constraints from user request supporting natural variations."""
         subjects = tuple(value for value in (self.ticker, self.company) if value)
-        match = _REQUESTED_RANKING_PATTERN.search(self.query)
-        requested_count = int(match.group(1)) if match and int(match.group(1)) > 0 else None
-        normalized = self.query.casefold()
-        requires_candidates = requested_count is not None or any(
-            phrase in normalized for phrase in ("compare ", "rank ", "best stocks", "best companies")
+        query = self.query
+        # Extract ranking count from both 'top 5' / 'best 5' and '5 best' / '5 stocks' / 'compare 3'
+        m = re.search(r"\b(?:top|best|rank(?:ed|ing)?|compare)\s+(\d+)\b", query, re.IGNORECASE)
+        requested_count = int(m.group(1)) if m and int(m.group(1)) > 0 else None
+        if requested_count is None:
+            m2 = re.search(r"\b(\d+)\s+(?:top|best|stocks?|tech|companies|candidates|opportunities|peers)\b", query, re.IGNORECASE)
+            if m2 and int(m2.group(1)) > 0:
+                requested_count = int(m2.group(1))
+
+        norm = query.casefold()
+        requires_candidates = bool(
+            requested_count is not None
+            or any(w in norm for w in ("compare", "rank", "stocks", "companies", "candidates", "stocl", "peers"))
+            or (self.ticker is None and self.company is None)
         )
-        position_words = ("allocate", "position size", "buy now", "sell now", "investment recommendation")
+        position_words = (
+            "allocate", "position size", "buy now", "sell now",
+            "investment recommendation", "recommendation for", "buy right now",
+        )
         return ResearchIntent(
             explicit_subjects=subjects,
             requested_ranking_count=requested_count,
             requires_candidate_workspaces=requires_candidates,
-            requested_position_decision=any(word in normalized for word in position_words),
+            requested_position_decision=any(word in norm for word in position_words),
         )
 
 
@@ -206,8 +237,14 @@ def create_initial_state(request: ResearchRequest, case_id: str) -> Investigatio
         "status": "in_progress", "causal_chain": None, "market_context": None,
         "sec_financials": None, "consensus_snapshot": None, "expectation_gap": None,
         "thesis_breakers": [], "adversarial_report": None, "bull_report": None, "ic_verdict": None,
-        "budget_state": {"max_tool_calls": request.budget.max_tool_calls,
-                         "max_identical_calls": request.budget.max_identical_calls, "call_counts": {}},
+        "budget_state": {
+            "max_total_tool_calls": request.budget.max_total_tool_calls,
+            "max_tool_calls": request.budget.max_total_tool_calls,
+            "max_identical_calls": request.budget.max_identical_calls,
+            "max_reflection_rounds": request.budget.max_reflection_rounds,
+            "reflection_count": 0,
+            "call_counts": {},
+        },
         "evidence_gate": {}, "accounting_gate": {}, "valuation_gate": {}, "asymmetry_gate": {},
         "forensic_report": None, "thematic_report": None, "sector_report": None,
         "moat_report": None, "quant_report": None,

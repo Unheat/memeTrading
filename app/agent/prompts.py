@@ -50,7 +50,8 @@ def build_research_system_prompt(state: InvestigationState) -> SystemMessage:
         System message containing task constraints and compact durable facts.
     """
     budget = state.get("budget_state", {})
-    remaining = max(0, budget.get("max_tool_calls", 15) - state.get("tool_calls", 0))
+    max_calls = budget.get("max_total_tool_calls") or budget.get("max_tool_calls", 50)
+    remaining = max(0, max_calls - state.get("tool_calls", 0))
     projections = {
         "research_intent": state.get("research_intent", {}),
         "explicit_target": {"ticker": state.get("ticker"), "company": state.get("company"), "cik": state.get("cik")},

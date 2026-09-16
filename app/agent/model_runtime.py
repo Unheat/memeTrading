@@ -48,6 +48,51 @@ class UniversalChatModel(BaseChatModel):
         formatted_tools = [convert_to_openai_tool(t) for t in tools]
         return self.bind(tools=formatted_tools, **kwargs)
 
+    def with_structured_output(
+        self,
+        schema: Any,
+        **kwargs: Any,
+    ) -> Any:
+        """Return a runnable that invokes the model and parses structured output into schema."""
+        from langchain_core.runnables import RunnableLambda
+
+        def _invoke_structured(messages: Any) -> Any:
+            schema_json = schema.model_json_schema() if hasattr(schema, "model_json_schema") else (schema.schema() if hasattr(schema, "schema") else {})
+            instruction = f"\nYou MUST respond strictly in valid JSON conforming to this JSON schema:\n{json.dumps(schema_json, indent=2)}\nDo not include any commentary, prose, or markdown outside the single JSON object."
+
+            if isinstance(messages, list):
+                msgs = list(messages)
+                last = msgs[-1]
+                if isinstance(last, HumanMessage):
+                    msgs[-1] = HumanMessage(content=str(last.content) + instruction)
+                elif isinstance(last, SystemMessage):
+                    msgs[-1] = SystemMessage(content=str(last.content) + instruction)
+                else:
+                    msgs.append(HumanMessage(content=instruction))
+            else:
+                msgs = [HumanMessage(content=str(messages) + instruction)]
+
+            bound = self.bind(response_format={"type": "json_object"})
+            res = bound.invoke(msgs)
+            raw = getattr(res, "content", "")
+            if isinstance(raw, str):
+                cleaned = raw.strip()
+                if cleaned.startswith("```json"):
+                    cleaned = cleaned[7:]
+                elif cleaned.startswith("```"):
+                    cleaned = cleaned[3:]
+                if cleaned.endswith("```"):
+                    cleaned = cleaned[:-3]
+                raw = cleaned.strip()
+            data = json.loads(raw) if isinstance(raw, str) else dict(raw)
+            if hasattr(schema, "model_validate"):
+                return schema.model_validate(data)
+            if hasattr(schema, "parse_obj"):
+                return schema.parse_obj(data)
+            return data
+
+        return RunnableLambda(_invoke_structured)
+
     def _convert_messages(self, messages: List[BaseMessage]) -> List[dict]:
         """Convert LangChain message objects to LiteLLM message payloads."""
         converted = []
@@ -99,6 +144,7 @@ class UniversalChatModel(BaseChatModel):
         """Generate chat completion trying endpoints in fallback priority order."""
         litellm_messages = self._convert_messages(messages)
         tools = kwargs.get("tools")
+        response_format = kwargs.get("response_format")
         temp = kwargs.get("temperature", self.temperature)
 
         target_endpoints = self.endpoints if self.endpoints else [{
@@ -135,6 +181,8 @@ class UniversalChatModel(BaseChatModel):
                 call_kwargs["api_key"] = a_key
             if tools:
                 call_kwargs["tools"] = tools
+            if response_format:
+                call_kwargs["response_format"] = response_format
 
             try:
                 res = litellm.completion(**call_kwargs)
