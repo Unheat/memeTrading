@@ -20,3 +20,4 @@ node_modules/
 # Local coding-agent caches and session artifacts
 .codebase-memory/
 .zcode/
+cases/

@@ -16,8 +16,8 @@ from app.agent.state import InvestigationState
 logger = logging.getLogger(__name__)
 
 # Faceless character voice IDs (from faceless/skills/faceless/scripts/generate-audio.mjs)
-PETER_VOICE_ID = "e34b4e061b874623a08f41e5c4fecfb9"
-STEWIE_VOICE_ID = "fdffd3722cd040fcb3f95eec5a7f29f3"
+PETER_VOICE_ID = "a84d19016bc34098b3c89d78f9299e33"
+STEWIE_VOICE_ID = "e91c4f5974f149478a35affe820d02ac"
 RICK_VOICE_ID = "d2e75a3e3fd6419893057c02a375a113"
 MORTY_VOICE_ID = "3d445d095ba04681bcba7177faedf55a"
 
@@ -124,6 +124,8 @@ def generate_media_package(
     ticker = state.get("ticker") or "UNKNOWN"
     company = state.get("company") or ""
     evidence = state.get("evidence", [])
+    if not evidence or any(not item.get("source_url") or not item.get("quote") for item in evidence):
+        raise ValueError("Media generation requires cited primary evidence; uncited material claims are blocked.")
     contradictions = state.get("contradictions", [])
     market = state.get("market_context") or {}
     consensus = state.get("consensus_snapshot") or {}

@@ -6,6 +6,7 @@ Formats adapted from reference/financial-research-workshop skills
 """
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -184,6 +185,103 @@ def _capital_safety_scorecard(state: InvestigationState) -> str:
 """
 
 
+def _render_screen_memo(state: InvestigationState) -> str:
+    """Render a comprehensive multi-candidate screening report."""
+    case_id = state.get("case_id") or "N/A"
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    trigger = state.get("trigger", {})
+    query = trigger.get("query") or "Generic opportunity screen"
+    theme = trigger.get("theme") or "Cross-Asset Tech Screener"
+
+    candidates = state.get("candidates") or {}
+    candidate_leads = state.get("candidate_leads") or []
+    searches = state.get("searches_performed") or []
+
+    # 1. Candidate Table
+    candidate_rows = []
+    if candidates:
+        for cid, cand in candidates.items():
+            t = cand.get("ticker") or "UNKNOWN"
+            c = cand.get("company") or "N/A"
+            cik = cand.get("cik") or "N/A"
+            status = cand.get("status") or "discovered"
+            has_mkt = "✓" if cand.get("market_context") else "✗"
+            has_sec = "✓" if cand.get("sec_financials") or cand.get("sec_corpora") else "✗"
+            candidate_rows.append(f"| ${t} | {c} | `{cik}` | {has_mkt} | {has_sec} | {status.upper()} |")
+    else:
+        candidate_rows.append("| N/A | No candidate companies registered | N/A | ✗ | ✗ | UNRESOLVED |")
+
+    # 2. Leads Table
+    lead_rows = []
+    if candidate_leads:
+        for lead in candidate_leads[:10]:
+            lt = lead.get("ticker") or "N/A"
+            tool = lead.get("tool") or "search"
+            summary = lead.get("summary") or "Surfaced in search discovery"
+            lead_rows.append(f"- **${lt}** via `{tool}`: {summary}")
+    else:
+        lead_rows.append("- No external discovery leads captured.")
+
+    # 3. Execution & Provider Health
+    receipt_rows = []
+    for r in searches:
+        tool_name = r.get("tool") or "unknown"
+        st = r.get("status") or "ok"
+        err = r.get("error") or r.get("code") or "—"
+        receipt_rows.append(f"| `{tool_name}` | `{st}` | {err} |")
+    receipt_table = "\n".join(receipt_rows) if receipt_rows else "| None | ok | — |"
+
+    # 4. Conflict & Provenance Audit
+    conflict_notes = []
+    if len(candidates) > 1:
+        conflict_notes.append("- **Multiple candidate tracks registered**: Each candidate is stored in an isolated workspace to prevent data leakage.")
+    top_ticker = state.get("ticker")
+    top_mkt_ticker = (state.get("market_context") or {}).get("ticker")
+    if top_ticker and top_mkt_ticker and top_ticker != top_mkt_ticker:
+        conflict_notes.append(f"- **Identity Conflict Quarantined**: State ticker (${top_ticker}) diverges from market payload (${top_mkt_ticker}). Cross-entity synthesis is strictly suppressed.")
+    if not conflict_notes:
+        conflict_notes.append("- No cross-entity collisions detected.")
+
+    return f"""# Institutional Opportunity Screen: {theme}
+
+**Screen Mandate**: {query}
+**Execution Mode**: `multi_candidate_screen`
+**Case Reference**: `{case_id}`
+**Timestamp**: {now_utc}
+**Recommendation**: **SCREEN_SHORTLIST / ADVANCE_TO_DILIGENCE**
+**Capital Allocation**: **0.0%** (Single-stock position sizing requires Stage 2 Full Diligence)
+
+---
+
+## 1. Discovered Candidate Registry
+| Ticker | Company Name | SEC CIK | Market Data | SEC Filings | Diligence Readiness |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+{chr(10).join(candidate_rows)}
+
+---
+
+## 2. Discovery Signals & Value-Chain Leads
+{chr(10).join(lead_rows)}
+
+---
+
+## 3. Data Integrity & Provenance Ledger
+{chr(10).join(conflict_notes)}
+
+### Tool Execution Receipts
+| Tool Called | Execution Status | Diagnostic Detail |
+| :--- | :--- | :--- |
+{receipt_table}
+
+---
+
+## 4. Next-Stage Institutional Directives
+1. Select one registered candidate from the shortlist (e.g. `python main.py` with specific ticker).
+2. Execute Stage 2 Full Diligence with deterministic Reverse DCF, Beneish M-Score, and air-gapped Bull vs. Bear debate.
+3. Apply the 3:1 Asymmetric Reward-to-Risk Hurdle and Fractional Kelly capital sizing before committing capital.
+"""
+
+
 def render_forensic_memo(state: InvestigationState, final_text: str) -> str:
     """Render a comprehensive forensic equity research memo in Markdown.
 
@@ -191,8 +289,50 @@ def render_forensic_memo(state: InvestigationState, final_text: str) -> str:
     :param final_text: Final synthesis text produced by the model.
     :returns: Formatted Markdown string.
     """
+    if state.get("mode") == "screen":
+        return _render_screen_memo(state)
+
     ticker = state.get("ticker") or "UNKNOWN"
     company = state.get("company") or "N/A"
+    gate = state.get("evidence_gate") or {}
+    if state.get("status") in {"insufficient_evidence", "validation_required"}:
+        failed_gate = next((item for item in (state.get("asymmetry_gate"), state.get("valuation_gate"), state.get("accounting_gate"), gate) if item and not item.get("passed", False)), {})
+        missing = failed_gate.get("missing_evidence") or [failed_gate.get("reason", "required evidence is unavailable")]
+        missing_items = "\n".join(f"- {item}" for item in missing)
+        return f"""# Research Incomplete: ${ticker}
+
+**Target Company**: {company}
+**Case Reference**: `{state.get('case_id') or 'N/A'}`
+**Decision**: **NO_POSITION**
+**Allocation**: **0.0%**
+
+## 1. Narrative Origin & Social Trigger
+Unavailable — not inferred.
+
+## 2. Core Claims & Reality Check
+Unavailable — validation stopped actionable research.
+
+## 3. SEC Filing Evidence & Audit Trail
+Unavailable — required evidence or normalized financial fields are incomplete.
+
+## 4. Dilution, Financing & Structural Hazards
+Unavailable — not inferred.
+
+## 5. Insider Activity & Management Conduct
+Unavailable — not inferred.
+
+## 6. Market Context & Pricing Check
+Unavailable — not inferred.
+
+## 7. Adversarial Red Team Invalidation & Institutional Debate
+Validation required.
+
+### Required next evidence
+{missing_items}
+
+## 8. Forensic Conclusion
+Research validation incomplete — no position and no target.
+"""
     cik = state.get("cik") or "N/A"
     case_id = state.get("case_id") or "N/A"
     confidence = state.get("confidence")
@@ -248,12 +388,52 @@ def render_forensic_memo(state: InvestigationState, final_text: str) -> str:
 
     # 7. Remaining Uncertainties & Kill Triggers
     unresolved = state.get("unresolved_questions", [])
-    unresolved_items = [f"- {q}" for q in unresolved] if unresolved else ["- No open critical contradictions detected."]
+    unresolved_items = [f"- {q}" for q in unresolved] if unresolved else ["- Unavailable — not inferred."]
     thesis_breakers = state.get("thesis_breakers", [])
-    kill_items = [f"- **Kill Trigger {i+1}**: {b}" for i, b in enumerate(thesis_breakers)] if thesis_breakers else [
-        "- **Kill Trigger 1**: Consolidated gross margin expansion stalls or contracts in subsequent SEC 10-Q filing.",
-        "- **Kill Trigger 2**: Channel check or balance sheet reveals inventory accumulation exceeding 15% QoQ.",
-    ]
+    kill_items = [f"- **Kill Trigger {i+1}**: {b}" for i, b in enumerate(thesis_breakers)] if thesis_breakers else ["- Unavailable — no source-backed kill trigger was produced."]
+
+    bull_report = state.get("bull_report")
+    if bull_report and getattr(bull_report, "catalysts", None):
+        bull_items = [f"- **Catalyst {i+1}**: {c}" for i, c in enumerate(bull_report.catalysts)]
+        if getattr(bull_report, "operating_leverage_drivers", None):
+            bull_items.extend([f"- **Leverage Driver**: {d}" for d in bull_report.operating_leverage_drivers])
+    else:
+        bull_items = ["- Fundamental catalysts under evaluation."]
+
+    q1_payload = {
+        "expectation_gap": state.get("expectation_gap") or "Unavailable — not inferred.",
+        "consensus_snapshot": state.get("consensus_snapshot") or "Unavailable — not inferred.",
+    }
+    q2_payload = {
+        "forensic_accounting": state.get("forensic_report") or "Unavailable — not inferred.",
+        "thematic_analysis": state.get("thematic_report") or "Unavailable — not inferred.",
+        "sector_analysis": state.get("sector_report") or "Unavailable — not inferred.",
+        "moat_analysis": state.get("moat_report") or "Unavailable — not inferred.",
+        "quant_valuation": state.get("quant_report") or "Unavailable — not inferred.",
+    }
+    q3_payload = {
+        "bull_advocate": state.get("bull_report") or "Unavailable — not inferred.",
+        "adversarial_red_team": state.get("adversarial_report") or "Unavailable — not inferred.",
+        "investment_committee": state.get("ic_verdict") or "Unavailable — not inferred.",
+    }
+    funnel = f"""## Investment Decision Funnel
+
+### Q1. What is Wall Street pricing in? — Mauboussin
+```json
+{json.dumps(q1_payload, indent=2, default=str)}
+```
+
+### Q2. What is reality actually doing? — Fisher + Lynch
+```json
+{json.dumps(q2_payload, indent=2, default=str)}
+```
+
+### Q3. Is the variant perception tradeable? — Hedge-Fund Asymmetry
+```json
+{json.dumps(q3_payload, indent=2, default=str)}
+```
+"""
+
 
     memo = f"""# Meme Market Forensic Memo: ${ticker}
 
@@ -262,6 +442,10 @@ def render_forensic_memo(state: InvestigationState, final_text: str) -> str:
 **Case Reference**: `{case_id}`  
 **Investigation Timestamp**: {now_utc}  
 **Confidence Score**: {conf_str}  
+
+---
+
+{funnel}
 
 ---
 
@@ -301,8 +485,11 @@ def render_forensic_memo(state: InvestigationState, final_text: str) -> str:
 
 {_expectations_section(state)}
 
-## 7. Adversarial Red Team Invalidation & Remaining Uncertainties
-### Quantitative Numeric Kill Criteria
+## 7. Adversarial Red Team Invalidation & Institutional Debate
+### The Bull Case: Catalysts & Operating Leverage
+{chr(10).join(bull_items)}
+
+### Adversarial Red Team: Quantitative Numeric Kill Criteria
 {chr(10).join(kill_items)}
 
 ### Open Investigation Questions
@@ -316,17 +503,121 @@ def render_forensic_memo(state: InvestigationState, final_text: str) -> str:
     return memo
 
 
+def render_research_report(state: InvestigationState, final_text: str) -> str:
+    """Render one prompt-directed report without profile or mode conclusions.
+
+    Args:
+        state: Completed universal research state.
+        final_text: Model synthesis.
+
+    Returns:
+        Markdown report with ranking readiness, sources, and evidence gaps.
+    """
+    intent = state.get("research_intent") or {}
+    requested_count = intent.get("requested_ranking_count")
+    candidates = state.get("candidates") or {}
+    rows = [
+        f"| {candidate.get('ticker') or 'UNKNOWN'} | {candidate.get('company') or 'Unknown'} | {'yes' if candidate.get('market_context') else 'no'} | {'yes' if candidate.get('sec_financials') or candidate.get('sec_corpora') or candidate.get('evidence') else 'no'} |"
+        for candidate in candidates.values() if isinstance(candidate, dict)
+    ] or ["| None | No registered candidates | no | no |"]
+    ranking = "Not requested" if not requested_count else f"Requested ranking count: {requested_count}; registered candidates: {len(candidates)}"
+    sources = state.get("source_records", [])
+    source_rows = [f"| {item.get('title') or 'Untitled source'} | {item.get('status', 'discovered')} | {item.get('url') or 'Unavailable'} |" for item in sources] or ["| No readable source | unavailable | N/A |"]
+    missing = (state.get("evidence_gate") or {}).get("missing_evidence") or state.get("unresolved_questions") or ["No additional gaps recorded."]
+    return f"""# Deep Research Report
+
+**Case Reference**: `{state.get('case_id') or 'N/A'}`
+**Status**: `{state.get('status', 'completed')}`
+**{ranking}**
+
+## Request
+{state.get('trigger', {}).get('query') or 'User research request'}
+
+## Findings
+{final_text or 'Research completed without a model synthesis.'}
+
+## Candidate Evidence Coverage
+| Ticker | Company | Market evidence | SEC evidence |
+| :--- | :--- | :--- | :--- |
+{chr(10).join(rows)}
+
+## Sources Consulted
+| Source | Status | URL |
+| :--- | :--- | :--- |
+{chr(10).join(source_rows)}
+
+## Limitations and Open Questions
+{chr(10).join(f'- {item}' for item in missing)}
+
+## Execution Coverage
+- Tool receipts: {len(state.get('searches_performed', []))}
+- Provider failures: {sum(1 for receipt in state.get('searches_performed', []) if receipt.get('status') == 'error')}
+"""
+
+
+def render_generic_research_report(state: InvestigationState, final_text: str) -> str:
+    """Render a cited profile-neutral research report.
+
+    Args:
+        state: Completed generic investigation state.
+        final_text: Model synthesis.
+
+    Returns:
+        Markdown report with source coverage and limitations.
+    """
+    sources = state.get("source_records", [])
+    source_rows = [
+        f"| {item.get('title') or 'Untitled source'} | {item.get('status', 'discovered')} | {item.get('url') or 'Unavailable'} |"
+        for item in sources
+    ] or ["| No readable source | unavailable | N/A |"]
+    unresolved = state.get("unresolved_questions", [])
+    gaps = "\n".join(f"- {item}" for item in unresolved) or "- No additional gaps recorded."
+    return f"""# Deep Research Report
+
+**Case Reference**: `{state.get('case_id') or 'N/A'}`<br>
+**Status**: `{state.get('status', 'completed')}`
+
+## Request
+{state.get('trigger', {}).get('query') or 'User research request'}
+
+## Findings
+{final_text or 'Research completed without a model synthesis.'}
+
+## Sources Consulted
+| Source | Status | URL |
+| :--- | :--- | :--- |
+{chr(10).join(source_rows)}
+
+## Limitations and Open Questions
+{gaps}
+
+## Execution Coverage
+- Source records: {len(sources)}
+- Tool receipts: {len(state.get('searches_performed', []))}
+- Provider failures: {sum(1 for receipt in state.get('searches_performed', []) if receipt.get('status') == 'error')}
+"""
+
+
 def serialize_investigation_json(state: InvestigationState, memo_md: str) -> dict[str, Any]:
     """Serialize the full investigation into an atomic audit artifact."""
     now_utc = datetime.now(timezone.utc).isoformat()
     return {
         "case_id": state.get("case_id"),
+        "depth": state.get("depth", "deep"),
+        "research_intent": state.get("research_intent", {}),
+        "research_plan": state.get("research_plan", []),
+        "source_records": state.get("source_records", []),
+        "claim_records": state.get("claim_records", []),
+        "capability_outputs": state.get("capability_outputs", {}),
         "ticker": state.get("ticker"),
         "company": state.get("company"),
         "cik": state.get("cik"),
         "status": state.get("status", "completed"),
         "confidence": state.get("confidence"),
         "created_at": now_utc,
+        "candidates": state.get("candidates", {}),
+        "candidate_leads": state.get("candidate_leads", []),
+        "comparisons": state.get("comparisons", []),
         "tool_calls": state.get("tool_calls", 0),
         "trigger": state.get("trigger", {}),
         "root_claims": state.get("root_claims", []),
@@ -335,5 +626,23 @@ def serialize_investigation_json(state: InvestigationState, memo_md: str) -> dic
         "unresolved_questions": state.get("unresolved_questions", []),
         "market_context": state.get("market_context"),
         "causal_chain": state.get("causal_chain"),
+        "searches_performed": state.get("searches_performed", []),
+        "sec_corpora": state.get("sec_corpora", []),
+        "consensus_snapshot": state.get("consensus_snapshot"),
+        "expectation_gap": state.get("expectation_gap"),
+        "thesis_breakers": state.get("thesis_breakers", []),
+        "bull_report": state.get("bull_report"),
+        "adversarial_report": state.get("adversarial_report"),
+        "ic_verdict": state.get("ic_verdict"),
+        "budget_state": state.get("budget_state", {}),
+        "evidence_gate": state.get("evidence_gate", {}),
+        "accounting_gate": state.get("accounting_gate", {}),
+        "valuation_gate": state.get("valuation_gate", {}),
+        "asymmetry_gate": state.get("asymmetry_gate", {}),
+        "forensic_report": state.get("forensic_report"),
+        "thematic_report": state.get("thematic_report"),
+        "sector_report": state.get("sector_report"),
+        "moat_report": state.get("moat_report"),
+        "quant_report": state.get("quant_report"),
         "memo_markdown": memo_md,
     }
