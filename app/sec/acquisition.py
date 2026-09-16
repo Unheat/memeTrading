@@ -129,6 +129,27 @@ def _normalize_forms(forms: Iterable[str] | None) -> list[str] | None:
     return normalized or None
 
 
+def _normalize_since(since: date | str | None) -> date | None:
+    """Normalize direct dates and JSON-native ISO dates at the SEC boundary.
+
+    Args:
+        since: Optional ``date`` or ``YYYY-MM-DD`` string.
+
+    Returns:
+        A date value, or ``None`` when no lower bound was supplied.
+
+    Raises:
+        ValueError: If the supplied value is not a valid ISO date.
+    """
+    if since is None:
+        return None
+    if isinstance(since, date):
+        return since
+    if isinstance(since, str) and since.strip():
+        return date.fromisoformat(since.strip())
+    raise ValueError("since must be a date or ISO date string")
+
+
 def _default_company_factory(ticker: str) -> Any:
     """Create Edgartools company lazily for production discovery.
 
@@ -180,7 +201,7 @@ def _map_filing(ticker: str, cik: Any, filing: Any) -> FilingMetadata:
 def list_sec_filings(
     ticker: str,
     forms: Iterable[str] | None = None,
-    since: date | None = None,
+    since: date | str | None = None,
     company_factory: CompanyFactory | None = None,
 ) -> FilingDiscoveryResult:
     """Discover filing metadata without downloading SEC documents.
@@ -188,7 +209,7 @@ def list_sec_filings(
     Args:
         ticker: Caller-supplied 1–10 letter ticker.
         forms: Optional iterable of SEC form filters.
-        since: Optional inclusive filing-date lower bound.
+        since: Optional inclusive filing-date lower bound as a date or ISO string.
         company_factory: Optional injected Edgartools-compatible test seam.
 
     Returns:
@@ -197,8 +218,7 @@ def list_sec_filings(
     try:
         normalized_ticker = _normalize_ticker(ticker)
         normalized_forms = _normalize_forms(forms)
-        if since is not None and not isinstance(since, date):
-            raise ValueError("since must be a date")
+        normalized_since = _normalize_since(since)
     except (AttributeError, TypeError, ValueError):
         return _failure("INVALID_INPUT", "Ticker, forms, or since date is invalid.", False)
 
@@ -225,8 +245,8 @@ def list_sec_filings(
         if normalized_forms is not None:
             allowed_forms = frozenset(normalized_forms)
             filings = tuple(filing for filing in filings if filing.form.upper() in allowed_forms)
-        if since is not None:
-            filings = tuple(filing for filing in filings if filing.filing_date >= since)
+        if normalized_since is not None:
+            filings = tuple(filing for filing in filings if filing.filing_date >= normalized_since)
         return FilingDiscoveryResult(
             tuple(sorted(filings, key=lambda filing: (filing.filing_date, filing.accession), reverse=True))
         )

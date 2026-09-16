@@ -157,17 +157,20 @@ def _failure(
 
 
 def _is_sec_url(source_url: str) -> bool:
-    """Check whether a URL is an HTTPS SEC host URL.
+    """Check whether a URL is a valid HTTPS SEC document URL.
 
     Args:
         source_url: Candidate remote document URL.
 
     Returns:
-        True only for HTTPS `sec.gov` hosts.
+        True only for HTTPS `sec.gov` hosts with a document path.
     """
     parsed = urlparse(source_url)
     host = parsed.hostname or ""
-    return parsed.scheme == "https" and (host == "sec.gov" or host.endswith(SEC_HOST_SUFFIX))
+    path = (parsed.path or "").strip()
+    is_sec_host = parsed.scheme == "https" and (host == "sec.gov" or host.endswith(SEC_HOST_SUFFIX))
+    has_doc_path = bool(path and path != "/" and len(path.strip("/").split("/")) >= 1)
+    return is_sec_host and has_doc_path
 
 
 def _safe_document_name(document_name: str) -> bool:
@@ -258,7 +261,24 @@ def _default_downloader(source_url: str) -> bytes:
         raise _MissingIdentityError
     request = Request(source_url, headers={"User-Agent": identity, "Accept-Encoding": "gzip, deflate"})
     with urlopen(request, timeout=DEFAULT_TIMEOUT_SECONDS) as response:
-        body = response.read(MAX_DOCUMENT_BYTES + 1)
+        raw_body = response.read(MAX_DOCUMENT_BYTES + 1)
+        encoding = str(response.headers.get("Content-Encoding", "")).lower()
+
+    if "gzip" in encoding or raw_body.startswith(b"\x1f\x8b"):
+        import gzip
+        try:
+            body = gzip.decompress(raw_body)
+        except Exception:
+            body = raw_body
+    elif "deflate" in encoding:
+        import zlib
+        try:
+            body = zlib.decompress(raw_body)
+        except Exception:
+            body = raw_body
+    else:
+        body = raw_body
+
     if len(body) > MAX_DOCUMENT_BYTES:
         raise _DocumentTooLargeError
     return body

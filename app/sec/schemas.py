@@ -106,8 +106,8 @@ class FilingMetadata:
         """
         object.__setattr__(self, "ticker", _non_empty(self.ticker, "ticker").upper())
         cik = _non_empty(self.cik, "cik")
-        if not cik.isdigit():
-            raise ValueError("cik must contain digits only")
+        if not cik.isdigit() or int(cik) <= 0:
+            raise ValueError("cik must contain digits only and be greater than zero")
         object.__setattr__(self, "cik", str(int(cik)))
         object.__setattr__(self, "form", _non_empty(self.form, "form"))
         object.__setattr__(self, "accession", _non_empty(self.accession, "accession"))
@@ -202,8 +202,8 @@ class PulledCorpus:
         object.__setattr__(self, "corpus_id", _non_empty(self.corpus_id, "corpus_id"))
         object.__setattr__(self, "ticker", _non_empty(self.ticker, "ticker").upper())
         cik = _non_empty(self.cik, "cik")
-        if not cik.isdigit():
-            raise ValueError("cik must contain digits only")
+        if not cik.isdigit() or int(cik) <= 0:
+            raise ValueError("cik must contain digits only and be greater than zero")
         object.__setattr__(self, "cik", str(int(cik)))
         if self.created_at.tzinfo is None:
             raise ValueError("created_at must include a timezone")

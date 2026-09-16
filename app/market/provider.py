@@ -9,6 +9,30 @@ from app.market.schemas import MarketDataError
 
 PROVIDER_NAME = "yfinance"
 DEFAULT_PERIOD = "6mo"
+# yfinance-supported fetch windows. ``3m`` is an output-return label, not a fetch window.
+VALID_PERIODS = frozenset({"1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"})
+PERIOD_NORMALIZATIONS = {"3m": DEFAULT_PERIOD}
+
+
+def _normalize_period(period: str) -> str:
+    """Validate and normalize one source-history period before an upstream request.
+
+    Args:
+        period: Requested yfinance history period or local calculated label.
+
+    Returns:
+        Valid yfinance fetch period, with calculated ``3m`` normalized to ``6mo``.
+
+    Raises:
+        ValueError: If period is not a supported non-empty string.
+    """
+    if not isinstance(period, str):
+        raise ValueError("period must be a string")
+    normalized = period.strip().lower()
+    normalized = PERIOD_NORMALIZATIONS.get(normalized, normalized)
+    if normalized not in VALID_PERIODS:
+        raise ValueError(f"unsupported history period: {period}")
+    return normalized
 
 
 def _yf_history(ticker: str, period: str) -> "object":  # returns pandas DataFrame
@@ -31,8 +55,9 @@ def fetch_history(ticker: str, period: str = DEFAULT_PERIOD) -> dict:
     :returns: dict with dates/open/high/low/close/volume lists (floats/strings).
     :raises MarketDataError: On empty frame or upstream failure.
     """
+    normalized_period = _normalize_period(period)
     try:
-        frame = _yf_history(ticker, period)
+        frame = _yf_history(ticker, normalized_period)
     except Exception as exc:
         raise MarketDataError(PROVIDER_NAME, f"history fetch failed for {ticker}: {exc}") from exc
 

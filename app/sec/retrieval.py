@@ -316,3 +316,36 @@ def search_sec_corpus(case_directory: Path, query: str, embed_query: Callable[[s
         return RetrievalResult(error=_failure("CORRUPT_INDEX", "Local SEC retrieval index is invalid or stale.", False))
     except Exception:
         return RetrievalResult(error=_failure("CORRUPT_INDEX", "Local SEC retrieval could not complete.", False))
+
+
+def search_candidate_sec_corpus(
+    case_directory: Path | str,
+    candidate_id: str,
+    query: str,
+    embed_query: Callable[[str], Sequence[float]],
+    reranker: Callable[[str, Sequence[CorpusChunk]], Sequence[tuple[str, float]]] | None = None,
+    top_k: int = DEFAULT_TOP_K,
+) -> RetrievalResult:
+    """Search the isolated SEC corpus belonging specifically to one candidate company.
+
+    Args:
+        case_directory: Existing case directory path.
+        candidate_id: Identifier of the candidate company whose corpus to search.
+        query: Query string.
+        embed_query: Embedder function.
+        reranker: Optional reranker function.
+        top_k: Max results.
+
+    Returns:
+        RetrievalResult for that candidate's isolated corpus.
+    """
+    directory = Path(case_directory)
+    cand_dir = directory / "candidates" / candidate_id
+    target_dir = cand_dir if cand_dir.exists() else directory
+    return search_sec_corpus(
+        case_directory=target_dir,
+        query=query,
+        embed_query=embed_query,
+        reranker=reranker,
+        top_k=top_k,
+    )

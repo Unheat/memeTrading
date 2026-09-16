@@ -295,6 +295,12 @@ def _decode_document(body: bytes) -> str:
     Returns:
         Decoded source text.
     """
+    if body.startswith(b"\x1f\x8b"):
+        import gzip
+        try:
+            body = gzip.decompress(body)
+        except Exception:
+            pass
     try:
         return body.decode("utf-8")
     except UnicodeDecodeError:

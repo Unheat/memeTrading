@@ -17,11 +17,13 @@ def ensure_sec_identity(custom_identity: str | None = None) -> str:
     """
     ident = (
         custom_identity
+        or os.environ.get("SEC_EDGAR_USER_AGENT")
         or os.environ.get("SEC_USER_AGENT")
         or os.environ.get("EDGAR_IDENTITY")
         or DEFAULT_SEC_IDENTITY
     ).strip()
 
+    os.environ["SEC_EDGAR_USER_AGENT"] = ident
     os.environ["SEC_USER_AGENT"] = ident
     os.environ["EDGAR_IDENTITY"] = ident
 

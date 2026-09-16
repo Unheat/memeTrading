@@ -18,7 +18,7 @@ MIN_ARTICLE_CHARS = 120
 
 def _bare_extraction(url: str) -> dict:
     """Thin seam over trafilatura so tests can patch without importing it."""
-    from trafilatura.bare_extraction import bare_extraction
+    from trafilatura import bare_extraction
 
     return bare_extraction(
         url,

@@ -15,6 +15,7 @@ from app.articles.schemas import ArticleProviderError, ArticleRecord
 logger = logging.getLogger(__name__)
 
 GDELT_MAX_DAYS = 30
+GDELT_MAX_RECORDS = 250
 
 
 def _article_id(url: str) -> str:
@@ -56,8 +57,13 @@ def search(query: str, days: int, limit: int) -> list[ArticleRecord]:
     """
     if not query or not query.strip():
         raise ValueError("query must be a non-empty string")
+    if not isinstance(days, int) or isinstance(days, bool) or days <= 0:
+        raise ValueError("days must be a positive integer")
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit <= 0:
+        raise ValueError("limit must be a positive integer")
 
     effective_days = min(days, GDELT_MAX_DAYS)
+    num_records = min(limit, GDELT_MAX_RECORDS)
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=effective_days)
 
@@ -66,10 +72,13 @@ def search(query: str, days: int, limit: int) -> list[ArticleRecord]:
             query.strip(),
             start.strftime("%Y-%m-%d"),
             end.strftime("%Y-%m-%d"),
-            limit,
+            num_records,
         )
     except Exception as exc:
         raise ArticleProviderError("gdelt", f"GDELT search failed: {exc}") from exc
+
+    if df is None or not hasattr(df, "to_dict") or len(df) == 0:
+        return []
 
     records: list[ArticleRecord] = []
     for row in df.to_dict(orient="records"):

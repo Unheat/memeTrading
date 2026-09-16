@@ -6,6 +6,7 @@ via edgartools without vector RAG or LLM hallucination risk.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Mapping
@@ -31,6 +32,7 @@ class SecFinancialsResult:
     net_cash: dict[str, float | None]
     inventory: dict[str, float | None]
     inventory_qoq_change_pct: dict[str, float | None]
+    cash_from_operations: dict[str, float | None]
     capex: dict[str, float | None]
     provider: str
     as_of: str
@@ -53,6 +55,7 @@ class SecFinancialsResult:
             "net_cash": dict(self.net_cash),
             "inventory": dict(self.inventory),
             "inventory_qoq_change_pct": dict(self.inventory_qoq_change_pct),
+            "cash_from_operations": dict(self.cash_from_operations),
             "capex": dict(self.capex),
             "provider": self.provider,
             "as_of": self.as_of,
@@ -77,6 +80,7 @@ class SecFinancialsResult:
             net_cash=dict(data.get("net_cash", {})),
             inventory=dict(data.get("inventory", {})),
             inventory_qoq_change_pct=dict(data.get("inventory_qoq_change_pct", {})),
+            cash_from_operations=dict(data.get("cash_from_operations", {})),
             capex=dict(data.get("capex", {})),
             provider=str(data.get("provider", "sec_xbrl")),
             as_of=str(data.get("as_of", "")),
@@ -87,23 +91,46 @@ class SecFinancialsResult:
 def _is_period_col(col_name: Any) -> bool:
     """Check if a DataFrame column represents a fiscal date period."""
     s = str(col_name).strip()
-    # e.g. 2024-06-30 or 2025-Q1
-    if any(s.startswith(str(year)) for year in range(2000, 2040)):
+    # e.g. 2024-06-30, 2025-Q1, Q3 2026, FY 2025
+    if any(str(year) in s for year in range(2000, 2040)):
         return True
     return False
 
 
 def _sort_period_cols(cols: list[str]) -> list[str]:
     """Sort period columns in descending chronological order (newest first)."""
-    return sorted(cols, reverse=True)
+    import re
+
+    def _parse_key(col: str):
+        c = str(col).strip()
+        m_q = re.search(r"Q([1-4])\s*(\d{4})", c, re.I)
+        if m_q:
+            return (int(m_q.group(2)), int(m_q.group(1)), c)
+        m_yq = re.search(r"(\d{4})\s*[-Q]\s*([1-4])", c, re.I)
+        if m_yq:
+            return (int(m_yq.group(1)), int(m_yq.group(2)), c)
+        m_date = re.search(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})", c)
+        if m_date:
+            return (int(m_date.group(1)), int(m_date.group(2)), int(m_date.group(3)))
+        m_fy = re.search(r"(\d{4})", c)
+        if m_fy:
+            return (int(m_fy.group(1)), 0, c)
+        return (0, 0, c)
+
+    return sorted(cols, key=_parse_key, reverse=True)
 
 
 def _find_row_val(df: Any, concept_names: list[str], col: str) -> float | None:
-    """Find a row matching concept_names and extract float value from column `col`."""
+    """Find a matching concept's finite numeric value, otherwise return ``None``.
+
+    :param df: Statement dataframe indexed by SEC XBRL concept.
+    :param concept_names: Ordered candidate concepts, from preferred to fallback.
+    :param col: Fiscal-period column name.
+    :returns: Matching finite value, with CapEx payments made positive, or ``None``.
+    """
     if df is None:
         return None
     try:
-        # Check index
         for concept in concept_names:
             concept_lower = concept.lower()
             for idx in df.index:
@@ -111,9 +138,12 @@ def _find_row_val(df: Any, concept_names: list[str], col: str) -> float | None:
                     val = df.loc[idx, col]
                     if hasattr(val, "iloc"):
                         val = val.iloc[0]
-                    if val is not None:
-                        f_val = float(val)
-                        return abs(f_val) if "payments" in concept_lower or "capex" in concept_lower else f_val
+                    if val is None:
+                        continue
+                    f_val = float(val)
+                    if not math.isfinite(f_val):
+                        continue
+                    return abs(f_val) if "payments" in concept_lower or "capex" in concept_lower else f_val
     except Exception:
         pass
     return None
@@ -141,6 +171,7 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4) -> dict[str, Any]:
         "cash_and_equivalents": {},
         "total_debt": {},
         "inventory": {},
+        "cash_from_operations": {},
         "capex": {},
     }
 
@@ -177,11 +208,12 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4) -> dict[str, Any]:
     except Exception as exc:
         logger.debug("Failed balance sheet extraction via dataframe: %s", exc)
 
-    # 3. Cash Flow Statement (CapEx)
+    # 3. Cash Flow Statement (CFO and CapEx)
     try:
         cf_stmt = company.cash_flow_statement(annual=False, periods=periods, as_dataframe=True)
         if cf_stmt is not None and hasattr(cf_stmt, "columns"):
             for col in result["periods"]:
+                result["cash_from_operations"][col] = _find_row_val(cf_stmt, ["NetCashProvidedByUsedInOperatingActivities", "NetCashProvidedByOperatingActivities", "OperatingCashFlow"], col)
                 result["capex"][col] = _find_row_val(cf_stmt, ["PaymentsToAcquirePropertyPlantAndEquipment", "PaymentsToAcquireProductiveAssets", "CapitalExpenditures"], col)
     except Exception as exc:
         logger.debug("Failed cash flow extraction via dataframe: %s", exc)
@@ -221,6 +253,7 @@ def get_sec_financials(ticker: str, periods: int = 4) -> SecFinancialsResult:
             net_cash={},
             inventory={},
             inventory_qoq_change_pct={},
+            cash_from_operations={},
             capex={},
             provider="sec_xbrl",
             as_of=as_of,
@@ -235,6 +268,7 @@ def get_sec_financials(ticker: str, periods: int = 4) -> SecFinancialsResult:
     cash = raw.get("cash_and_equivalents", {})
     debt = raw.get("total_debt", {})
     inv = raw.get("inventory", {})
+    cfo = raw.get("cash_from_operations", {})
     capex = raw.get("capex", {})
 
     gm_pct: dict[str, float | None] = {}
@@ -294,6 +328,7 @@ def get_sec_financials(ticker: str, periods: int = 4) -> SecFinancialsResult:
         net_cash=net_cash,
         inventory=inv,
         inventory_qoq_change_pct=inv_qoq,
+        cash_from_operations=cfo,
         capex=capex,
         provider="sec_xbrl",
         as_of=as_of,
