@@ -25,6 +25,8 @@ def test_tool_registry_contains_all_10_tools():
         "get_macro_context",
         "register_candidate",
         "compare_candidates",
+        "conduct_candidate_diligence",
+        "evaluate_valuation",
     }
     assert tool_names == expected
 

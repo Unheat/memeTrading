@@ -52,6 +52,8 @@ class ToolCoverageModel:
                 ("read_sec_evidence", {"case_id": "coverage", "candidate_id": "cand_msft", "chunk_ids": ["chunk-1"]}),
                 ("verify_sec_claim", {"corpus_id": "coverage/candidates/cand_msft", "candidate_id": "cand_msft", "claim": "Microsoft reported cloud growth."}),
                 ("compare_candidates", {"candidate_ids": ["cand_msft"], "metrics": ["revenue"]}),
+                ("conduct_candidate_diligence", {"ticker": "MSFT", "candidate_id": "cand_msft"}),
+                ("evaluate_valuation", {"ticker": "MSFT", "candidate_id": "cand_msft"}),
             ]
         else:
             return AIMessage(content="Microsoft is the only evidence-backed candidate collected; the requested one-company ranking is complete.")

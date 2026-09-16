@@ -20,7 +20,7 @@ _NON_ROUTABLE_STATUSES = frozenset({
 _CANDIDATE_SCOPED_TOOLS = frozenset({
     "get_market_data", "get_sec_financials", "get_company_research", "list_sec_filings",
     "pull_sec_filings", "verify_sec_claim", "search_sec_evidence", "read_sec_evidence",
-    "get_ownership_and_insider_activity",
+    "get_ownership_and_insider_activity", "conduct_candidate_diligence", "evaluate_valuation",
 })
 
 
@@ -234,6 +234,10 @@ def _route_success(
         update.setdefault("capability_outputs", {})["macro_context"] = clean
     elif tool_name == "get_ownership_and_insider_activity":
         update.setdefault("capability_outputs", {})["insider_activity"] = clean
+    elif tool_name == "conduct_candidate_diligence":
+        update.setdefault("capability_outputs", {}).setdefault("diligence_dossiers", {})[ticker] = clean
+    elif tool_name == "evaluate_valuation":
+        update.setdefault("capability_outputs", {}).setdefault("valuations", {})[ticker] = clean
     elif tool_name in {"search_sec_evidence", "read_sec_evidence"}:
         update.setdefault("capability_outputs", {}).setdefault(tool_name, []).append(clean)
     elif tool_name in {"search_articles", "search_social", "search_web", "read_article", "read_document"}:
@@ -277,6 +281,12 @@ def _route_candidate_tool(
         candidate.setdefault("articles", []).append(dict(payload))
     elif tool_name in {"search_sec_evidence", "read_sec_evidence"}:
         candidate.setdefault("sec_evidence_excerpts", []).append(dict(payload))
+    elif tool_name == "conduct_candidate_diligence":
+        candidate["diligence_dossier"] = dict(payload)
+    elif tool_name == "evaluate_valuation":
+        candidate["quant_report"] = payload.get("quant_report")
+        if payload.get("valuation"):
+            candidate["valuation"] = dict(payload["valuation"])
 
 
 def _payload_cik(payload: Mapping[str, Any]) -> str | None:

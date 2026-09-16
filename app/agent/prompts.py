@@ -36,6 +36,10 @@ DEEP_RESEARCH_PROMPT = """You are an elite, thorough deep-research investigator.
    - For comparative or ranking requests, call `register_candidate` before calling company-specific tools, and pass `candidate_id` to all company-scoped calls.
    - Once evidence is collected, call `compare_candidates` to generate normalized cross-company comparison cards.
    - Never claim a complete ranking if fewer evidence-backed candidates were collected than requested.
+6. **Isolated Candidate Deep Diligence**:
+   - Call `conduct_candidate_diligence(ticker='...')` on your top candidate picks to launch isolated deep diligence sub-agents.
+   - Computes deterministic Reverse DCF valuation, evaluates operating leverage Bull catalysts, and runs the Bear Red Team with numeric kill criteria.
+   - For ranking or comparative requests (e.g. '5 best tech stocks'), call `conduct_candidate_diligence` on each of your top ranked picks.
 
 Do not stop after a single surface search. Follow up on leads, read linked document PDFs, investigate primary SEC filings, and synthesize conclusions only when backed by verifiable evidence."""
 

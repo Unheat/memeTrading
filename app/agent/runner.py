@@ -103,10 +103,10 @@ def run_investigation(
         )
         initial_state = create_initial_state(effective_request, case_id=case_id)
         manifest["research_intent"] = initial_state["research_intent"]
-        tools = create_agent_tools(cases_root=root, guard=ToolCallGuard(max_identical=budget.max_identical_calls))
         runtime = ModelRuntime(model=model) if model is not None else create_default_model_runtime(
             model=cfg.llm.model, base_url=cfg.llm.base_url, temperature=cfg.llm.temperature, endpoints=cfg.llm.models,
         )
+        tools = create_agent_tools(cases_root=root, guard=ToolCallGuard(max_identical=budget.max_identical_calls), model=runtime.model)
         graph = create_research_graph(
             runtime.model, tools, context_policy=runtime.context_policy, token_counter=runtime.token_counter,
         )

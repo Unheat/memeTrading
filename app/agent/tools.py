@@ -50,6 +50,7 @@ class ToolCallGuard:
 def create_agent_tools(
     cases_root: Path | str | None = None,
     guard: ToolCallGuard | None = None,
+    model: Any | None = None,
 ) -> list[BaseTool]:
     """Create all normalized tools bound to LangChain BaseTool interfaces."""
     call_guard = guard or ToolCallGuard()
@@ -395,11 +396,80 @@ def create_agent_tools(
             "metrics": requested_metrics,
         })
 
+    @tool
+    def evaluate_valuation(ticker: str, candidate_id: str | None = None) -> str:
+        """Compute deterministic Reverse DCF, Fair Value ranges (Low/Base/High), and 3:1 asymmetry hurdle test via calculator.mjs.
+
+        Evaluates intrinsic value from verified SEC free cash flows, net cash, and diluted shares.
+        Can be called on any stock ticker (target or peer) to evaluate implied growth expectations.
+        """
+        clean_ticker = ticker.strip().upper()
+        cand_id = candidate_id or f"cand_{clean_ticker.lower()}"
+        suppressed = _guard_check("evaluate_valuation", {"ticker": clean_ticker, "candidate_id": cand_id})
+        if suppressed:
+            return suppressed
+        try:
+            from app.market.market_data import get_market_data as fetch_mkt
+            from app.sec.financials import get_sec_financials as fetch_sec
+            from app.agent.specialists import run_quant_analysis
+
+            cand_state = {
+                "ticker": clean_ticker,
+                "market_context": fetch_mkt(clean_ticker).to_dict(),
+                "sec_financials": fetch_sec(clean_ticker).to_dict(),
+            }
+            res = run_quant_analysis(cand_state)
+            quant_rep = res.get("quant_report") or {}
+            val = quant_rep.get("valuation") or {}
+            d = {
+                "status": "ok" if quant_rep.get("status") == "available" else "unavailable",
+                "ticker": clean_ticker,
+                "candidate_id": cand_id,
+                "valuation": {
+                    "fair_value": val.get("fair_value"),
+                    "implied_growth_rate": val.get("implied_fcf_growth_rate"),
+                    "reward_to_risk_ratio": (val.get("asymmetric_risk_reward") or {}).get("reward_to_risk_ratio"),
+                    "reproducibility": (quant_rep.get("reproducibility") or {}).get("verdict", "unverified"),
+                },
+                "quant_report": quant_rep,
+                "reason": quant_rep.get("reason"),
+            }
+            return json.dumps(d)
+        except Exception as exc:
+            return json.dumps({"status": "error", "message": f"evaluate_valuation error: {exc}"})
+
+    @tool
+    def conduct_candidate_diligence(ticker: str, candidate_id: str | None = None, focus_questions: list[str] | None = None) -> str:
+        """Execute an isolated deep diligence sub-agent for a specific company candidate.
+
+        Computes deterministic Reverse DCF valuation, evaluates operating leverage Bull catalysts,
+        and conducts an adversarial Bear Red Team audit with numeric kill criteria.
+        Call this tool on each of your top-priority candidate stocks.
+        """
+        clean_ticker = ticker.strip().upper()
+        cand_id = candidate_id or f"cand_{clean_ticker.lower()}"
+        suppressed = _guard_check("conduct_candidate_diligence", {"ticker": clean_ticker, "candidate_id": cand_id})
+        if suppressed:
+            return suppressed
+        try:
+            from app.agent.diligence import run_candidate_diligence
+
+            res = run_candidate_diligence(
+                ticker=clean_ticker,
+                candidate_id=cand_id,
+                focus_questions=focus_questions,
+                model=model,
+            )
+            return json.dumps(res)
+        except Exception as exc:
+            return json.dumps({"status": "error", "message": f"conduct_candidate_diligence error: {exc}"})
+
     core_tools = [search_social, search_articles, read_article, read_document, search_web]
     investment_tools = [
         get_market_data, get_company_research, list_sec_filings, pull_sec_filings,
         search_sec_evidence, read_sec_evidence, verify_sec_claim, get_sec_financials,
         get_ownership_and_insider_activity, get_macro_context, register_candidate, compare_candidates,
+        evaluate_valuation, conduct_candidate_diligence,
     ]
     return [*core_tools, *investment_tools]
 

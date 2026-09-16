@@ -75,14 +75,14 @@ def _has_evidence_gaps(state: InvestigationState) -> bool:
     return False
 
 
-def should_continue_executor(state: InvestigationState) -> Literal["tools", "reflect", "diligence_prep"]:
-    """Route pending model tool calls, trigger reflection on gaps, or proceed to analysis lenses.
+def should_continue_executor(state: InvestigationState) -> Literal["tools", "reflect", "committee"]:
+    """Route pending model tool calls, trigger reflection on gaps, or proceed to committee.
 
     Args:
         state: Current investigation state.
 
     Returns:
-        ``tools`` when calls remain, ``reflect`` when model completed turn, otherwise ``diligence_prep``.
+        ``tools`` when calls remain, ``reflect`` when model completed turn, otherwise ``committee``.
     """
     messages = state.get("messages", [])
     tool_calls = getattr(messages[-1], "tool_calls", None) if messages else None
@@ -92,7 +92,7 @@ def should_continue_executor(state: InvestigationState) -> Literal["tools", "ref
 
     if tool_calls:
         prior = tool_calls_done - len(tool_calls)
-        return "tools" if prior < max_calls else "diligence_prep"
+        return "tools" if prior < max_calls else "committee"
 
     reflection_count = budget.get("reflection_count", 0)
     max_reflections = budget.get("max_reflection_rounds", 2)
@@ -100,30 +100,30 @@ def should_continue_executor(state: InvestigationState) -> Literal["tools", "ref
     if tool_calls_done < max_calls and reflection_count < max_reflections:
         return "reflect"
 
-    return "diligence_prep"
+    return "committee"
 
 
-def should_continue_reflection(state: InvestigationState) -> Literal["executor", "diligence_prep"]:
+def should_continue_reflection(state: InvestigationState) -> Literal["executor", "committee"]:
     """Decide whether to execute another research round based on reflection output.
 
     Args:
         state: State after reflection node.
 
     Returns:
-        ``executor`` if follow-up work was proposed, else ``diligence_prep`` to proceed forward.
+        ``executor`` if follow-up work was proposed, else ``committee`` to proceed forward.
     """
     budget = state.get("budget_state", {})
     max_calls = budget.get("max_tool_calls") if budget.get("max_tool_calls") is not None else budget.get("max_total_tool_calls", 35)
     tool_calls_done = state.get("tool_calls", 0)
 
     if tool_calls_done >= max_calls:
-        return "diligence_prep"
+        return "committee"
 
     messages = state.get("messages", [])
     if messages and isinstance(messages[-1], HumanMessage) and "DEEP RESEARCH GAP REFLECTION" in str(messages[-1].content):
         return "executor"
 
-    return "diligence_prep"
+    return "committee"
 
 
 def create_research_graph(
@@ -295,100 +295,67 @@ def create_research_graph(
 
         return {"budget_state": new_budget}
 
-    def diligence_prep_node(state: InvestigationState) -> dict[str, Any]:
-        """Evaluate evidence completeness audit score before specialist lenses."""
+    def diligence_node(state: InvestigationState) -> dict[str, Any]:
+        """Execute diligence lenses and committee deliberation if evidence passed."""
         outcome = evaluate_research_completeness(state)
-        return {"evidence_gate": outcome, "status": outcome["status"]}
+        updates: dict[str, Any] = {"evidence_gate": outcome, "status": outcome["status"]}
 
-    def specialist_diligence_node(state: InvestigationState) -> dict[str, Any]:
-        """Execute expectations, forensic accounting, thematic, sector, and moat lenses."""
-        updates: dict[str, Any] = {}
-        try:
-            updates.update(run_expectations_analyst(state, model))
-        except Exception as exc:
-            logger.warning("run_expectations_analyst failed: %s", exc)
+        # If evidence gate failed on an explicit position recommendation, stop before decision stages
+        if not outcome["passed"] and (state.get("research_intent") or {}).get("requested_position_decision"):
+            return updates
 
-        st = {**state, **updates}
-        try:
-            updates.update(run_forensic_analysis(st, model))
-        except Exception as exc:
-            logger.warning("run_forensic_analysis failed: %s", exc)
+        ticker = state.get("ticker")
+        candidates = state.get("candidates") or {}
 
-        st = {**state, **updates}
-        try:
-            updates.update(run_thematic_analysis(st, model))
-        except Exception as exc:
-            logger.warning("run_thematic_analysis failed: %s", exc)
+        # Promote primary candidate ticker if candidates exist and top-level ticker is unset
+        if (not ticker or ticker == "UNKNOWN") and candidates:
+            for cid, c in candidates.items():
+                if isinstance(c, Mapping) and (c.get("diligence_dossier") or c.get("ticker")):
+                    ticker = str(c.get("ticker")).upper()
+                    updates["ticker"] = ticker
+                    updates["company"] = c.get("company")
+                    break
 
-        st = {**state, **updates}
-        try:
-            updates.update(run_sector_analysis(st, model))
-        except Exception as exc:
-            logger.warning("run_sector_analysis failed: %s", exc)
+        if ticker and ticker != "UNKNOWN":
+            st = {**state, **updates}
+            if not st.get("quant_report"):
+                try:
+                    quant_up = run_quant_analysis(st)
+                    updates.update(quant_up)
+                except Exception as exc:
+                    logger.debug("Quant valuation failed: %s", exc)
+            st = {**state, **updates}
+            updates["accounting_gate"] = evaluate_accounting_gate(st)
+            updates["valuation_gate"] = evaluate_valuation_gate(st)
+            updates["asymmetry_gate"] = evaluate_asymmetry_gate(st)
 
-        st = {**state, **updates}
-        try:
-            updates.update(run_moat_analysis(st, model))
-        except Exception as exc:
-            logger.warning("run_moat_analysis failed: %s", exc)
+            if not st.get("bull_report"):
+                try:
+                    updates.update(run_bull_advocate(st, model))
+                except Exception as exc:
+                    logger.debug("Bull advocate failed: %s", exc)
+            st = {**state, **updates}
+            if not st.get("adversarial_report"):
+                try:
+                    bear_up = run_adversarial_red_team(st, model)
+                    updates.update(bear_up)
+                    if bear_up.get("adversarial_report") and getattr(bear_up["adversarial_report"], "numeric_kill_criteria", None):
+                        updates["thesis_breakers"] = list(bear_up["adversarial_report"].numeric_kill_criteria)
+                except Exception as exc:
+                    logger.debug("Adversarial red team failed: %s", exc)
+            st = {**state, **updates}
+            try:
+                updates.update(run_investment_committee(st, model))
+            except Exception as exc:
+                logger.debug("Investment committee failed: %s", exc)
 
-        st = {**state, **updates}
-        updates["accounting_gate"] = evaluate_accounting_gate(st)
-        return updates
-
-    def quant_valuation_node(state: InvestigationState) -> dict[str, Any]:
-        """Execute deterministic DCF and Beneish M-Score quant modeling."""
-        updates: dict[str, Any] = {}
-        try:
-            updates.update(run_quant_analysis(state))
-        except Exception as exc:
-            logger.warning("run_quant_analysis failed: %s", exc)
-        st = {**state, **updates}
-        updates["valuation_gate"] = evaluate_valuation_gate(st)
-        return updates
-
-    def adversarial_debate_node(state: InvestigationState) -> dict[str, Any]:
-        """Execute air-gapped Bull Advocate and Hostile Short-Seller Red Team."""
-        updates: dict[str, Any] = {}
-        try:
-            updates.update(run_bull_advocate(state, model))
-        except Exception as exc:
-            logger.warning("run_bull_advocate failed: %s", exc)
-
-        st = {**state, **updates}
-        try:
-            updates.update(run_adversarial_red_team(st, model))
-        except Exception as exc:
-            logger.warning("run_adversarial_red_team failed: %s", exc)
-
-        st = {**state, **updates}
-        updates["asymmetry_gate"] = evaluate_asymmetry_gate(st)
-        return updates
-
-    def committee_node(state: InvestigationState) -> dict[str, Any]:
-        """Execute Chief Investment Officer deliberation and evidence audit scoring."""
-        updates: dict[str, Any] = {}
-        try:
-            updates.update(run_investment_committee(state, model))
-        except Exception as exc:
-            logger.warning("run_investment_committee failed: %s", exc)
-
-        st = {**state, **updates}
-        outcome = evaluate_research_completeness(st)
-        updates["evidence_gate"] = outcome
-
-        # For explicit position decision requests, reflect validation status if gates failed
-        if (
-            st.get("accounting_gate", {}).get("passed") is False
-            or st.get("valuation_gate", {}).get("passed") is False
-            or st.get("asymmetry_gate", {}).get("passed") is False
-        ):
-            if (st.get("research_intent") or {}).get("requested_position_decision") and st.get("ticker"):
-                updates["status"] = "validation_required"
-            else:
-                updates["status"] = outcome["status"]
-        else:
-            updates["status"] = outcome["status"]
+            if (
+                updates["accounting_gate"].get("passed") is False
+                or updates["valuation_gate"].get("passed") is False
+                or updates["asymmetry_gate"].get("passed") is False
+            ):
+                if (state.get("research_intent") or {}).get("requested_position_decision"):
+                    updates["status"] = "validation_required"
 
         return updates
 
@@ -399,11 +366,7 @@ def create_research_graph(
         "tools": ToolNode(tools),
         "ingest": ingest_node,
         "reflect": reflection_node,
-        "diligence_prep": diligence_prep_node,
-        "specialist_diligence": specialist_diligence_node,
-        "quant_valuation": quant_valuation_node,
-        "adversarial_debate": adversarial_debate_node,
-        "committee": committee_node,
+        "diligence": diligence_node,
     }.items():
         workflow.add_node(name, node)
 
@@ -415,7 +378,7 @@ def create_research_graph(
     workflow.add_conditional_edges(
         "executor",
         should_continue_executor,
-        {"tools": "tools", "reflect": "reflect", "diligence_prep": "diligence_prep"},
+        {"tools": "tools", "reflect": "reflect", "committee": "diligence"},
     )
     workflow.add_edge("tools", "ingest")
     workflow.add_edge("ingest", "executor")
@@ -423,18 +386,8 @@ def create_research_graph(
     workflow.add_conditional_edges(
         "reflect",
         should_continue_reflection,
-        {"executor": "executor", "diligence_prep": "diligence_prep"},
+        {"executor": "executor", "committee": "diligence"},
     )
-
-    # If evidence gate passes, proceed to specialist analysis; if insufficient, stop cleanly
-    workflow.add_conditional_edges(
-        "diligence_prep",
-        lambda s: "specialist_diligence" if s.get("evidence_gate", {}).get("passed") else "end",
-        {"specialist_diligence": "specialist_diligence", "end": END},
-    )
-    workflow.add_edge("specialist_diligence", "quant_valuation")
-    workflow.add_edge("quant_valuation", "adversarial_debate")
-    workflow.add_edge("adversarial_debate", "committee")
-    workflow.add_edge("committee", END)
+    workflow.add_edge("diligence", END)
 
     return workflow.compile(checkpointer=checkpointer)

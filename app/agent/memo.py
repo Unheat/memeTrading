@@ -6,6 +6,7 @@ Formats adapted from reference/financial-research-workshop skills
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 import json
 import re
 from datetime import datetime, timezone
@@ -499,9 +500,30 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
 
     # 2. Institutional specialist insights (Bull, Bear, Committee, Quant)
     specialist_section = ""
-    has_equity_subject = bool(state.get("ticker") and state.get("ticker") != "UNKNOWN") or bool(state.get("candidates"))
-    if has_equity_subject:
-        specialist_blocks = []
+    specialist_blocks = []
+
+    # A. Render individual candidate diligence dossiers if present
+    for cid, cand in candidates.items():
+        if isinstance(cand, Mapping):
+            dossier = cand.get("diligence_dossier")
+            if dossier and isinstance(dossier, dict):
+                t = dossier.get("ticker") or cand.get("ticker") or cid
+                co = dossier.get("company") or cand.get("company") or t
+                d_lines = [f"### Candidate Diligence Dossier: ${t} ({co})"]
+                val = dossier.get("valuation") or {}
+                if val.get("fair_value") is not None or val.get("implied_growth_rate") is not None:
+                    d_lines.append(f"- **Reverse DCF Fair Value**: ${val.get('fair_value', 'N/A')} (Implied Growth: {val.get('implied_growth_rate', 'N/A')})")
+                cats = dossier.get("bull_catalysts") or []
+                if cats:
+                    d_lines.append("- **Bull Catalysts**:\n" + "\n".join(f"  * {c}" for c in cats[:3]))
+                kills = dossier.get("bear_kill_triggers") or []
+                if kills:
+                    d_lines.append("- **Bear Red Team Kill Triggers**:\n" + "\n".join(f"  * {k}" for k in kills[:3]))
+                specialist_blocks.append("\n".join(d_lines))
+
+    # B. Render top-level specialist reports for named single-company diligence
+    top_ticker = state.get("ticker")
+    if top_ticker and top_ticker != "UNKNOWN" and not specialist_blocks:
         bull = state.get("bull_report")
         if bull and getattr(bull, "catalysts", None):
             cats = [f"- **Catalyst**: {c}" for c in bull.catalysts]
@@ -510,11 +532,13 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
         if bear and getattr(bear, "numeric_kill_criteria", None):
             kills = [f"- **Kill Trigger**: {k}" for k in bear.numeric_kill_criteria]
             specialist_blocks.append(f"### Adversarial Red Team: Numeric Kill Criteria\n{chr(10).join(kills)}")
-        ic = state.get("ic_verdict")
-        if ic and getattr(ic, "cio_deliberation_summary", None):
-            specialist_blocks.append(f"### Investment Committee Deliberation\n- **Verdict**: {getattr(ic, 'verdict', 'N/A')}\n- **Conviction**: {getattr(ic, 'conviction_tier', 'N/A')}\n- **Summary**: {getattr(ic, 'cio_deliberation_summary', '')}")
-        if specialist_blocks:
-            specialist_section = f"\n## Institutional Specialist Insights\n" + "\n\n".join(specialist_blocks) + "\n"
+
+    ic = state.get("ic_verdict")
+    if ic and getattr(ic, "cio_deliberation_summary", None) and getattr(ic, "ticker", "") != "UNKNOWN":
+        specialist_blocks.append(f"### Investment Committee Deliberation\n- **Verdict**: {getattr(ic, 'verdict', 'N/A')}\n- **Conviction**: {getattr(ic, 'conviction_tier', 'N/A')}\n- **Summary**: {getattr(ic, 'cio_deliberation_summary', '')}")
+
+    if specialist_blocks:
+        specialist_section = f"\n## Institutional Specialist Insights\n" + "\n\n".join(specialist_blocks) + "\n"
 
     # 3. Verified primary citations
     evidence = [item for item in state.get("evidence", []) if item.get("quote") and item.get("source_url")]
