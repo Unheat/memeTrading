@@ -1,4 +1,5 @@
 """End-to-end smoke test validating the complete 3-stage pipeline and all components."""
+from datetime import date, datetime, timezone
 from pathlib import Path
 import json
 import pytest
@@ -8,6 +9,8 @@ from langchain_core.messages import AIMessage, HumanMessage
 from app.sec.identity import ensure_sec_identity
 from app.sec.form4 import parse_form4_xml, Form4AuditSummary
 from app.sec.financials import get_sec_financials, SecFinancialsResult
+from app.sec.pull import FilingPullResult
+from app.sec.schemas import DownloadedDocument, PulledCorpus
 from app.market.metrics import compute_fractional_kelly, average_daily_dollar_volume, market_cap_tier
 from app.agent.state import ResearchRequest
 from app.agent.runner import run_investigation, InvestigationResult
@@ -75,10 +78,10 @@ According to Micron's Form 10-Q [1], gross margins expanded to 36%.
         elif "Create the 60–75 second viral dialogue reel" in content:
             return AIMessage(content="""```json
 [
-  {"index": 0, "voiceId": "e34b4e061b874623a08f41e5c4fecfb9", "text": "(shocked) You're saying RAM prices are surging?"},
-  {"index": 1, "voiceId": "fdffd3722cd040fcb3f95eec5a7f29f3", "text": "(smirking) Yes, and Micron raised prices by 35%."},
-  {"index": 2, "voiceId": "e34b4e061b874623a08f41e5c4fecfb9", "text": "(curious) But did Wall Street notice?"},
-  {"index": 3, "voiceId": "fdffd3722cd040fcb3f95eec5a7f29f3", "text": "(laughing) No, consensus is flat. Check the full audit below!"}
+  {"index": 0, "voiceId": "a84d19016bc34098b3c89d78f9299e33", "text": "(shocked) You're saying RAM prices are surging?"},
+  {"index": 1, "voiceId": "e91c4f5974f149478a35affe820d02ac", "text": "(smirking) Yes, and Micron raised prices by 35%."},
+  {"index": 2, "voiceId": "a84d19016bc34098b3c89d78f9299e33", "text": "(curious) But did Wall Street notice?"},
+  {"index": 3, "voiceId": "e91c4f5974f149478a35affe820d02ac", "text": "(laughing) No, consensus is flat. Check the full audit below!"}
 ]
 ```
 CAPTION:
@@ -102,7 +105,31 @@ DDR5 memory is vanishing. Wall Street is asleep. 🚨 Full audit in bio. #stocks
                         "args": {"ticker": "MU"},
                         "id": "call_market",
                         "type": "tool_call",
-                    }
+                    },
+                        {
+                            "name": "get_sec_financials",
+                            "args": {"ticker": "MU"},
+                            "id": "call_financials",
+                            "type": "tool_call",
+                        },
+                        {
+                            "name": "pull_sec_filings",
+                        "args": {
+                            "case_id": "case_smoke",
+                            "selections": [
+                                {
+                                    "ticker": "MU",
+                                    "cik": "0000723125",
+                                    "form": "10-Q",
+                                    "accession": "0001193125-26-123456",
+                                    "filing_url": "https://www.sec.gov/123",
+                                    "document_name": "primary_doc.htm",
+                                }
+                            ],
+                        },
+                        "id": "call_sec",
+                        "type": "tool_call",
+                    },
                 ],
             )
 
@@ -139,9 +166,35 @@ def test_complete_end_to_end_pipeline_smoke(tmp_path: Path):
         "exchange": "NASDAQ",
     }
 
-    req = ResearchRequest(query="Investigate MU DDR5 shortage", ticker="MU", company="Micron Technology Inc")
+    req = ResearchRequest(query="Give an investment recommendation for MU based on DDR5 shortage evidence", ticker="MU", company="Micron Technology Inc")
+    fake_corpus = PulledCorpus(
+        corpus_id="MU-2026-09-01-001",
+        ticker="MU",
+        cik="0000723125",
+        created_at=datetime.now(timezone.utc),
+        documents=(
+            DownloadedDocument(
+                accession="0001193125-26-123456",
+                form="10-Q",
+                filing_date=date(2026, 9, 1),
+                document_name="primary_doc.htm",
+                source_url="https://www.sec.gov/123",
+                relative_path="sec/documents/primary_doc.htm",
+                sha256="a" * 64,
+            ),
+        ),
+    )
+    sec_financials = SecFinancialsResult(
+        ticker="MU", status="ok", periods=("2026-Q2",), revenue={}, gross_profit={}, gross_margin_pct={"2026-Q2": .36},
+        operating_income={}, operating_margin_pct={}, net_income={}, cash_and_equivalents={"2026-Q2": 8e9},
+        total_debt={"2026-Q2": 5e9}, net_cash={"2026-Q2": 3e9}, inventory={}, inventory_qoq_change_pct={},
+        cash_from_operations={"2026-Q2": 2e9}, capex={"2026-Q2": 1e9}, provider="sec_xbrl", as_of="2026-09-15T00:00:00Z",
+    )
     with patch("app.market.market_data.fetch_history", return_value=fake_hist), \
-         patch("app.market.market_data.fetch_info", return_value=fake_info):
+         patch("app.market.market_data.fetch_history_benchmark", return_value=fake_hist), \
+         patch("app.market.market_data.fetch_info", return_value=fake_info), \
+         patch("app.agent.tools._get_sec_financials", return_value=sec_financials), \
+         patch("app.agent.tools._pull_sec_filings", return_value=FilingPullResult(corpus=fake_corpus)):
         result = run_investigation(
             request=req,
             model=FullPipelineTestModel(),
@@ -151,36 +204,24 @@ def test_complete_end_to_end_pipeline_smoke(tmp_path: Path):
 
     assert isinstance(result, InvestigationResult)
     assert result.ticker == "MU"
-    assert result.status == "completed"
+    assert result.status == "validation_required"
 
     # Verify all case disk files
     case_dir = tmp_path / result.case_id
     assert case_dir.exists()
     assert (case_dir / "memo.md").exists()
     assert (case_dir / "investigation.json").exists()
-    assert (case_dir / "article.md").exists()
-    assert (case_dir / "faceless" / "dialogue.json").exists()
-    assert (case_dir / "faceless" / "caption.txt").exists()
+    # No verified SEC claim was returned, so citation safety blocks publication artifacts.
+    assert not (case_dir / "article.md").exists()
+    assert not (case_dir / "faceless" / "dialogue.json").exists()
+    assert not (case_dir / "faceless" / "caption.txt").exists()
 
     # Verify memo contents
     memo_text = (case_dir / "memo.md").read_text(encoding="utf-8")
-    assert "Real-Money Capital Safety & Tradability Scorecard" in memo_text
-    assert "3:1 Asymmetry Hurdle" in memo_text
-    assert "IC Conviction Tier" in memo_text
-    assert "Adversarial Red Team Invalidation" in memo_text
-    assert "Kill Trigger 1" in memo_text
-
-    # Verify article contents
-    article_text = (case_dir / "article.md").read_text(encoding="utf-8")
-    assert "[1]" in article_text
-    assert "0001193125-26-123456" in article_text
-
-    # Verify faceless dialogue contents
-    dialogue_data = json.loads((case_dir / "faceless" / "dialogue.json").read_text(encoding="utf-8"))
-    assert len(dialogue_data) == 4
-    assert dialogue_data[0]["voiceId"] == "e34b4e061b874623a08f41e5c4fecfb9"
-    assert dialogue_data[1]["voiceId"] == "fdffd3722cd040fcb3f95eec5a7f29f3"
-    assert "(shocked)" in dialogue_data[0]["text"]
+    assert "Research Incomplete: $MU" in memo_text
+    assert "NO_POSITION" in memo_text
+    assert "Required next evidence" in memo_text
+    assert "no position and no target" in memo_text
 
     # 5. Verify Faceless Bridge readiness
     bridge = FacelessBridge()

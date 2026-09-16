@@ -57,7 +57,7 @@ def test_render_forensic_memo_includes_required_sections():
     assert "## Wall Street Expectations vs Ground Reality" in memo_md
     assert "No institutional analyst coverage" in memo_md  # no consensus data yet
     assert "## 7. Adversarial Red Team Invalidation" in memo_md
-    assert "Kill Trigger 1" in memo_md
+    assert "Unavailable — no source-backed kill trigger was produced." in memo_md
     assert "## 8. Forensic Conclusion" in memo_md
     assert final_text in memo_md
 

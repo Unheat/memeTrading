@@ -20,6 +20,13 @@ def test_ensure_sec_identity_from_env():
         assert os.environ.get("EDGAR_IDENTITY") == "CustomAgent test@example.com"
 
 
+def test_ensure_sec_identity_accepts_documented_env_alias():
+    """Use SEC_EDGAR_USER_AGENT while preserving legacy aliases."""
+    with patch.dict("os.environ", {"SEC_EDGAR_USER_AGENT": "AliasAgent test@example.com"}, clear=True):
+        assert ensure_sec_identity() == "AliasAgent test@example.com"
+        assert os.environ["SEC_USER_AGENT"] == "AliasAgent test@example.com"
+
+
 def test_ensure_sec_identity_custom_param():
     with patch.dict("os.environ", {}, clear=True):
         ident = ensure_sec_identity("ExplicitAgent custom@example.com")

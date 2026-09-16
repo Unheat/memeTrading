@@ -11,7 +11,7 @@ from app.agent.context import (
     trim_conversation_history,
 )
 from app.agent.state import ResearchRequest, BudgetLimits, create_initial_state
-from app.agent.prompts import build_dynamic_system_prompt, FORENSIC_CHARTER_PROMPT
+from app.agent.prompts import build_research_system_prompt
 
 
 def test_budget_limits_defaults():
@@ -43,40 +43,20 @@ def test_create_initial_state():
     assert "Is XYZ partnership real?" in state["messages"][0].content
 
 
-def test_build_dynamic_system_prompt():
-    """Verify every dynamic fact is projected with exact JSON serialization."""
-    req = ResearchRequest(query="Analyze ABC", ticker="ABC")
-    state = create_initial_state(req, case_id="case_abc")
-    expected_projections = {
-        "Current Unresolved Questions": ["Is contract binding?", "What is warrant overhang?"],
-        "Verified Evidence Accumulated": [{"source": "8-K", "quote": "non-binding"}],
-        "Contradictions Observed": [{"claim": "binding", "reason": "LOI language"}],
-        "Market Context": {"price": 12.5, "currency": "USD"},
-        "Consensus Snapshot": {"revenue": None, "analysts": 3},
-        "SEC Corpora": ["8-K: accession 123"],
-        "Confidence": 0.625,
-        "Causal Chain": {"promotion": "volume", "volume": "price"},
-        "Searches Performed": [{"tool": "search_articles", "query": "ABC contract", "hits": 2}],
-    }
+def test_build_research_system_prompt():
+    """Project prompt-directed intent and durable evidence into one model prompt."""
+    state = create_initial_state(ResearchRequest(query="Rank the best 4 ABC peers", ticker="ABC"), case_id="case_abc")
     state.update({
-        "unresolved_questions": expected_projections["Current Unresolved Questions"],
-        "evidence": expected_projections["Verified Evidence Accumulated"],
-        "contradictions": expected_projections["Contradictions Observed"],
-        "market_context": expected_projections["Market Context"],
-        "consensus_snapshot": expected_projections["Consensus Snapshot"],
-        "sec_corpora": expected_projections["SEC Corpora"],
-        "confidence": expected_projections["Confidence"],
-        "causal_chain": expected_projections["Causal Chain"],
-        "searches_performed": expected_projections["Searches Performed"],
+        "unresolved_questions": ["Is contract binding?"],
+        "evidence": [{"source": "8-K", "quote": "non-binding"}],
+        "contradictions": [{"claim": "binding", "reason": "LOI language"}],
         "tool_calls": 3,
     })
-
-    content = build_dynamic_system_prompt(state).content
-
+    content = build_research_system_prompt(state).content
     assert "ABC" in content
-    assert "Remaining tool calls**: 32" in content
-    for label, value in expected_projections.items():
-        assert f"- **{label}**:\n```json\n{json.dumps(value, indent=2)}\n```" in content
+    assert "Remaining tool calls: 32" in content
+    assert '"requested_ranking_count": 4' in content
+    assert '"quote": "non-binding"' in content
 
 
 def test_trim_conversation_history():

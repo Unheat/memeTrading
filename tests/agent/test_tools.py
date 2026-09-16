@@ -11,13 +11,20 @@ def test_tool_registry_contains_all_10_tools():
         "search_social",
         "search_articles",
         "read_article",
+        "read_document",
         "search_web",
         "get_market_data",
         "get_company_research",
         "list_sec_filings",
         "pull_sec_filings",
+        "search_sec_evidence",
+        "read_sec_evidence",
         "verify_sec_claim",
         "get_sec_financials",
+        "get_ownership_and_insider_activity",
+        "get_macro_context",
+        "register_candidate",
+        "compare_candidates",
     }
     assert tool_names == expected
 

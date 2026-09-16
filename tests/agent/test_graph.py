@@ -5,7 +5,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.tools import tool
 
 from app.agent import graph as graph_module
-from app.agent.graph import create_agent_graph
+from app.agent.graph import create_research_graph
 from app.agent.state import ResearchRequest, create_initial_state
 
 
@@ -35,20 +35,21 @@ class ScriptedModel:
                     }
                 ],
             )
-        if self.call_count == 2:
-            return AIMessage(
-                content="Forensic synthesis: XYZ partnership claim is contradicted by 8-K."
-            )
-        if self.call_count == 3:
-            return AIMessage(
-                content="""{
+        prompt = str(getattr(messages[-1], "content", ""))
+        if "Construct the institutional Bull Case" in prompt:
+            return AIMessage(content='{"catalysts": ["Demand"], "operating_leverage_drivers": ["Margin"], "bull_target_price": null, "bull_thesis_summary": "Source-bound bull case."}')
+        if "hostile short-seller red team" in prompt:
+            return AIMessage(content="""{
   "falsifiable_objections": ["Objection 1", "Objection 2"],
   "numeric_kill_criteria": ["Kill Trigger 1: Gross margin drop", "Kill Trigger 2: DSI increase"],
   "bear_floor_price": 75.0,
   "bear_thesis_summary": "Cyclical trap."
-}"""
-            )
-        return AIMessage(content="CIO deliberation: HIGH CONVICTION.")
+}""")
+        if "Review the investment case" in prompt:
+            return AIMessage(content="CIO deliberation: HIGH CONVICTION.")
+        if self.call_count == 2:
+            return AIMessage(content="Forensic synthesis: XYZ partnership claim is contradicted by 8-K.")
+        return AIMessage(content="Cited thematic thesis.")
 
 
 @tool
@@ -59,8 +60,18 @@ def fake_search(query: str) -> str:
 
 @tool
 def get_market_data(ticker: str) -> str:
-    """Return deterministic market context for graph ingestion tests."""
-    return json.dumps({"status": "ok", "ticker": ticker, "price": 101.5})
+    """Return deterministic gate-complete market context for graph ingestion tests."""
+    return json.dumps(
+        {
+            "status": "ok",
+            "ticker": ticker,
+            "quote": {"value": 101.5},
+            "fundamentals": {"shares_outstanding": 10_000_000.0},
+            "currency": "USD",
+            "as_of": "2026-09-15T00:00:00Z",
+            "addv_20d": {"value": 50_000_000.0},
+        }
+    )
 
 
 @tool
@@ -69,12 +80,59 @@ def get_company_research(ticker: str) -> str:
     return json.dumps({"status": "ok", "ticker": ticker, "ratings": {"buy": 4}})
 
 
-def test_agent_graph_execution_loop():
-    model = ScriptedModel()
-    graph = create_agent_graph(model=model, tools=[fake_search])
+def _add_sufficient_mocked_evidence(state):
+    """Seed deterministic evidence required to enter red-team and committee stages."""
+    state.update(
+        {
+            "company": "XYZ Corporation",
+            "cik": "0000123456",
+            "market_context": {
+                "quote": {"value": 100.0},
+                "fundamentals": {"shares_outstanding": 10_000_000.0},
+                "currency": "USD",
+                "as_of": "2026-09-15T00:00:00Z",
+                "addv_20d": {"value": 50_000_000.0},
+            },
+            "sec_corpora": [{"corpus_id": "XYZ-2026-09-15-001"}],
+            "sec_financials": {
+                "status": "ok", "periods": ["2026-Q2"],
+                "cash_from_operations": {"2026-Q2": 2_000_000_000.0},
+                "capex": {"2026-Q2": 500_000_000.0},
+                "cash_and_equivalents": {"2026-Q2": 8_000_000_000.0},
+                "total_debt": {"2026-Q2": 5_000_000_000.0},
+                "gross_margin_pct": {"2026-Q2": 0.32},
+            },
+            "searches_performed": [
+                {"tool": "get_market_data", "status": "ok", "tool_call_id": "mkt-init"},
+                {"tool": "pull_sec_filings", "status": "ok", "tool_call_id": "sec-init"},
+            ],
+        }
+    )
 
-    req = ResearchRequest(query="Investigate XYZ", ticker="XYZ")
+
+def test_agent_graph_stops_before_red_team_when_evidence_is_insufficient():
+    """Prove old ungated graph path now terminates before decision stages."""
+    model = ScriptedModel()
+    graph = create_research_graph(model=model, tools=[fake_search])
+
+    req = ResearchRequest(query="Give an investment recommendation for XYZ", ticker="XYZ")
+    final_state = graph.invoke(create_initial_state(req, case_id="case_test"))
+
+    assert final_state["tool_calls"] == 1
+    assert final_state["status"] == "insufficient_evidence"
+    assert final_state["thesis_breakers"] == []
+    assert final_state["ic_verdict"] is None
+    assert "SEC CIK identity is missing" in final_state["evidence_gate"]["missing_evidence"]
+
+
+def test_agent_graph_execution_loop():
+    """Prove graph fixture path reaches red team and committee with sufficient evidence."""
+    model = ScriptedModel()
+    graph = create_research_graph(model=model, tools=[fake_search])
+
+    req = ResearchRequest(query="Give an investment recommendation for XYZ", ticker="XYZ")
     initial_state = create_initial_state(req, case_id="case_test")
+    _add_sufficient_mocked_evidence(initial_state)
 
     final_state = graph.invoke(initial_state)
 
@@ -126,18 +184,19 @@ def test_market_and_parallel_tool_results_are_ingested_before_committee(monkeypa
 
     monkeypatch.setattr(graph_module, "run_adversarial_red_team", fake_red_team)
     monkeypatch.setattr(graph_module, "run_investment_committee", fake_committee)
-    graph = create_agent_graph(
+    graph = create_research_graph(
         model=ParallelToolModel(), tools=[get_market_data, get_company_research]
     )
     initial_state = create_initial_state(
-        ResearchRequest(query="Investigate XYZ", ticker="XYZ"), case_id="parallel"
+        ResearchRequest(query="Give an investment recommendation for XYZ", ticker="XYZ"), case_id="parallel"
     )
+    _add_sufficient_mocked_evidence(initial_state)
 
     final_state = graph.invoke(initial_state)
 
-    assert observed_committee_state["market_context"]["price"] == 101.5
+    assert observed_committee_state["market_context"]["quote"]["value"] == 101.5
     assert observed_committee_state["consensus_snapshot"]["ratings"] == {"buy": 4}
-    assert [receipt["tool_call_id"] for receipt in final_state["searches_performed"]] == [
+    assert [receipt["tool_call_id"] for receipt in final_state["searches_performed"] if receipt.get("tool_call_id") in {"market-1", "research-1"}] == [
         "market-1",
         "research-1",
     ]
@@ -187,7 +246,7 @@ def test_agent_graph_executes_exact_remaining_tool_budget(monkeypatch):
         "run_investment_committee",
         lambda state, model: {"ic_verdict": "passed"},
     )
-    graph = create_agent_graph(model=ExcessToolModel(), tools=[budgeted_search])
+    graph = create_research_graph(model=ExcessToolModel(), tools=[budgeted_search])
     initial_state = create_initial_state(
         ResearchRequest(query="Investigate budget", ticker="XYZ"), case_id="budget"
     )

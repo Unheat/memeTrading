@@ -31,6 +31,7 @@ def test_parallel_results_merge_without_losing_existing_state() -> None:
     messages = [
         _message("get_market_data", "market-1", {"ticker": "MU", "provider": "test"}),
         _message("get_company_research", "research-1", {"ticker": "MU", "ratings": {"buy": 4}}),
+        _message("get_sec_financials", "financials-1", {"status": "ok", "ticker": "MU", "periods": ["2026-Q2"], "cash_from_operations": {"2026-Q2": 200.0}, "capex": {"2026-Q2": 50.0}}),
         _message("pull_sec_filings", "pull-1", {"status": "ok", "corpus": {"corpus_id": "new-corpus"}}),
         _message(
             "verify_sec_claim",
@@ -66,13 +67,14 @@ def test_parallel_results_merge_without_losing_existing_state() -> None:
 
     assert update["market_context"]["provider"] == "test"
     assert update["consensus_snapshot"]["ratings"] == {"buy": 4}
+    assert update["sec_financials"]["cash_from_operations"]["2026-Q2"] == 200.0
     assert update["sec_corpora"] == ["old-corpus", "new-corpus"]
     assert [item.get("chunk_id") for item in update["evidence"]] == [None, "chunk-1", "chunk-3"]
     assert [item.get("chunk_id") for item in update["contradictions"]] == [None, "chunk-2"]
     assert update["confidence"] == 0.6
-    assert len(update["searches_performed"]) == 6
+    assert len(update["searches_performed"]) == 7
     assert [receipt["tool_call_id"] for receipt in update["searches_performed"][1:]] == [
-        "market-1", "research-1", "pull-1", "verify-1", "verify-2"
+        "market-1", "research-1", "financials-1", "pull-1", "verify-1", "verify-2"
     ]
 
 

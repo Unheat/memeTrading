@@ -31,6 +31,20 @@ def test_find_row_val():
     assert _find_row_val(df, ["NonExistentConcept"], "2026-06-30") is None
 
 
+def test_find_row_val_normalizes_nan_and_finds_valid_cfo():
+    """Skip abstract NaN and return matching concrete CFO concept."""
+    df = pd.DataFrame(
+        {"2026-Q3": [float("nan"), 25_388_000_000.0]},
+        index=[
+            "NetCashProvidedByUsedInOperatingActivitiesAbstract",
+            "NetCashProvidedByUsedInOperatingActivities",
+        ],
+    )
+
+    assert _find_row_val(df, ["NetCashProvidedByUsedInOperatingActivities"], "2026-Q3") == 25_388_000_000.0
+    assert _find_row_val(df.iloc[:1], ["NetCashProvidedByUsedInOperatingActivities"], "2026-Q3") is None
+
+
 def test_fetch_xbrl_statements_with_mocked_company():
     inc_df = pd.DataFrame(
         {
@@ -50,10 +64,14 @@ def test_fetch_xbrl_statements_with_mocked_company():
 
     cf_df = pd.DataFrame(
         {
-            "2026-06-30": [-1_200_000_000.0],
-            "2026-03-31": [-1_100_000_000.0],
+            "2026-06-30": [float("nan"), 4_000_000_000.0, -1_200_000_000.0],
+            "2026-03-31": [float("nan"), 3_500_000_000.0, -1_100_000_000.0],
         },
-        index=["PaymentsToAcquirePropertyPlantAndEquipment"],
+        index=[
+            "NetCashProvidedByUsedInOperatingActivitiesAbstract",
+            "NetCashProvidedByUsedInOperatingActivities",
+            "PaymentsToAcquirePropertyPlantAndEquipment",
+        ],
     )
 
     mock_company = MagicMock()
@@ -71,4 +89,5 @@ def test_fetch_xbrl_statements_with_mocked_company():
     assert data["cash_and_equivalents"]["2026-06-30"] == 5_000_000_000.0
     assert data["total_debt"]["2026-06-30"] == 3_000_000_000.0  # 1000 + 2000
     assert data["inventory"]["2026-06-30"] == 3_000_000_000.0
+    assert data["cash_from_operations"]["2026-06-30"] == 4_000_000_000.0
     assert data["capex"]["2026-06-30"] == 1_200_000_000.0  # positive magnitude

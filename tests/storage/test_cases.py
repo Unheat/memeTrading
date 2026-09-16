@@ -9,8 +9,11 @@ from app.storage.cases import (
     StorageError,
     case_path,
     create_case_id,
+    allocate_case,
     read_corpus_manifest,
+    read_run_manifest,
     write_corpus_manifest,
+    write_run_manifest,
 )
 
 
@@ -46,6 +49,24 @@ def test_case_path_is_direct_child_without_creating_directory(tmp_path) -> None:
 
     assert target == tmp_path / "XYZ-2026-09-01-001"
     assert not target.exists()
+
+
+def test_allocate_case_claims_distinct_directories(tmp_path) -> None:
+    """Atomically allocate distinct daily case directories without overwriting."""
+    first_id, first_dir = allocate_case(tmp_path, "XYZ", date(2026, 9, 1))
+    second_id, second_dir = allocate_case(tmp_path, "XYZ", date(2026, 9, 1))
+
+    assert first_id == "XYZ-2026-09-01-001"
+    assert second_id == "XYZ-2026-09-01-002"
+    assert first_dir.is_dir() and second_dir.is_dir()
+
+
+def test_run_manifest_round_trip(tmp_path) -> None:
+    """Persist and reload one atomic lifecycle manifest."""
+    _, case_directory = allocate_case(tmp_path, "XYZ", date(2026, 9, 1))
+    write_run_manifest(case_directory, {"case_id": case_directory.name, "status": "running"})
+
+    assert read_run_manifest(case_directory)["status"] == "running"
 
 
 def test_manifest_round_trip(tmp_path) -> None:

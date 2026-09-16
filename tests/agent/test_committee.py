@@ -138,3 +138,46 @@ def test_investment_committee_rejects_sub_3x_asymmetry():
     assert verdict.reward_to_risk_ratio == pytest.approx(2.5)
     assert verdict.kelly_position_size_pct == 0.0
     assert "FAIL" in verdict.passing_discipline_checks["asymmetry_gate"]
+
+
+def test_investment_committee_approves_via_bull_target_and_risk_budget():
+    """Verify Bull Advocate target and stop-loss risk budget yield high-conviction approval."""
+    from app.agent.bull import BullReport
+
+    req = ResearchRequest(query="Investigate MU", ticker="MU", company="Micron")
+    state = create_initial_state(req, case_id="case_mu_bull_approve")
+    state["market_context"] = {
+        "quote": {"price": 1000.0},
+        "addv_20d": {"value": 50_000_000.0},
+        "cap_tier": "large",
+    }
+    state["consensus_snapshot"] = {
+        "price_targets": {"mean": {"value": 1200.0}},
+        "earnings_proximity_flag": "SAFE",
+    }
+    state["bull_report"] = BullReport(
+        ticker="MU",
+        catalysts=("HBM expansion", "Margin inflection"),
+        operating_leverage_drivers=("Fixed cost dilution",),
+        bull_target_price=3000.0,  # 3.3x source-validated upside/downside fixture
+        bull_thesis_summary="Massive unmodeled demand.",
+        invalidation_conditions=(),
+    )
+    state["adversarial_report"] = AdversarialReport(
+        ticker="MU",
+        falsifiable_objections=("Capex risk",),
+        numeric_kill_criteria=("Kill trigger",),
+        bear_floor_price=400.0,  # Catastrophic -60% crash floor
+        bear_thesis_summary="Capex destruction.",
+    )
+    state["confidence"] = 0.85
+
+    model = FakeCIOModel()
+    updates = run_investment_committee(state, model=model)
+
+    verdict = updates["ic_verdict"]
+    # Source-backed bear floor yields 2000 / 600 = 3.33x reward-to-risk.
+    assert "APPROVED_LONG" in verdict.verdict
+    assert verdict.reward_to_risk_ratio == pytest.approx(3.33)
+    assert verdict.kelly_position_size_pct > 0.0
+    assert "HIGH CONVICTION" in verdict.conviction_tier

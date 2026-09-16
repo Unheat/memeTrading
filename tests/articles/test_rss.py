@@ -115,6 +115,18 @@ def test_gdelt_search_wraps_errors():
         assert exc_info.value.provider == "gdelt"
 
 
+def test_gdelt_search_bounds_records_and_rejects_invalid_inputs():
+    """Keep GDELT requests bounded before calling the provider seam."""
+    df = _gdelt_df([])
+    with patch("app.articles.providers.gdelt._article_search_dataframe", return_value=df) as search:
+        gdelt_search("nvda", days=7, limit=999)
+    assert search.call_args.args[-1] == 250
+    with pytest.raises(ValueError):
+        gdelt_search("nvda", days=0, limit=20)
+    with pytest.raises(ValueError):
+        gdelt_search("nvda", days=7, limit=0)
+
+
 def test_gdelt_search_rejects_empty_query():
     with pytest.raises(ValueError):
         gdelt_search("", days=7, limit=20)

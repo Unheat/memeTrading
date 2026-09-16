@@ -127,6 +127,7 @@ def test_generate_media_package_safe_fallback_on_parse_error():
 
     req = ResearchRequest(query="Investigate XYZ", ticker="XYZ")
     state = create_initial_state(req, case_id="case_xyz_fallback")
+    state["evidence"] = [{"source_url": "https://www.sec.gov/example", "quote": "Primary filing excerpt."}]
     pkg = generate_media_package(state, model=BrokenDialogueModel())
 
     assert len(pkg.dialogue_json) == 4

@@ -73,6 +73,24 @@ def test_filters_forms_and_includes_since_date() -> None:
     assert company.calls == [{"form": ["8-K"], "trigger_full_load": False}]
 
 
+def test_accepts_json_native_iso_since_date() -> None:
+    """Accept the ISO date strings emitted by the model-facing tool schema."""
+    company = FakeCompany([
+        FakeFiling("8-K", "2026-09-01", "0000123456-26-000001"),
+        FakeFiling("8-K", "2026-08-31", "0000123456-26-000002"),
+    ])
+    result = list_sec_filings("XYZ", forms=["8-k"], since="2026-09-01", company_factory=lambda ticker: company)
+    assert result.error is None
+    assert [filing.accession for filing in result.filings] == ["0000123456-26-000001"]
+
+
+def test_rejects_malformed_iso_since_date() -> None:
+    """Reject invalid JSON date strings before contacting the SEC provider."""
+    result = list_sec_filings("XYZ", since="2026/09/01", company_factory=lambda ticker: (_ for _ in ()).throw(AssertionError()))
+    assert result.error is not None
+    assert result.error.code == "INVALID_INPUT"
+
+
 def test_returns_structured_invalid_input_failure() -> None:
     """Reject invalid ticker before calling upstream factory."""
     result = list_sec_filings("XYZ!", company_factory=lambda ticker: (_ for _ in ()).throw(AssertionError()))
