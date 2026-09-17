@@ -274,22 +274,3 @@ def prepare_context(
         raise ValueError("latest complete context units exceed model input capacity")
     return PreparedContext(tuple(prepared), original_tokens, prepared_tokens, changed)
 
-
-def trim_conversation_history(
-    messages: Sequence[BaseMessage],
-    max_tokens: int = DEFAULT_COMPACT_THRESHOLD_TOKENS,
-) -> list[BaseMessage]:
-    """Return pair-safe bounded history through the legacy list-based API.
-
-    Args:
-        messages: Ordered model conversation history.
-        max_tokens: Preparation threshold and hard target for compatibility.
-
-    Returns:
-        Prepared messages as a mutable list.
-    """
-    policy = ModelContextPolicy(
-        context_window_tokens=max_tokens + DEFAULT_RESERVED_OUTPUT_TOKENS + DEFAULT_SAFETY_MARGIN_TOKENS,
-        compact_threshold_tokens=max_tokens,
-    )
-    return list(prepare_context(messages, policy=policy).messages)

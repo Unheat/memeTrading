@@ -47,7 +47,7 @@ def test_unregistered_or_mismatched_candidate_is_quarantined() -> None:
 
 def test_ranking_requires_requested_count_and_comparison() -> None:
     """Return incomplete rather than fabricate a candidate ranking."""
-    state = create_initial_state(ResearchRequest(query="Rank the best 3 tech companies"), "ranking-1")
+    state = create_initial_state(ResearchRequest(query="Rank the best 3 tech companies", requested_ranking_count=3), "ranking-1")
     state["candidates"] = {
         "cand_msft": {"ticker": "MSFT", "market_context": {"quote": {"price": 1}}, "sec_financials": {"periods": ["Q"]}},
         "cand_nvda": {"ticker": "NVDA", "market_context": {"quote": {"price": 1}}, "sec_financials": {"periods": ["Q"]}},

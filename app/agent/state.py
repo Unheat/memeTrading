@@ -131,24 +131,9 @@ class ResearchRequest:
 
     def resolve_intent(self) -> ResearchIntent:
         """Initialize clean baseline research intent from caller-provided entities."""
-        import re
-
         subjects = tuple(value for value in (self.ticker, self.company) if value)
-        pos_decision = self.requested_position_decision
-        if pos_decision is None:
-            norm = self.query.casefold()
-            pos_decision = bool(
-                self.ticker
-                and any(w in norm for w in ("recommendation", "buy", "sell", "allocate", "position"))
-            )
-
         ranking_count = self.requested_ranking_count
-        if ranking_count is None:
-            m = re.search(r"\b(?:top|best|rank(?:ed|ing)?|compare)\s+(\d+)\b", self.query, re.IGNORECASE)
-            if not m:
-                m = re.search(r"\b(\d+)\s+(?:top|best|stocks?|companies|candidates|peers)\b", self.query, re.IGNORECASE)
-            if m:
-                ranking_count = int(m.group(1))
+        pos_decision = bool(self.requested_position_decision) if self.requested_position_decision is not None else bool(self.ticker)
 
         return ResearchIntent(
             explicit_subjects=subjects,

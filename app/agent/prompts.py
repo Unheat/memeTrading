@@ -177,7 +177,3 @@ def build_research_system_prompt(state: InvestigationState) -> SystemMessage:
 ```
 Finish with a concise, evidence-calibrated synthesis. State incomplete evidence plainly rather than guessing.""")
 
-
-# Compatibility aliases retained for existing internal imports during the transition.
-build_generic_system_prompt = build_research_system_prompt
-build_dynamic_system_prompt = build_research_system_prompt

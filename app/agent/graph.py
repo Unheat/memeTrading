@@ -18,11 +18,10 @@ from langchain_core.tools import BaseTool
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
 
-from app.agent.adversarial import AdversarialReport, run_adversarial_red_team
-from app.agent.bull import BullReport, run_bull_advocate
+from app.agent.adversarial import AdversarialReport
+from app.agent.bull import BullReport
 from app.agent.committee import run_investment_committee
 from app.agent.context import ModelContextPolicy, TokenCounter, conservative_token_counter, prepare_context
-from app.agent.expectations import run_expectations_analyst
 from app.agent.gate import (
     evaluate_accounting_gate,
     evaluate_asymmetry_gate,
@@ -32,13 +31,6 @@ from app.agent.gate import (
 from app.agent.ledger import ResearchWorkItem
 from app.agent.planning import generate_research_plan, reflect_on_research_gaps, ResearchPlanSchema
 from app.agent.prompts import build_research_system_prompt
-from app.agent.specialists import (
-    run_forensic_analysis,
-    run_moat_analysis,
-    run_quant_analysis,
-    run_sector_analysis,
-    run_thematic_analysis,
-)
 from app.agent.state import InvestigationState, ResearchIntent
 from app.agent.tool_result_ingestion import ingest_tool_results
 
@@ -187,8 +179,9 @@ def create_research_graph(
         intent = ResearchIntent.from_plan(plan_dict, explicit_subjects=tuple(s for s in (ticker, company) if s))
 
         work_items = []
+        is_equity = bool(ticker or company or plan.candidate_entities)
         for idx, q in enumerate(plan.primary_questions or [], start=1):
-            tier = "primary_sec" if any(w in q.lower() for w in ("sec", "10-k", "filing", "cash flow", "balance", "xbrl")) else "general"
+            tier = "primary_sec" if is_equity else "general"
             item = ResearchWorkItem(
                 work_id=f"work_q_{idx}",
                 question=q,
@@ -462,32 +455,13 @@ def create_research_graph(
                     st["sec_financials"] = chosen_candidate["sec_financials"]
                 if not st.get("consensus_snapshot") and chosen_candidate.get("consensus_snapshot"):
                     st["consensus_snapshot"] = chosen_candidate["consensus_snapshot"]
-            if not st.get("quant_report"):
-                try:
-                    quant_up = run_quant_analysis(st)
-                    updates.update(quant_up)
-                except Exception as exc:
-                    logger.debug("Quant valuation failed: %s", exc)
-            st = {**state, **updates}
             updates["accounting_gate"] = evaluate_accounting_gate(st)
             updates["valuation_gate"] = evaluate_valuation_gate(st)
             updates["asymmetry_gate"] = evaluate_asymmetry_gate(st)
 
-            if not st.get("bull_report"):
-                try:
-                    updates.update(run_bull_advocate(st, model))
-                except Exception as exc:
-                    logger.debug("Bull advocate failed: %s", exc)
-            st = {**state, **updates}
-            if not st.get("adversarial_report"):
-                try:
-                    bear_up = run_adversarial_red_team(st, model)
-                    updates.update(bear_up)
-                    if bear_up.get("adversarial_report") and getattr(bear_up["adversarial_report"], "numeric_kill_criteria", None):
-                        updates["thesis_breakers"] = list(bear_up["adversarial_report"].numeric_kill_criteria)
-                except Exception as exc:
-                    logger.debug("Adversarial red team failed: %s", exc)
-            st = {**state, **updates}
+            if st.get("adversarial_report") and getattr(st["adversarial_report"], "numeric_kill_criteria", None):
+                updates["thesis_breakers"] = list(st["adversarial_report"].numeric_kill_criteria)
+
             try:
                 updates.update(run_investment_committee(st, model))
             except Exception as exc:

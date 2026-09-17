@@ -82,30 +82,63 @@ def get_company_research(ticker: str) -> str:
 
 def _add_sufficient_mocked_evidence(state):
     """Seed deterministic evidence required to enter red-team and committee stages."""
+    ticker = state.get("ticker") or "XYZ"
+    cid = f"cand_{ticker.lower()}"
+    mkt = {
+        "quote": {"value": 100.0},
+        "fundamentals": {"shares_outstanding": 10_000_000.0},
+        "currency": "USD",
+        "as_of": "2026-09-15T00:00:00Z",
+        "addv_20d": {"value": 50_000_000.0},
+    }
+    sec = {
+        "status": "ok", "periods": ["2026-Q2"],
+        "cash_from_operations": {"2026-Q2": 2_000_000_000.0},
+        "capex": {"2026-Q2": 500_000_000.0},
+        "cash_and_equivalents": {"2026-Q2": 8_000_000_000.0},
+        "total_debt": {"2026-Q2": 5_000_000_000.0},
+        "gross_margin_pct": {"2026-Q2": 0.32},
+    }
     state.update(
         {
             "company": "XYZ Corporation",
             "cik": "0000123456",
-            "market_context": {
-                "quote": {"value": 100.0},
-                "fundamentals": {"shares_outstanding": 10_000_000.0},
-                "currency": "USD",
-                "as_of": "2026-09-15T00:00:00Z",
-                "addv_20d": {"value": 50_000_000.0},
-            },
+            "market_context": mkt,
             "sec_corpora": [{"corpus_id": "XYZ-2026-09-15-001"}],
-            "sec_financials": {
-                "status": "ok", "periods": ["2026-Q2"],
-                "cash_from_operations": {"2026-Q2": 2_000_000_000.0},
-                "capex": {"2026-Q2": 500_000_000.0},
-                "cash_and_equivalents": {"2026-Q2": 8_000_000_000.0},
-                "total_debt": {"2026-Q2": 5_000_000_000.0},
-                "gross_margin_pct": {"2026-Q2": 0.32},
-            },
+            "sec_financials": sec,
             "searches_performed": [
                 {"tool": "get_market_data", "status": "ok", "tool_call_id": "mkt-init"},
                 {"tool": "pull_sec_filings", "status": "ok", "tool_call_id": "sec-init"},
             ],
+            "candidates": {
+                cid: {
+                    "candidate_id": cid,
+                    "ticker": ticker,
+                    "company": "XYZ Corporation",
+                    "cik": "0000123456",
+                    "market_context": mkt,
+                    "sec_financials": sec,
+                    "diligence_dossier": {
+                        "status": "ok",
+                        "ticker": ticker,
+                        "candidate_id": cid,
+                        "company": "XYZ Corporation",
+                        "valuation": {
+                            "fair_value": 150.0,
+                            "implied_growth_rate": 0.08,
+                            "reward_to_risk_ratio": 3.2,
+                            "reproducibility": "pass",
+                        },
+                        "bull_catalysts": ["Demand expansion"],
+                        "bull_thesis": "Source-bound bull case.",
+                        "bear_kill_triggers": ["Kill Trigger 1: Gross margin drop", "Kill Trigger 2: DSI increase"],
+                        "bear_thesis": "Cyclical trap.",
+                        "bear_floor": 75.0,
+                        "forensic_verdict": "QUALIFIED_NORMALIZED_ADJUSTMENT",
+                        "moat_rating": "WIDE",
+                    },
+                }
+            },
         }
     )
 
@@ -173,16 +206,11 @@ def test_market_and_parallel_tool_results_are_ingested_before_committee(monkeypa
                 )
             return AIMessage(content="Investigation complete.")
 
-    def fake_red_team(state, model):
-        """Return minimal red-team output without invoking model."""
-        return {"thesis_breakers": ["Kill Trigger 1"]}
-
     def fake_committee(state, model):
         """Capture committee input state and return a marker verdict."""
         observed_committee_state.update(state)
         return {"ic_verdict": "passed"}
 
-    monkeypatch.setattr(graph_module, "run_adversarial_red_team", fake_red_team)
     monkeypatch.setattr(graph_module, "run_investment_committee", fake_committee)
     graph = create_research_graph(
         model=ParallelToolModel(), tools=[get_market_data, get_company_research]
@@ -238,11 +266,6 @@ def test_agent_graph_executes_exact_remaining_tool_budget(monkeypatch):
 
     monkeypatch.setattr(
         graph_module,
-        "run_adversarial_red_team",
-        lambda state, model: {"thesis_breakers": ["budget reached"]},
-    )
-    monkeypatch.setattr(
-        graph_module,
         "run_investment_committee",
         lambda state, model: {"ic_verdict": "passed"},
     )
@@ -282,14 +305,9 @@ def test_candidate_diligence_dossier_promoted_without_redundant_execution(monkey
             self.call_count += 1
             return AIMessage(content="Research finished.")
 
-    def bomb_quant(state):
-        raise AssertionError("run_quant_analysis was redundantly invoked in Stage 5!")
-
-    def bomb_bull(state, model):
-        raise AssertionError("run_bull_advocate was redundantly invoked in Stage 5!")
-
-    def bomb_bear(state, model):
-        raise AssertionError("run_adversarial_red_team was redundantly invoked in Stage 5!")
+    assert not hasattr(graph_module, "run_quant_analysis")
+    assert not hasattr(graph_module, "run_bull_advocate")
+    assert not hasattr(graph_module, "run_adversarial_red_team")
 
     observed_committee_state = {}
 
@@ -297,9 +315,6 @@ def test_candidate_diligence_dossier_promoted_without_redundant_execution(monkey
         observed_committee_state.update(state)
         return {"ic_verdict": "approved"}
 
-    monkeypatch.setattr(graph_module, "run_quant_analysis", bomb_quant)
-    monkeypatch.setattr(graph_module, "run_bull_advocate", bomb_bull)
-    monkeypatch.setattr(graph_module, "run_adversarial_red_team", bomb_bear)
     monkeypatch.setattr(graph_module, "run_investment_committee", mock_committee)
 
     graph = create_research_graph(model=DirectFinishModel(), tools=[])

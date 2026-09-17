@@ -36,14 +36,19 @@ def search_web(query: str) -> str:
 
 def test_intent_preserves_prompt_requested_ranking_count() -> None:
     """Keep user-selected output counts instead of defaulting to a shortlist size."""
-    assert ResearchRequest(query="Rank the best 10 tech stocks").resolve_intent().requested_ranking_count == 10
-    assert ResearchRequest(query="Compare 3 AI companies").resolve_intent().requested_ranking_count == 3
+    assert ResearchRequest(query="Rank the best 10 tech stocks", requested_ranking_count=10).resolve_intent().requested_ranking_count == 10
+    assert ResearchRequest(query="Compare 3 AI companies", requested_ranking_count=3).resolve_intent().requested_ranking_count == 3
     assert ResearchRequest(query="Research a used car").resolve_intent().requested_ranking_count is None
+
+    # Verify structured plan intent preserves requested ranking count without regexes
+    from app.agent.state import ResearchIntent
+    plan = {"brief": "Rank 5 stocks", "research_type": "multi_candidate_ranking", "ranking_count": 5}
+    assert ResearchIntent.from_plan(plan).requested_ranking_count == 5
 
 
 def test_initial_state_has_no_profile_or_mode() -> None:
     """Expose only model guidance and evidence containers in initial state."""
-    state = create_initial_state(ResearchRequest(query="Rank the best 7 companies"), "intent-1")
+    state = create_initial_state(ResearchRequest(query="Rank the best 7 companies", requested_ranking_count=7), "intent-1")
     assert "profile" not in state
     assert "mode" not in state
     assert state["research_intent"]["requested_ranking_count"] == 7
@@ -62,7 +67,7 @@ def test_one_graph_runs_general_research_to_source_backed_completion() -> None:
 
 def test_report_discloses_requested_count_and_evidence_gap() -> None:
     """Never represent an incomplete ranking as a complete shortlist."""
-    state = create_initial_state(ResearchRequest(query="Rank the best 5 companies"), "intent-3")
+    state = create_initial_state(ResearchRequest(query="Rank the best 5 companies", requested_ranking_count=5), "intent-3")
     state["status"] = "research_incomplete"
     state["evidence_gate"] = {"missing_evidence": ["Requested 5 evidence-backed candidates; collected 0."]}
     report = render_research_report(state, "Evidence collection is incomplete.")

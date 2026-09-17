@@ -95,7 +95,7 @@ def test_e2e_every_registered_tool_persists_owned_receipts(monkeypatch, tmp_path
     index = tmp_path / "coverage" / "candidates" / "cand_msft" / "sec" / "index" / "sec.faiss"
     index.parent.mkdir(parents=True)
     index.write_text("placeholder", encoding="utf-8")
-    initial = create_initial_state(ResearchRequest(query="Rank the best 1 cloud company"), "coverage")
+    initial = create_initial_state(ResearchRequest(query="Rank the best 1 cloud company", requested_ranking_count=1), "coverage")
     final = create_research_graph(ToolCoverageModel(), create_agent_tools(cases_root=tmp_path)).invoke(initial)
 
     tool_names = {receipt["tool"] for receipt in final["searches_performed"]}

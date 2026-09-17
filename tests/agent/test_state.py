@@ -8,7 +8,6 @@ from app.agent.context import (
     ModelContextPolicy,
     conservative_token_counter,
     prepare_context,
-    trim_conversation_history,
 )
 from app.agent.state import ResearchRequest, BudgetLimits, create_initial_state
 from app.agent.prompts import build_research_system_prompt
@@ -45,7 +44,7 @@ def test_create_initial_state():
 
 def test_build_research_system_prompt():
     """Project prompt-directed intent and durable evidence into one model prompt."""
-    state = create_initial_state(ResearchRequest(query="Rank the best 4 ABC peers", ticker="ABC"), case_id="case_abc")
+    state = create_initial_state(ResearchRequest(query="Rank the best 4 ABC peers", ticker="ABC", requested_ranking_count=4), case_id="case_abc")
     state.update({
         "unresolved_questions": ["Is contract binding?"],
         "evidence": [{"source": "8-K", "quote": "non-binding"}],
@@ -57,20 +56,6 @@ def test_build_research_system_prompt():
     assert "Remaining tool calls: 32" in content
     assert '"requested_ranking_count": 4' in content
     assert '"quote": "non-binding"' in content
-
-
-def test_trim_conversation_history():
-    """Verify the compatibility wrapper keeps recent history."""
-    messages = [
-        HumanMessage(content="Start investigation"),
-        AIMessage(content="Calling search_social"),
-        HumanMessage(content="Social result: high velocity"),
-        AIMessage(content="Calling verify_sec_claim"),
-        HumanMessage(content="SEC verification: CONTRADICTED"),
-    ]
-    trimmed = trim_conversation_history(messages, max_tokens=100)
-    assert 0 < len(trimmed) <= len(messages)
-    assert trimmed[-1].content == "SEC verification: CONTRADICTED"
 
 
 def test_model_context_policy_defaults_to_million_token_capacity() -> None:

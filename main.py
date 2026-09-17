@@ -125,8 +125,6 @@ def main() -> int:
             print("\nAborted.")
             return 1
 
-    preview_request = ResearchRequest(query=query, ticker=ticker, company=company, theme=theme, mandate=args.mandate, depth=args.depth)
-    preview_intent = preview_request.resolve_intent()
     print("\n[1/3] Initializing Deep Research Engine...")
     print(f"  • Prompt:  {query}")
     if ticker:
