@@ -11,6 +11,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
+from app.agent.contracts import BearCase
 from app.agent.state import InvestigationState
 
 logger = logging.getLogger(__name__)
@@ -58,25 +59,9 @@ Return strictly valid JSON matching this exact structure:
 
 
 
-@dataclass(frozen=True)
-class AdversarialReport:
+class AdversarialReport(BearCase):
     """Structured report produced by the air-gapped short-seller red team."""
-
-    ticker: str
-    falsifiable_objections: tuple[str, ...]
-    numeric_kill_criteria: tuple[str, ...]
-    bear_floor_price: float | None
-    bear_thesis_summary: str
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "ticker": self.ticker,
-            "falsifiable_objections": list(self.falsifiable_objections),
-            "numeric_kill_criteria": list(self.numeric_kill_criteria),
-            "bear_floor_price": self.bear_floor_price,
-            "bear_thesis_summary": self.bear_thesis_summary,
-        }
+    pass
 
 
 def run_adversarial_red_team(state: InvestigationState, model: Any) -> dict[str, Any]:

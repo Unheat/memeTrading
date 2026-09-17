@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from app.agent.contracts import BullCase
 from app.agent.state import InvestigationState
 
 logger = logging.getLogger(__name__)
@@ -49,27 +50,9 @@ Return strictly valid JSON matching this exact structure:
 """
 
 
-@dataclass(frozen=True)
-class BullReport:
+class BullReport(BullCase):
     """Structured report produced by the air-gapped Bull Case Advocate."""
-
-    ticker: str
-    catalysts: tuple[str, ...]
-    operating_leverage_drivers: tuple[str, ...]
-    bull_target_price: float | None
-    bull_thesis_summary: str
-    invalidation_conditions: tuple[str, ...]
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "ticker": self.ticker,
-            "catalysts": list(self.catalysts),
-            "operating_leverage_drivers": list(self.operating_leverage_drivers),
-            "bull_target_price": self.bull_target_price,
-            "bull_thesis_summary": self.bull_thesis_summary,
-            "invalidation_conditions": list(self.invalidation_conditions),
-        }
+    pass
 
 
 def run_bull_advocate(state: InvestigationState, model: Any) -> dict[str, Any]:

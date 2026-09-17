@@ -5,6 +5,7 @@ intent constraints and reserves deterministic code for budgets and evidence owne
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 import json
 
 from langchain_core.messages import SystemMessage
@@ -44,6 +45,74 @@ DEEP_RESEARCH_PROMPT = """You are an elite, thorough deep-research investigator.
 Do not stop after a single surface search. Follow up on leads, read linked document PDFs, investigate primary SEC filings, and synthesize conclusions only when backed by verifiable evidence."""
 
 
+def build_subject_packet(candidate_data: Mapping[str, Any]) -> dict[str, Any]:
+    """Compress a candidate workspace into a token-efficient Subject Evidence Packet."""
+    if not isinstance(candidate_data, Mapping):
+        return {}
+
+    cand = dict(candidate_data)
+    mkt = cand.get("market_context") or {}
+    sec = cand.get("sec_financials") or {}
+    dossier = cand.get("diligence_dossier") or {}
+
+    packet: dict[str, Any] = {
+        "candidate_id": cand.get("candidate_id"),
+        "ticker": cand.get("ticker"),
+        "company": cand.get("company"),
+        "cik": cand.get("cik"),
+    }
+
+    if mkt and isinstance(mkt, Mapping):
+        q = mkt.get("quote") or {}
+        price = q.get("price") if q.get("price") is not None else q.get("value")
+        packet["market_summary"] = {
+            "price": price,
+            "currency": mkt.get("currency", "USD"),
+            "as_of": mkt.get("as_of"),
+            "addv_20d": (mkt.get("addv_20d") or {}).get("value"),
+        }
+
+    if sec and isinstance(sec, Mapping):
+        periods = sec.get("periods") or []
+        curr_p = str(periods[0]) if periods else None
+        if curr_p:
+            packet["financial_summary"] = {
+                "latest_period": curr_p,
+                "gross_margin_pct": (sec.get("gross_margin_pct") or {}).get(curr_p),
+                "operating_margin_pct": (sec.get("operating_margin_pct") or {}).get(curr_p),
+                "net_income": (sec.get("net_income") or {}).get(curr_p),
+                "cash_from_operations": (sec.get("cash_from_operations") or {}).get(curr_p),
+                "capex": (sec.get("capex") or {}).get(curr_p),
+                "cash_and_equivalents": (sec.get("cash_and_equivalents") or {}).get(curr_p),
+                "total_debt": (sec.get("total_debt") or {}).get(curr_p),
+            }
+
+    if dossier and isinstance(dossier, Mapping):
+        packet["diligence_dossier"] = {
+            "status": dossier.get("status"),
+            "valuation": dossier.get("valuation"),
+            "bull_catalysts": dossier.get("bull_catalysts"),
+            "bear_kill_triggers": dossier.get("bear_kill_triggers"),
+            "bear_floor": dossier.get("bear_floor"),
+            "forensic_verdict": dossier.get("forensic_verdict"),
+            "moat_rating": dossier.get("moat_rating"),
+        }
+
+    evidence = cand.get("evidence") or []
+    if evidence:
+        packet["evidence_count"] = len(evidence)
+        packet["sample_evidence"] = [
+            {"quote": e.get("quote"), "source_url": e.get("source_url")}
+            for e in evidence[:3]
+            if isinstance(e, Mapping) and e.get("quote")
+        ]
+
+    if cand.get("limitations"):
+        packet["limitations"] = list(cand["limitations"])
+
+    return packet
+
+
 def build_research_system_prompt(state: InvestigationState) -> SystemMessage:
     """Build the durable prompt for every investigation.
 
@@ -56,13 +125,45 @@ def build_research_system_prompt(state: InvestigationState) -> SystemMessage:
     budget = state.get("budget_state", {})
     max_calls = budget.get("max_total_tool_calls") or budget.get("max_tool_calls", 50)
     remaining = max(0, max_calls - state.get("tool_calls", 0))
+
+    candidates_raw = state.get("candidates", {})
+    compact_candidates = {}
+    if isinstance(candidates_raw, Mapping):
+        for cid, c in candidates_raw.items():
+            compact_candidates[cid] = build_subject_packet(c)
+
+    sources = [
+        {"title": s.get("title"), "url": s.get("url"), "status": s.get("status")}
+        for s in state.get("source_records", [])
+        if isinstance(s, Mapping)
+    ]
+
+    evidence = [
+        {
+            "quote": e.get("quote"),
+            "source": e.get("source"),
+            "form": e.get("form"),
+            "verdict": e.get("verdict"),
+            "source_url": e.get("source_url"),
+        }
+        for e in state.get("evidence", [])
+        if isinstance(e, Mapping)
+    ]
+
+    work_queue = [
+        {"work_id": w.get("work_id"), "question": w.get("question"), "status": w.get("status")}
+        for w in state.get("work_queue", [])
+        if isinstance(w, Mapping)
+    ]
+
     projections = {
         "research_intent": state.get("research_intent", {}),
         "explicit_target": {"ticker": state.get("ticker"), "company": state.get("company"), "cik": state.get("cik")},
-        "candidates": state.get("candidates", {}),
+        "candidates": compact_candidates,
         "comparisons": state.get("comparisons", []),
-        "source_records": state.get("source_records", []),
-        "evidence": state.get("evidence", []),
+        "work_queue": work_queue,
+        "source_records": sources[:15],
+        "evidence": evidence[:15],
         "contradictions": state.get("contradictions", []),
         "unresolved_questions": state.get("unresolved_questions", []),
     }

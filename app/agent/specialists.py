@@ -231,6 +231,9 @@ def run_forensic_analysis(state: InvestigationState, model: Any | None = None) -
     if not available_fields:
         return {"forensic_report": {"status": "unavailable", "forensic": None, "reason": "SEC financial forensic fields are unavailable"}}
 
+    from app.market.forensics import evaluate_forensic_accounting
+    det_audit = evaluate_forensic_accounting(sec)
+
     # If model is provided, run full LLM forensic accounting audit
     if model is not None and hasattr(model, "invoke"):
         try:
@@ -239,6 +242,12 @@ def run_forensic_analysis(state: InvestigationState, model: Any | None = None) -
             human_prompt = f"""Audit earnings quality and balance sheet forensics for ${ticker} ({company}) for period {period}:
 Reported Financial Metrics:
 {json.dumps(available_fields, indent=2)}
+
+Deterministic Pre-Calculations:
+- Beneish M-Score: {json.dumps(det_audit.get("beneish_m_score", {}))}
+- Sloan Accruals: {json.dumps(det_audit.get("sloan_accruals", {}))}
+- SBC Dilution: {json.dumps(det_audit.get("sbc_dilution", {}))}
+- Leverage: {json.dumps(det_audit.get("leverage", {}))}
 
 Filing Evidence Citations:
 {json.dumps([item.get("quote") for item in state.get("evidence", []) if isinstance(item, Mapping) and item.get("quote")][:5], indent=2)}
@@ -259,8 +268,9 @@ Audit Beneish M-Score risk, Sloan accruals, SBC dilution, and leverage in strict
                     "status": "available",
                     "period": period,
                     "forensic": available_fields,
-                    "verdict": parsed.get("forensic_verdict", "QUALIFIED_NORMALIZED_ADJUSTMENT"),
+                    "verdict": parsed.get("forensic_verdict", det_audit.get("verdict", "QUALIFIED_NORMALIZED_ADJUSTMENT")),
                     "audit": parsed,
+                    "deterministic": det_audit,
                     "source": "sec_financials_llm_audited",
                     "reason": None,
                 }
@@ -273,9 +283,9 @@ Audit Beneish M-Score risk, Sloan accruals, SBC dilution, and leverage in strict
             "status": "available",
             "period": period,
             "forensic": available_fields,
-            "verdict": "QUALIFIED_NORMALIZED_ADJUSTMENT",
-            "audit": {"audit_summary": "Deterministic SEC financial metrics verified."},
-            "source": "sec_financials",
+            "verdict": det_audit.get("verdict", "QUALIFIED_NORMALIZED_ADJUSTMENT"),
+            "audit": det_audit,
+            "source": "sec_financials_deterministic",
             "reason": None,
         }
     }

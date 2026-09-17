@@ -29,6 +29,7 @@ from app.agent.gate import (
     evaluate_research_completeness,
     evaluate_valuation_gate,
 )
+from app.agent.ledger import ResearchWorkItem
 from app.agent.planning import generate_research_plan, reflect_on_research_gaps, ResearchPlanSchema
 from app.agent.prompts import build_research_system_prompt
 from app.agent.specialists import (
@@ -185,6 +186,30 @@ def create_research_graph(
         plan_dict = plan.model_dump() if hasattr(plan, "model_dump") else plan.dict()
         intent = ResearchIntent.from_plan(plan_dict, explicit_subjects=tuple(s for s in (ticker, company) if s))
 
+        work_items = []
+        for idx, q in enumerate(plan.primary_questions or [], start=1):
+            tier = "primary_sec" if any(w in q.lower() for w in ("sec", "10-k", "filing", "cash flow", "balance", "xbrl")) else "general"
+            item = ResearchWorkItem(
+                work_id=f"work_q_{idx}",
+                question=q,
+                evidence_tier=tier,
+                priority=10 - idx,
+                depth=1,
+            )
+            work_items.append(item.to_dict())
+
+        for c_idx, c_ticker in enumerate(plan.candidate_entities or [], start=1):
+            clean_c = c_ticker.strip().upper()
+            item = ResearchWorkItem(
+                work_id=f"work_cand_{clean_c.lower()}",
+                question=f"Conduct candidate diligence and valuation for {clean_c}",
+                evidence_tier="candidate_diligence",
+                priority=8,
+                depth=1,
+                candidate_id=f"cand_{clean_c.lower()}",
+            )
+            work_items.append(item.to_dict())
+
         plan_summary = (
             f"**Research Plan Approved**:\n"
             f"- Mandate: {plan.brief}\n"
@@ -196,6 +221,7 @@ def create_research_graph(
         return {
             "research_plan": [plan_dict],
             "research_intent": intent.to_dict(),
+            "work_queue": work_items,
             "messages": [AIMessage(content=plan_summary)],
         }
 
@@ -221,7 +247,35 @@ def create_research_graph(
         start = len(messages)
         while start and isinstance(messages[start - 1], ToolMessage):
             start -= 1
-        return ingest_tool_results(state, messages[start:])
+        updates = ingest_tool_results(state, messages[start:])
+
+        # Advance work queue items based on tool results and candidate progress
+        work_queue = list(state.get("work_queue") or [])
+        if work_queue:
+            performed = state.get("searches_performed") or []
+            tool_names = {r.get("tool") for r in performed if r.get("status") in {"ok", "partial"}}
+            cand_diligence_done = set()
+            for cid, c in (state.get("candidates") or {}).items():
+                if isinstance(c, Mapping) and c.get("diligence_dossier"):
+                    t = c.get("ticker") or (c.get("diligence_dossier") or {}).get("ticker")
+                    if t:
+                        cand_diligence_done.add(str(t).upper())
+
+            updated_queue = []
+            for item in work_queue:
+                w = dict(item)
+                if w.get("status") == "queued":
+                    c_id = w.get("candidate_id")
+                    if c_id and any(t.lower() in c_id.lower() for t in cand_diligence_done):
+                        w["status"] = "completed"
+                    elif w.get("evidence_tier") == "primary_sec" and ("get_sec_financials" in tool_names or "search_sec_evidence" in tool_names):
+                        w["status"] = "completed"
+                    elif len(state.get("evidence") or []) >= 2 and w.get("evidence_tier") == "general":
+                        w["status"] = "completed"
+                updated_queue.append(w)
+            updates["work_queue"] = updated_queue
+
+        return updates
 
     def reflection_node(state: InvestigationState) -> dict[str, Any]:
         """Stage 3: Gap analysis reflecting on collected evidence against the plan."""
@@ -269,6 +323,10 @@ def create_research_graph(
         ]
         for url in unread_docs:
             deterministic_gaps.append(f"Unread discovered document {url}; call `read_document`.")
+
+        open_items = [w.get("question") for w in (state.get("work_queue") or []) if isinstance(w, Mapping) and w.get("status") == "queued"]
+        for q in open_items[:2]:
+            deterministic_gaps.append(f"Unresolved research mandate: {q}")
 
         all_gaps = list(deterministic_gaps)
         if reflection and reflection.evidence_gaps:

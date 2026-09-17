@@ -182,6 +182,7 @@ class InvestigationState(TypedDict):
     unresolved_questions: list[str]
     sec_corpora: list[str]
     searches_performed: list[dict[str, Any]]
+    work_queue: list[dict[str, Any]]
     confidence: float | None
     tool_calls: int
     status: str
@@ -225,7 +226,7 @@ def create_initial_state(request: ResearchRequest, case_id: str) -> Investigatio
         "candidates": {}, "candidate_leads": [], "comparisons": [],
         "trigger": {"query": request.query, "theme": request.theme, "mandate": request.mandate},
         "root_claims": [], "evidence": [], "contradictions": [], "unresolved_questions": [],
-        "sec_corpora": [], "searches_performed": [], "confidence": None, "tool_calls": 0,
+        "sec_corpora": [], "searches_performed": [], "work_queue": [], "confidence": None, "tool_calls": 0,
         "status": "in_progress", "causal_chain": None, "market_context": None,
         "sec_financials": None, "consensus_snapshot": None, "expectation_gap": None,
         "thesis_breakers": [], "adversarial_report": None, "bull_report": None, "ic_verdict": None,
