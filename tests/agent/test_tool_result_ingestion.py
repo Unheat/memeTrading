@@ -20,6 +20,21 @@ def _message(name: str, call_id: str, payload: object) -> ToolMessage:
     return ToolMessage(content=json.dumps(payload), name=name, tool_call_id=call_id)
 
 
+def test_registered_candidate_ticker_resolves_missing_candidate_id() -> None:
+    """Route candidate-scoped output only when one registered ticker matches exactly."""
+    state = {
+        "research_intent": {"requires_candidate_workspaces": True},
+        "candidates": {"cand_msft": {"candidate_id": "cand_msft", "ticker": "MSFT", "company": "Microsoft"}},
+    }
+    update = ingest_tool_results(
+        state,
+        [_message("get_market_data", "market-msft", {"status": "ok", "ticker": "MSFT", "quote": {"price": 490.0}})],
+    )
+    assert update["searches_performed"][-1]["status"] == "ok"
+    assert update["searches_performed"][-1]["routing"]["candidate_id"] == "cand_msft"
+    assert update["candidates"]["cand_msft"]["market_context"]["quote"]["price"] == 490.0
+
+
 def test_parallel_results_merge_without_losing_existing_state() -> None:
     """Verify parallel successful results produce one lossless merged update."""
     state = {

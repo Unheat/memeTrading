@@ -426,8 +426,8 @@ def create_agent_tools(
                 "ticker": clean_ticker,
                 "candidate_id": cand_id,
                 "valuation": {
-                    "fair_value": val.get("fair_value"),
-                    "implied_growth_rate": val.get("implied_fcf_growth_rate"),
+                    "fair_value": val.get("fair_value") or (val.get("fair_value_range") or {}).get("base"),
+                    "implied_growth_rate": val.get("implied_fcf_growth_rate") or (val.get("reverse_dcf") or {}).get("implied_fcf_growth_rate"),
                     "reward_to_risk_ratio": (val.get("asymmetric_risk_reward") or {}).get("reward_to_risk_ratio"),
                     "reproducibility": (quant_rep.get("reproducibility") or {}).get("verdict", "unverified"),
                 },

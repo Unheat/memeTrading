@@ -37,12 +37,15 @@ DEEP_RESEARCH_PROMPT = """You are an elite, thorough deep-research investigator.
    - For comparative or ranking requests, call `register_candidate` before calling company-specific tools, and pass `candidate_id` to all company-scoped calls.
    - Once evidence is collected, call `compare_candidates` to generate normalized cross-company comparison cards.
    - Never claim a complete ranking if fewer evidence-backed candidates were collected than requested.
-6. **Isolated Candidate Deep Diligence**:
-   - Call `conduct_candidate_diligence(ticker='...')` on your top candidate picks to launch isolated deep diligence sub-agents.
-   - Computes deterministic Reverse DCF valuation, evaluates operating leverage Bull catalysts, and runs the Bear Red Team with numeric kill criteria.
-   - For ranking or comparative requests (e.g. '5 best tech stocks'), call `conduct_candidate_diligence` on each of your top ranked picks.
+6. **Isolated Candidate Deep Diligence & Valuation**:
+   - Call `conduct_candidate_diligence(ticker='...')` or `evaluate_valuation(ticker='...')` on your candidates to obtain deterministic Reverse DCF valuation, operating leverage Bull catalysts, and Bear Red Team kill criteria.
+   - For ranking or comparative requests (e.g. '5 best tech stocks' or 'Compare MSFT and AAPL'), ensure each candidate receives complete market data, SEC financials, and valuation evaluation.
+7. **Research Prioritization & Signal Hygiene**:
+   - Focus tool calls on quantitative, falsifiable investment questions: market price and volume, SEC XBRL cash flows, balance sheet liquidity, reverse DCF implied growth, segment revenues, and margins.
+   - Do NOT spend tool calls reading generic corporate governance overviews, board of directors rosters, committee charters, ethics codes, or ESG/marketing reports unless explicitly requested by the user prompt.
+   - For document reading, prioritize investor presentation slide decks, quarterly earnings releases, 10-K/10-Q disclosures, and call transcripts over marketing web pages.
 
-Do not stop after a single surface search. Follow up on leads, read linked document PDFs, investigate primary SEC filings, and synthesize conclusions only when backed by verifiable evidence."""
+Do not stop after a single surface search. Follow up on high-signal leads, read linked presentation PDFs, investigate primary SEC filings, and synthesize conclusions only when backed by verifiable evidence."""
 
 
 def build_subject_packet(candidate_data: Mapping[str, Any]) -> dict[str, Any]:

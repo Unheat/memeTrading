@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -110,8 +111,16 @@ def run_investigation(
         graph = create_research_graph(
             runtime.model, tools, context_policy=runtime.context_policy, token_counter=runtime.token_counter,
         )
-        logger.info("Starting deep research investigation %s for %s", case_id, ticker)
+        logger.info(
+            "pipeline.start case_id=%s ticker=%s depth=%s budget=%s intent=%s",
+            case_id, ticker, effective_request.depth, budget.max_total_tool_calls, initial_state["research_intent"],
+        )
         final_state = dict(graph.invoke(initial_state, config={"recursion_limit": 100}))
+        logger.info(
+            "pipeline.graph_complete case_id=%s status=%s tool_calls=%s candidates=%s receipts=%s evidence=%s",
+            case_id, final_state.get("status"), final_state.get("tool_calls"), len(final_state.get("candidates") or {}),
+            len(final_state.get("searches_performed") or []), len(final_state.get("evidence") or []),
+        )
 
         messages = final_state.get("messages", [])
         last_message = messages[-1] if messages else None
@@ -124,6 +133,7 @@ def run_investigation(
         )
         _write_json(target_case_dir / "investigation.json", serialize_investigation_json(final_state, memo_md))
         (target_case_dir / "memo.md").write_text(memo_md, encoding="utf-8")
+        logger.info("pipeline.artifacts_written case_id=%s memo_kind=%s", case_id, "forensic" if explicit_position_request else "research")
 
         article_md: str | None = None
         if (

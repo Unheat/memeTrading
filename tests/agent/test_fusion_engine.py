@@ -40,6 +40,30 @@ def test_quant_does_not_invent_missing_source_fields():
     assert report["valuation"] is None
 
 
+def test_quant_uses_reliable_wrapped_shares_and_prior_close_provenance():
+    """Use verified prior close only when latest quote is invalid and record the exact source."""
+    state = _source_backed_state()
+    state["market_context"] = {
+        "quote": {"price": float("nan"), "previous_close": 10.0, "as_of": "2026-09-17T00:00:00Z", "currency": "USD"},
+        "fundamentals": {"shares_outstanding": {"value": 10.0, "reliable": True}},
+    }
+    report = run_quant_analysis(state)["quant_report"]
+    assert report["status"] == "available"
+    provenance = report["source_mapping"]["market_price_provenance"]
+    assert provenance["price_input_field"] == "market_context.quote.previous_close"
+    assert provenance["price_basis"] == "prior_close"
+    assert provenance["fallback_used"] is True
+
+
+def test_quant_rejects_unreliable_wrapped_shares():
+    """Fail closed when the provider has not marked diluted shares reliable."""
+    state = _source_backed_state()
+    state["market_context"]["fundamentals"]["shares_outstanding"] = {"value": 10.0, "reliable": False}
+    report = run_quant_analysis(state)["quant_report"]
+    assert report["status"] == "unavailable"
+    assert "reliable diluted shares outstanding" in report["reason"]
+
+
 def test_sec_financials_feed_forensic_and_quant_source_mapping():
     """SEC CFO, CapEx, cash, and debt feed Phase 2/3 without market aliases."""
     state = _source_backed_state()

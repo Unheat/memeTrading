@@ -1,4 +1,6 @@
 """Tests for app.market.schemas contracts."""
+import math
+
 import pytest
 from app.market.schemas import Quote, CalculatedField, MarketDataResult, MarketDataError
 
@@ -27,6 +29,24 @@ def test_quote_rejects_negative_volume():
     with pytest.raises(ValueError, match="volume"):
         Quote(price=10.0, previous_close=None, change=None, change_percent=None,
               volume=-1, currency=None, exchange=None, as_of="2026-09-05T20:00:00Z")
+
+
+def test_quote_and_calculated_field_reject_non_finite_values():
+    """Reject NaN and infinity rather than serializing invalid market observations."""
+    for invalid in (math.nan, math.inf, -math.inf):
+        with pytest.raises(ValueError, match="finite"):
+            Quote(price=invalid, previous_close=10.0, change=None, change_percent=None,
+                  volume=None, currency="USD", exchange="NASDAQ", as_of="2026-09-05T20:00:00Z")
+        with pytest.raises(ValueError, match="finite"):
+            _field(value=invalid)
+
+
+def test_quote_allows_prior_close_when_latest_price_is_unavailable():
+    """Preserve a verified prior close without falsely representing a live price."""
+    quote = Quote(price=None, previous_close=182.5, change=None, change_percent=None,
+                  volume=None, currency="USD", exchange="NASDAQ", as_of="2026-09-05T20:00:00Z")
+    assert quote.to_dict()["price"] is None
+    assert quote.to_dict()["previous_close"] == 182.5
 
 
 def test_calculated_field_ok_requires_value():

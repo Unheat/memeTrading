@@ -100,3 +100,41 @@ def test_serialize_investigation_json():
     assert data["ticker"] == "ABC"
     assert data["memo_markdown"] == "# Memo"
     assert isinstance(data["evidence"], list)
+
+
+def test_render_research_report_formats_candidate_comparisons():
+    """Verify render_research_report cleanly formats comparison values without raw Python dictionaries."""
+    from app.agent.memo import render_research_report
+
+    state = create_initial_state(ResearchRequest(query="Compare MSFT and AAPL"), case_id="test_compare")
+    state["candidates"] = {
+        "cand_msft": {"ticker": "MSFT", "company": "Microsoft", "market_context": {"quote": {"price": 490.3}}},
+        "cand_aapl": {"ticker": "AAPL", "company": "Apple", "market_context": {"quote": {"price": 332.41}}},
+    }
+    state["comparisons"] = [
+        {
+            "metric_key": "price",
+            "period_basis": "latest",
+            "candidate_values": {
+                "MSFT": {"value": 490.3, "period": "latest", "candidate_id": "cand_msft"},
+                "AAPL": {"value": 332.41, "period": "latest", "candidate_id": "cand_aapl"},
+            },
+            "comparability": "comparable",
+        },
+        {
+            "metric_key": "revenue",
+            "period_basis": "latest",
+            "candidate_values": {
+                "MSFT": {"value": 64.73e9, "period": "Q4 2026", "candidate_id": "cand_msft"},
+                "AAPL": {"value": 85.78e9, "period": "Q3 2026", "candidate_id": "cand_aapl"},
+            },
+            "comparability": "period_mismatch",
+        },
+    ]
+
+    report = render_research_report(state, "Comparison synthesis complete.")
+    assert "## Normalized Candidate Comparisons" in report
+    assert "$MSFT: $490.30, $AAPL: $332.41" in report
+    assert "$MSFT: $64.73B (Q4 2026), $AAPL: $85.78B (Q3 2026)" in report
+    # Ensure no raw Python dict representation appears
+    assert "{'value':" not in report

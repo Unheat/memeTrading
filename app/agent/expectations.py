@@ -167,11 +167,12 @@ def run_expectations_analyst(state: InvestigationState, model: Any) -> dict[str,
     consensus = state.get("consensus_snapshot") or {}
     sec = state.get("sec_financials") or {}
 
-    # Extract scalar inputs for preliminary reverse DCF
-    quote = market.get("quote") if isinstance(market.get("quote"), Mapping) else {}
-    price = quote.get("price") or quote.get("value")
-    fundamentals = market.get("fundamentals") if isinstance(market.get("fundamentals"), Mapping) else {}
-    shares = fundamentals.get("shares_outstanding")
+    # Resolve only verified finite price and share observations for preliminary reverse DCF
+    from app.market.valuation_inputs import resolve_valuation_market_inputs
+
+    market_inputs = resolve_valuation_market_inputs(market)
+    price = market_inputs["price"]
+    shares = market_inputs["shares_outstanding"]
 
     periods = sec.get("periods") if isinstance(sec.get("periods"), list) else []
     period = periods[0] if periods else None
@@ -188,8 +189,8 @@ def run_expectations_analyst(state: InvestigationState, model: Any) -> dict[str,
     try:
         fcf = float(cfo) - float(capex) if cfo is not None and capex is not None else None
         net_cash = float(cash) - float(debt) if cash is not None and debt is not None else 0.0
-        price_f = float(price) if price is not None else None
-        shares_f = float(shares) if shares is not None else None
+        price_f = price
+        shares_f = shares
     except (TypeError, ValueError):
         fcf = None
         net_cash = 0.0

@@ -123,29 +123,101 @@ def _sort_period_cols(cols: list[str]) -> list[str]:
 def _find_row_val(df: Any, concept_names: list[str], col: str) -> float | None:
     """Find a matching concept's finite numeric value, otherwise return ``None``.
 
+    Performs exact concept match first across candidates, then falls back to prefix/contains.
+
     :param df: Statement dataframe indexed by SEC XBRL concept.
     :param concept_names: Ordered candidate concepts, from preferred to fallback.
     :param col: Fiscal-period column name.
     :returns: Matching finite value, with CapEx payments made positive, or ``None``.
     """
-    if df is None:
+    if df is None or not hasattr(df, "columns") or col not in df.columns:
         return None
     try:
+        df_index_lower = [str(idx).lower() for idx in df.index]
+        # 1. Exact matches in priority order
         for concept in concept_names:
-            concept_lower = concept.lower()
-            for idx in df.index:
-                if str(idx).lower() == concept_lower or concept_lower in str(idx).lower():
+            c_low = concept.lower()
+            if c_low in df_index_lower:
+                idx = df.index[df_index_lower.index(c_low)]
+                val = df.loc[idx, col]
+                if hasattr(val, "iloc"):
+                    val = val.iloc[0]
+                if val is not None:
+                    f_val = float(val)
+                    if math.isfinite(f_val):
+                        return abs(f_val) if "payments" in c_low or "capex" in c_low else f_val
+
+        # 2. Substring matches in priority order
+        for concept in concept_names:
+            c_low = concept.lower()
+            for i, idx_str in enumerate(df_index_lower):
+                if c_low in idx_str:
+                    idx = df.index[i]
                     val = df.loc[idx, col]
                     if hasattr(val, "iloc"):
                         val = val.iloc[0]
-                    if val is None:
-                        continue
-                    f_val = float(val)
-                    if not math.isfinite(f_val):
-                        continue
-                    return abs(f_val) if "payments" in concept_lower or "capex" in concept_lower else f_val
+                    if val is not None:
+                        f_val = float(val)
+                        if math.isfinite(f_val):
+                            return abs(f_val) if "payments" in c_low or "capex" in c_low else f_val
     except Exception:
         pass
+    return None
+
+
+def _resolve_bs_dataframe_and_col(col: str, bs_q: Any, bs_a: Any) -> tuple[Any, str | None]:
+    """Resolve the appropriate balance sheet dataframe and column for a fiscal period.
+
+    SEC Form 10-Q covers Q1-Q3; Q4 point-in-time metrics are filed on Form 10-K under FY.
+    """
+    import re
+
+    # 1. If present in quarterly balance sheet, use it
+    if bs_q is not None and hasattr(bs_q, "columns") and col in bs_q.columns:
+        return bs_q, col
+
+    # 2. If present directly in annual balance sheet, use it
+    if bs_a is not None and hasattr(bs_a, "columns") and col in bs_a.columns:
+        return bs_a, col
+
+    # 3. If period is Q4 <YYYY> (or <YYYY>-Q4), map to FY <YYYY> in annual balance sheet
+    m_q4 = re.search(r"Q4\s*(\d{4})", str(col), re.I) or re.search(r"(\d{4})\s*[-Q]\s*4", str(col), re.I)
+    if m_q4 and bs_a is not None and hasattr(bs_a, "columns"):
+        year = m_q4.group(1)
+        fy_col = f"FY {year}"
+        if fy_col in bs_a.columns:
+            return bs_a, fy_col
+        for c in bs_a.columns:
+            if year in str(c):
+                return bs_a, str(c)
+
+    return None, None
+
+
+def _find_bs_metric(
+    concept_names: list[str],
+    col: str,
+    bs_q: Any,
+    bs_a: Any,
+    fallback_cols: list[str] | None = None,
+) -> float | None:
+    """Find a balance sheet metric for a period with 10-K FY and prior-quarter fallback."""
+    df, matched_col = _resolve_bs_dataframe_and_col(col, bs_q, bs_a)
+    if df is not None and matched_col:
+        val = _find_row_val(df, concept_names, matched_col)
+        if val is not None:
+            return val
+
+    # If not found and fallback columns provided, check most recent available period
+    if fallback_cols:
+        for f_col in fallback_cols:
+            if f_col == col:
+                continue
+            f_df, f_matched_col = _resolve_bs_dataframe_and_col(f_col, bs_q, bs_a)
+            if f_df is not None and f_matched_col:
+                f_val = _find_row_val(f_df, concept_names, f_matched_col)
+                if f_val is not None:
+                    return f_val
     return None
 
 
@@ -189,24 +261,65 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4) -> dict[str, Any]:
     except Exception as exc:
         logger.debug("Failed income statement extraction via dataframe: %s", exc)
 
-    # 2. Balance Sheet
+    # 2. Balance Sheet (Fetch both quarterly 10-Q and annual 10-K)
+    bs_q = None
+    bs_a = None
     try:
-        bs_stmt = company.balance_sheet(annual=False, periods=periods, as_dataframe=True)
-        if bs_stmt is not None and hasattr(bs_stmt, "columns"):
-            bs_periods = _sort_period_cols([str(c) for c in bs_stmt.columns if _is_period_col(c)])
-            if not result["periods"]:
-                result["periods"] = bs_periods[:periods]
-            for col in result["periods"]:
-                result["cash_and_equivalents"][col] = _find_row_val(bs_stmt, ["CashAndCashEquivalentsAtCarryingValue", "CashAndCashEquivalents", "Cash"], col)
-                result["inventory"][col] = _find_row_val(bs_stmt, ["InventoryNet", "Inventories", "Inventory"], col)
-                st_debt = _find_row_val(bs_stmt, ["ShortTermBorrowings", "CommercialPaper", "DebtCurrent"], col)
-                lt_debt = _find_row_val(bs_stmt, ["LongTermDebtNoncurrent", "LongTermDebt"], col)
-                if st_debt is not None or lt_debt is not None:
-                    result["total_debt"][col] = (st_debt or 0.0) + (lt_debt or 0.0)
-                else:
-                    result["total_debt"][col] = None
+        bs_q = company.balance_sheet(annual=False, periods=periods, as_dataframe=True)
     except Exception as exc:
-        logger.debug("Failed balance sheet extraction via dataframe: %s", exc)
+        logger.debug("Failed quarterly balance sheet extraction via dataframe: %s", exc)
+
+    try:
+        bs_a = company.balance_sheet(annual=True, periods=periods, as_dataframe=True)
+    except Exception as exc:
+        logger.debug("Failed annual balance sheet extraction via dataframe: %s", exc)
+
+    if not result["periods"] and bs_q is not None and hasattr(bs_q, "columns"):
+        result["periods"] = _sort_period_cols([str(c) for c in bs_q.columns if _is_period_col(c)])[:periods]
+
+    period_cols_available = list(result["periods"])
+    for col in result["periods"]:
+        # A. Liquid Cash: Check combined cash & short-term investments first, then base cash + short-term investments
+        cash_comb = _find_bs_metric(["CashCashEquivalentsAndShortTermInvestments"], col, bs_q, bs_a, fallback_cols=period_cols_available)
+        if cash_comb is not None:
+            result["cash_and_equivalents"][col] = cash_comb
+        else:
+            base_cash = _find_bs_metric(
+                ["CashAndCashEquivalentsAtCarryingValue", "CashAndCashEquivalents", "Cash", "CashAndDueFromBanks"],
+                col, bs_q, bs_a, fallback_cols=period_cols_available,
+            )
+            st_inv = _find_bs_metric(
+                ["ShortTermInvestments", "MarketableSecuritiesCurrent", "AvailableForSaleSecuritiesDebtSecuritiesCurrent", "MarketableSecurities"],
+                col, bs_q, bs_a, fallback_cols=period_cols_available,
+            )
+            if base_cash is not None or st_inv is not None:
+                result["cash_and_equivalents"][col] = (base_cash or 0.0) + (st_inv or 0.0)
+            else:
+                result["cash_and_equivalents"][col] = None
+
+        # B. Inventory
+        result["inventory"][col] = _find_bs_metric(
+            ["InventoryNet", "Inventories", "Inventory", "InventoryGross"],
+            col, bs_q, bs_a, fallback_cols=period_cols_available,
+        )
+
+        # C. Total Debt: Sum current and long-term debt, or use combined total debt concept
+        st_debt = _find_bs_metric(
+            ["LongTermDebtCurrent", "DebtCurrent", "ShortTermBorrowings", "CommercialPaper", "NotesPayableCurrent", "ConvertibleDebtCurrent"],
+            col, bs_q, bs_a, fallback_cols=period_cols_available,
+        )
+        lt_debt = _find_bs_metric(
+            ["LongTermDebtNoncurrent", "LongTermDebt", "LongTermDebtAndCapitalLeaseObligations", "LongTermNotesAndLoans", "LongTermBorrowings"],
+            col, bs_q, bs_a, fallback_cols=period_cols_available,
+        )
+        if st_debt is not None or lt_debt is not None:
+            result["total_debt"][col] = (st_debt or 0.0) + (lt_debt or 0.0)
+        else:
+            comb_debt = _find_bs_metric(
+                ["DebtLongtermAndShorttermCombinedAmount", "DebtInstrumentCarryingAmount", "TotalDebt"],
+                col, bs_q, bs_a, fallback_cols=period_cols_available,
+            )
+            result["total_debt"][col] = comb_debt
 
     # 3. Cash Flow Statement (CFO and CapEx)
     try:

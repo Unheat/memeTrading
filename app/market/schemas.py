@@ -2,7 +2,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Any, Mapping
+
+
+def _is_finite(value: float | None) -> bool:
+    """Return whether an optional numeric field is finite."""
+    return value is None or math.isfinite(value)
 
 SMA_STATUSES = ("above", "below", "unavailable")
 FIELD_STATUSES = ("ok", "unavailable")
@@ -14,7 +20,7 @@ FUNDAMENTAL_KEYS = ("market_cap", "shares_outstanding", "short_interest_pct")
 class Quote:
     """Normalized latest quote for one ticker."""
 
-    price: float
+    price: float | None
     previous_close: float | None
     change: float | None
     change_percent: float | None
@@ -24,8 +30,15 @@ class Quote:
     as_of: str
 
     def __post_init__(self) -> None:
-        if self.price <= 0:
+        numeric_values = (self.price, self.previous_close, self.change, self.change_percent, self.volume)
+        if not all(_is_finite(value) for value in numeric_values):
+            raise ValueError("quote values must be finite")
+        if self.price is not None and self.price <= 0:
             raise ValueError("price must be positive")
+        if self.price is None and self.previous_close is None:
+            raise ValueError("quote requires a finite price or previous_close")
+        if self.previous_close is not None and self.previous_close <= 0:
+            raise ValueError("previous_close must be positive")
         if self.volume is not None and self.volume < 0:
             raise ValueError("volume must be non-negative")
         if not self.as_of:
@@ -48,7 +61,7 @@ class Quote:
     def from_dict(cls, data: Mapping[str, Any]) -> Quote:
         """Rebuild quote from its dictionary form, re-validating."""
         return cls(
-            price=float(data["price"]),
+            price=float(data["price"]) if data.get("price") is not None else None,
             previous_close=float(data["previous_close"]) if data.get("previous_close") is not None else None,
             change=float(data["change"]) if data.get("change") is not None else None,
             change_percent=float(data["change_percent"]) if data.get("change_percent") is not None else None,
@@ -75,6 +88,8 @@ class CalculatedField:
             raise ValueError(f"status must be one of {FIELD_STATUSES}")
         if self.status == "ok" and self.value is None:
             raise ValueError("value must be present when status is ok")
+        if not _is_finite(self.value):
+            raise ValueError("calculated field value must be finite")
         if not self.lookback or not self.provider or not self.as_of:
             raise ValueError("lookback, provider, and as_of must be non-empty")
 

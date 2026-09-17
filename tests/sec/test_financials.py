@@ -65,3 +65,41 @@ def test_sort_period_cols_orders_chronologically_descending():
     cols = ["2024-03-31", "2024-09-30", "2024-06-30", "2023-12-31"]
     sorted_cols = _sort_period_cols(cols)
     assert sorted_cols == ["2024-09-30", "2024-06-30", "2024-03-31", "2023-12-31"]
+
+
+def test_resolve_bs_dataframe_and_col_maps_q4_to_annual_fy():
+    """Verify quarterly Q4 column maps to annual FY column on Form 10-K balance sheet."""
+    import pandas as pd
+    from app.sec.financials import _resolve_bs_dataframe_and_col, _find_bs_metric
+
+    bs_q = pd.DataFrame(
+        {"Q3 2026": [30.0], "Q2 2026": [25.0]},
+        index=["CashAndCashEquivalentsAtCarryingValue"],
+    )
+    bs_a = pd.DataFrame(
+        {
+            "FY 2026": [75.0, 10.0, 30.0],
+            "FY 2025": [70.0, 9.0, 31.0],
+        },
+        index=[
+            "CashCashEquivalentsAndShortTermInvestments",
+            "LongTermDebtCurrent",
+            "LongTermDebtNoncurrent",
+        ],
+    )
+
+    df_q, col_q = _resolve_bs_dataframe_and_col("Q3 2026", bs_q, bs_a)
+    assert df_q is bs_q
+    assert col_q == "Q3 2026"
+
+    df_q4, col_q4 = _resolve_bs_dataframe_and_col("Q4 2026", bs_q, bs_a)
+    assert df_q4 is bs_a
+    assert col_q4 == "FY 2026"
+
+    cash = _find_bs_metric(["CashCashEquivalentsAndShortTermInvestments"], "Q4 2026", bs_q, bs_a)
+    assert cash == 75.0
+
+    st_debt = _find_bs_metric(["LongTermDebtCurrent"], "Q4 2026", bs_q, bs_a)
+    lt_debt = _find_bs_metric(["LongTermDebtNoncurrent"], "Q4 2026", bs_q, bs_a)
+    assert st_debt == 10.0
+    assert lt_debt == 30.0

@@ -181,6 +181,15 @@ def build_candidate_comparisons(
             val = None
             if metric == "price":
                 val = (mkt.get("quote") or {}).get("price") or (mkt.get("quote") or {}).get("value")
+            elif metric == "market_cap":
+                fund = mkt.get("fundamentals") or {}
+                val = fund.get("market_cap")
+                if val is None:
+                    p = (mkt.get("quote") or {}).get("price") or (mkt.get("quote") or {}).get("value")
+                    sh_raw = fund.get("shares_outstanding")
+                    sh = (sh_raw.get("value") if isinstance(sh_raw, dict) else sh_raw) if sh_raw else None
+                    if p and sh and p > 0 and sh > 0:
+                        val = round(p * sh, 2)
             elif metric == "pe_ratio":
                 fund = mkt.get("fundamentals") or {}
                 val = fund.get("pe_ratio") or fund.get("trailing_pe")
@@ -200,10 +209,33 @@ def build_candidate_comparisons(
                 val = (sec.get("net_cash") or {}).get(latest_period)
                 if latest_period != "latest":
                     periods_seen.add(latest_period)
+            elif metric in ("total_debt", "debt"):
+                val = (sec.get("total_debt") or {}).get(latest_period)
+                if latest_period != "latest":
+                    periods_seen.add(latest_period)
             elif metric == "capex":
                 val = (sec.get("capex") or {}).get(latest_period)
                 if latest_period != "latest":
                     periods_seen.add(latest_period)
+            elif metric in ("cash_from_operations", "cfo", "operating_cash_flow"):
+                val = (sec.get("cash_from_operations") or {}).get(latest_period)
+                if latest_period != "latest":
+                    periods_seen.add(latest_period)
+            elif metric in ("fcf", "free_cash_flow"):
+                cfo_v = (sec.get("cash_from_operations") or {}).get(latest_period)
+                capex_v = (sec.get("capex") or {}).get(latest_period)
+                if cfo_v is not None and capex_v is not None:
+                    val = round(cfo_v - capex_v, 2)
+                if latest_period != "latest":
+                    periods_seen.add(latest_period)
+            elif metric in ("valuation", "fair_value", "intrinsic_value"):
+                dossier = cand.get("diligence_dossier") or {}
+                val_dict = dossier.get("valuation") or {}
+                val = val_dict.get("fair_value") or (val_dict.get("fair_value_range") or {}).get("base")
+            elif metric in ("implied_growth", "implied_fcf_growth_rate", "reverse_dcf"):
+                dossier = cand.get("diligence_dossier") or {}
+                val_dict = dossier.get("valuation") or {}
+                val = (val_dict.get("reverse_dcf") or {}).get("implied_fcf_growth_rate")
 
             cand_values[ticker] = {
                 "value": val,

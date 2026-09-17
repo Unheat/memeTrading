@@ -36,8 +36,18 @@ def _validate_ticker(ticker: str) -> str:
     return clean
 
 
+def _finite(value: float | None) -> float | None:
+    """Return a finite numeric value or ``None`` for invalid provider output."""
+    try:
+        numeric = float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+    return numeric if numeric is not None and np.isfinite(numeric) else None
+
+
 def _field(value: float | None, lookback: str, as_of: str, benchmark: str | None = None) -> CalculatedField:
     """Wrap a metric result into a provenance-stamped CalculatedField."""
+    value = _finite(value)
     if value is None:
         return _unavailable_field(lookback, benchmark, PROVIDER_NAME, as_of)
     return CalculatedField(
@@ -73,25 +83,27 @@ def get_market_data(
     # Quote
     quote = None
     if len(closes) >= 1:
-        prev = float(closes[-2]) if len(closes) >= 2 else None
-        change = float(closes[-1] - prev) if prev is not None else None
-        change_pct = (change / prev) if (change is not None and prev) else None
-        last_volume = float(volumes[-1]) if len(volumes) else None
-        info_cache = None
-        try:
-            info_cache = fetch_info(clean_ticker)
-        except MarketDataError:
+        latest = _finite(closes[-1])
+        prev = _finite(closes[-2]) if len(closes) >= 2 else None
+        if latest is not None or prev is not None:
+            change = (latest - prev) if latest is not None and prev is not None else None
+            change_pct = (change / prev) if (change is not None and prev) else None
+            last_volume = _finite(volumes[-1]) if len(volumes) else None
             info_cache = None
-        quote = Quote(
-            price=float(closes[-1]),
-            previous_close=prev,
-            change=change,
-            change_percent=round(change_pct, 6) if change_pct is not None else None,
-            volume=last_volume,
-            currency=info_cache.get("currency") if info_cache else None,
-            exchange=info_cache.get("exchange") if info_cache else None,
-            as_of=as_of,
-        )
+            try:
+                info_cache = fetch_info(clean_ticker)
+            except MarketDataError:
+                info_cache = None
+            quote = Quote(
+                price=latest,
+                previous_close=prev,
+                change=change,
+                change_percent=round(change_pct, 6) if change_pct is not None else None,
+                volume=last_volume,
+                currency=info_cache.get("currency") if info_cache else None,
+                exchange=info_cache.get("exchange") if info_cache else None,
+                as_of=as_of,
+            )
 
     # Returns
     returns = {
@@ -126,11 +138,13 @@ def get_market_data(
     mkt_cap = None
     try:
         info = fetch_info(clean_ticker)
-        mkt_cap = info.get("market_cap")
+        mkt_cap = _finite(info.get("market_cap"))
+        shares = _finite(info.get("shares_outstanding"))
+        short_interest = _finite(info.get("short_interest_pct"))
         fundamentals = {
             "market_cap": {"value": mkt_cap, "reliable": mkt_cap is not None},
-            "shares_outstanding": {"value": info.get("shares_outstanding"), "reliable": info.get("shares_outstanding") is not None},
-            "short_interest_pct": {"value": info.get("short_interest_pct"), "reliable": info.get("short_interest_pct") is not None},
+            "shares_outstanding": {"value": shares, "reliable": shares is not None and shares > 0},
+            "short_interest_pct": {"value": short_interest, "reliable": short_interest is not None},
         }
     except MarketDataError:
         fundamentals = None

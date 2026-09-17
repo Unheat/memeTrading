@@ -93,8 +93,17 @@ def _extract_document_links(body: bytes, base_url: str, max_links: int = 20) -> 
 
     doc_extensions = (".pdf", ".xlsx", ".xls", ".csv", ".docx", ".pptx")
     doc_keywords = (
-        "/investor", "/financial", "/report", "/earnings", "/sec", "/presentation",
-        "/deck", "/transcript", "/shareholder", "/filing", "/quarterly", "/annual"
+        "/financial", "/earnings", "/quarterly",
+        "/presentation", "/deck", "/transcript", "/shareholder",
+        "/sec-filing", "/annual-report"
+    )
+    ir_exclusions = (
+        "corporate-governance", "board-of-directors", "board-committees",
+        "policies", "guidelines", "bylaws", "ethics", "code-of-conduct",
+        "esg", "sustainability", "csr", "human-rights", "diversity",
+        "contact", "faq", "terms", "privacy", "accessibility", "site-map",
+        "store", "shop", "overview", "framework", "person-details", "annual-meeting",
+        "leadership", "committee", "compensation-committee", "audit-committee"
     )
 
     for a in soup.find_all("a", href=True):
@@ -109,9 +118,13 @@ def _extract_document_links(body: bytes, base_url: str, max_links: int = 20) -> 
         lower_url = full_url.lower()
         lower_text = text.lower()
 
+        # Filter out administrative, governance, committee, and ESG boilerplate
+        if any(ex in lower_url or ex in lower_text for ex in ir_exclusions):
+            continue
+
         is_doc = any(lower_url.endswith(ext) or (ext + "?") in lower_url for ext in doc_extensions)
         is_ir_link = any(kw in lower_url for kw in doc_keywords) or any(
-            kw in lower_text for kw in ("pdf", "presentation", "earnings", "transcript", "10-k", "10-q", "report", "deck", "slide", "letter")
+            kw in lower_text for kw in ("presentation", "earnings", "financial", "transcript", "10-k", "10-q", "slide deck", "investor presentation", "shareholder")
         )
 
         if is_doc or is_ir_link:

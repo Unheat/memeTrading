@@ -418,21 +418,37 @@ def run_quant_analysis(state: InvestigationState) -> dict[str, Any]:
     market = _mapping(state.get("market_context"))
     sec = _mapping(state.get("sec_financials"))
     period = _latest_period(sec)
-    fundamentals = _mapping(market.get("fundamentals"))
-    quote = _mapping(market.get("quote"))
-    price = _number(quote.get("price", quote.get("value")))
-    shares = _number(fundamentals.get("shares_outstanding"))
+    from app.market.valuation_inputs import resolve_valuation_market_inputs
+
+    market_inputs = resolve_valuation_market_inputs(market)
+    price = market_inputs["price"]
+    shares = market_inputs["shares_outstanding"]
     cfo = _number(_mapping(sec.get("cash_from_operations")).get(period)) if period else None
     capex = _number(_mapping(sec.get("capex")).get(period)) if period else None
     cash = _number(_mapping(sec.get("cash_and_equivalents")).get(period)) if period else None
     debt = _number(_mapping(sec.get("total_debt")).get(period)) if period else None
+
+    bs_period = period
+    if (cash is None or debt is None) and sec.get("periods"):
+        for alt_period in sec.get("periods") or ():
+            alt_cash = _number(_mapping(sec.get("cash_and_equivalents")).get(alt_period))
+            alt_debt = _number(_mapping(sec.get("total_debt")).get(alt_period))
+            if cash is None and alt_cash is not None:
+                cash = alt_cash
+                bs_period = alt_period
+            if debt is None and alt_debt is not None:
+                debt = alt_debt
+                bs_period = alt_period
+            if cash is not None and debt is not None:
+                break
+
     fcf = cfo - capex if cfo is not None and capex is not None else None
     net_cash = cash - debt if cash is not None and debt is not None else None
 
     missing = [
         name for name, value in {
-            "current market price": price,
-            "market fundamentals shares_outstanding": shares,
+            "verified market price or prior close": price,
+            "reliable diluted shares outstanding": shares,
             "SEC cash from operations": cfo,
             "SEC CapEx": capex,
             "SEC cash and equivalents": cash,
@@ -466,10 +482,12 @@ def run_quant_analysis(state: InvestigationState) -> dict[str, Any]:
         "high_case_discount_rate": high_discount,
     }
     source_mapping = {
-        "current_price": "market_context.quote.price|value",
-        "shares_diluted": "market_context.fundamentals.shares_outstanding",
+        "current_price": market_inputs["provenance"]["price_input_field"],
+        "shares_diluted": market_inputs["provenance"]["shares_input_field"],
         "fcf_base": f"sec_financials.cash_from_operations[{period}] - sec_financials.capex[{period}]",
-        "net_cash": f"sec_financials.cash_and_equivalents[{period}] - sec_financials.total_debt[{period}]",
+        "net_cash": f"sec_financials.cash_and_equivalents[{bs_period}] - sec_financials.total_debt[{bs_period}]",
+        "balance_sheet_period": bs_period,
+        "market_price_provenance": market_inputs["provenance"],
     }
     model = {
         "inputs": {"current_price": price, "fcf_base": fcf, "shares_diluted": shares, "net_cash": net_cash},

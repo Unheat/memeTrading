@@ -364,6 +364,42 @@ Research validation incomplete — no position and no target.
     return memo
 
 
+def _format_comparison_val(metric: str, cand_val: Any) -> str:
+    """Format a candidate comparison value cleanly for Markdown tables."""
+    if not isinstance(cand_val, dict):
+        return str(cand_val) if cand_val is not None else "N/A"
+    raw_val = cand_val.get("value")
+    period = cand_val.get("period")
+    if raw_val is None:
+        return "N/A"
+    if isinstance(raw_val, (int, float)):
+        metric_lower = metric.lower()
+        if "margin" in metric_lower or "pct" in metric_lower or "growth" in metric_lower:
+            formatted = f"{raw_val:.1%}" if abs(raw_val) < 5.0 else f"{raw_val:.1f}%"
+        elif metric_lower in ("price", "fair_value"):
+            formatted = f"${raw_val:,.2f}"
+        elif metric_lower in ("revenue", "net_cash", "total_debt", "capex", "cash_from_operations", "fcf", "market_cap"):
+            abs_v = abs(raw_val)
+            sign = "-" if raw_val < 0 else ""
+            if abs_v >= 1e12:
+                formatted = f"{sign}${abs_v / 1e12:.2f}T"
+            elif abs_v >= 1e9:
+                formatted = f"{sign}${abs_v / 1e9:.2f}B"
+            elif abs_v >= 1e6:
+                formatted = f"{sign}${abs_v / 1e6:.2f}M"
+            else:
+                formatted = f"{sign}${abs_v:,.2f}"
+        elif metric_lower in ("pe_ratio", "reward_to_risk_ratio"):
+            formatted = f"{raw_val:.2f}x"
+        else:
+            formatted = f"{raw_val:,.2f}"
+    else:
+        formatted = str(raw_val)
+    if period and period != "latest":
+        return f"{formatted} ({period})"
+    return formatted
+
+
 def render_research_report(state: InvestigationState, final_text: str) -> str:
     """Render one prompt-directed report without profile or mode conclusions.
 
@@ -382,6 +418,7 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
         for candidate in candidates.values() if isinstance(candidate, dict)
     ] or ["| None | No registered candidates | no | no |"]
     ranking = "Not requested" if not requested_count else f"Requested ranking count: {requested_count}; registered candidates: {len(candidates)}"
+    ranking_line = f"**Ranking Requirement**: {ranking}\n" if requested_count else ""
 
     # 1. Normalized candidate comparisons
     comparison_section = ""
@@ -391,7 +428,7 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
         for c in comparisons:
             m_key = c.get("metric_key") or "Metric"
             vals = c.get("candidate_values") or {}
-            val_strs = [f"${k}: {v}" for k, v in vals.items()]
+            val_strs = [f"${k}: {_format_comparison_val(m_key, v)}" for k, v in vals.items()]
             comp_rows.append(f"| {m_key} | {c.get('period_basis', 'N/A')} | {', '.join(val_strs)} | {c.get('comparability', 'N/A')} |")
         if comp_rows:
             comparison_section = f"""
@@ -448,7 +485,7 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
     evidence_section = ""
     if evidence:
         ev_rows = [
-            f"| {e.get('form', 'SEC')} | `{e.get('accession', 'N/A')}` | [{e.get('form', 'Source')}]({e.get('source_url', 'N/A')}) | \"{e.get('quote', '').replace(chr(10), ' ')}\" |"
+            f"| {e.get('form') or ('SEC' if e.get('accession') else 'Primary Source')} | `{e.get('accession') or 'N/A'}` | [{e.get('form') or 'Source'}]({e.get('source_url', 'N/A')}) | \"{e.get('quote', '').replace(chr(10), ' ')}\" |"
             for e in evidence[:10]
         ]
         evidence_section = f"""
@@ -505,8 +542,7 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
 
 **Case Reference**: `{state.get('case_id') or 'N/A'}`
 **Status**: `{state.get('status', 'completed')}`
-**{ranking}**
-
+{ranking_line}
 ## Request
 {state.get('trigger', {}).get('query') or 'User research request'}
 

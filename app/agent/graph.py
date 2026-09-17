@@ -57,12 +57,19 @@ def _has_evidence_gaps(state: InvestigationState) -> bool:
                     return True
 
     sources = state.get("source_records") or []
-    unread_docs = [
+    unread_pdfs = [
         s for s in sources
         if isinstance(s, Mapping) and s.get("status") == "discovered"
-        and (str(s.get("url") or "").lower().endswith(".pdf") or s.get("tool") == "read_document_discovery")
+        and str(s.get("url") or "").lower().endswith(".pdf")
     ]
-    if unread_docs:
+    if unread_pdfs:
+        return True
+
+    open_items = [
+        w for w in (state.get("work_queue") or [])
+        if isinstance(w, Mapping) and w.get("status") == "queued"
+    ]
+    if open_items:
         return True
 
     return False
@@ -211,6 +218,10 @@ def create_research_graph(
             f"- Primary Questions:\n" + "\n".join(f"  * {q}" for q in plan.primary_questions)
         )
 
+        logger.info(
+            "pipeline.planner_complete type=%s candidates=%s questions=%s work_items=%s",
+            plan.research_type, len(plan.candidate_entities), len(plan.primary_questions), len(work_items),
+        )
         return {
             "research_plan": [plan_dict],
             "research_intent": intent.to_dict(),
@@ -232,6 +243,10 @@ def create_research_graph(
         allowed = list(getattr(response, "tool_calls", None) or [])[:remaining]
         if isinstance(response, AIMessage) and allowed != response.tool_calls:
             response = response.model_copy(update={"tool_calls": allowed})
+        logger.info(
+            "pipeline.executor_turn tool_calls_requested=%s tool_calls_admitted=%s total_after=%s",
+            [call.get("name") for call in getattr(response, "tool_calls", []) or []], len(allowed), state.get("tool_calls", 0) + len(allowed),
+        )
         return {"messages": [response], "tool_calls": state.get("tool_calls", 0) + len(allowed)}
 
     def ingest_node(state: InvestigationState) -> dict[str, Any]:
@@ -268,6 +283,12 @@ def create_research_graph(
                 updated_queue.append(w)
             updates["work_queue"] = updated_queue
 
+        logger.info(
+            "pipeline.ingest_complete receipts=%s candidates=%s candidate_market=%s candidate_sec=%s",
+            len(updates.get("searches_performed") or []), len(updates.get("candidates") or {}),
+            [cid for cid, cand in (updates.get("candidates") or {}).items() if isinstance(cand, Mapping) and cand.get("market_context")],
+            [cid for cid, cand in (updates.get("candidates") or {}).items() if isinstance(cand, Mapping) and cand.get("sec_financials")],
+        )
         return updates
 
     def reflection_node(state: InvestigationState) -> dict[str, Any]:
@@ -308,14 +329,14 @@ def create_research_graph(
                 ):
                     deterministic_gaps.append(f"Missing SEC financial data for candidate ${t}; call `get_sec_financials` or pull filings.")
 
-        unread_docs = [
-            s.get("url")
+        unread_pdfs = [
+            str(s.get("url"))
             for s in sources
             if isinstance(s, Mapping) and s.get("status") == "discovered"
-            and (str(s.get("url") or "").lower().endswith(".pdf") or s.get("tool") == "read_document_discovery")
+            and str(s.get("url") or "").lower().endswith(".pdf")
         ]
-        for url in unread_docs:
-            deterministic_gaps.append(f"Unread discovered document {url}; call `read_document`.")
+        for url in unread_pdfs[:2]:
+            deterministic_gaps.append(f"Unread financial/earnings PDF {url}; call `read_document` if needed.")
 
         open_items = [w.get("question") for w in (state.get("work_queue") or []) if isinstance(w, Mapping) and w.get("status") == "queued"]
         for q in open_items[:2]:
@@ -327,8 +348,13 @@ def create_research_graph(
                 if g not in all_gaps:
                     all_gaps.append(g)
 
-        is_complete = not all_gaps and (reflection.is_research_complete if reflection else True)
+        core_gaps_exist = _has_evidence_gaps(state)
+        is_complete = not core_gaps_exist and (reflection.is_research_complete if reflection else True)
         max_reflections = budget.get("max_reflection_rounds", 2)
+        logger.info(
+            "pipeline.reflection round=%s complete=%s gaps=%s open_work_items=%s",
+            ref_count, is_complete, all_gaps[:6], len(open_items),
+        )
         if not is_complete and ref_count <= max_reflections:
             prompt_lines = [
                 f"### DEEP RESEARCH GAP REFLECTION (Round {ref_count} of {max_reflections})",

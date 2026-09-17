@@ -5,6 +5,7 @@ This module is locally written; it contains no copied or adapted donor code.
 from __future__ import annotations
 
 import json
+import logging
 import math
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -12,6 +13,8 @@ from typing import Any
 from langchain_core.messages import ToolMessage
 
 from app.agent.contracts import ADMISSIBLE_EVIDENCE_STATUSES, ToolResultEnvelope
+
+logger = logging.getLogger(__name__)
 
 _NON_ROUTABLE_STATUSES = frozenset({
     "not_applicable", "unavailable", "paywalled", "invalid_input",
@@ -66,6 +69,21 @@ def ingest_tool_results(state: Mapping[str, Any], messages: Sequence[ToolMessage
         if parse_error:
             envelope = ToolResultEnvelope(status="error", payload=payload, reason=parse_error)
         else:
+            tool_name = message.name or ""
+            if tool_name in _CANDIDATE_SCOPED_TOOLS and not payload.get("candidate_id"):
+                ticker = str(payload.get("ticker") or "").upper().strip()
+                if ticker:
+                    matched_ids = [
+                        candidate_id
+                        for candidate_id, candidate in candidates.items()
+                        if isinstance(candidate, Mapping) and str(candidate.get("ticker") or "").upper().strip() == ticker
+                    ]
+                    if len(matched_ids) == 1:
+                        payload = {**payload, "candidate_id": matched_ids[0]}
+                        logger.info(
+                            "pipeline.candidate_id_resolved tool=%s ticker=%s candidate_id=%s",
+                            tool_name, ticker, matched_ids[0],
+                        )
             envelope = ToolResultEnvelope.from_payload(payload)
 
         ownership_error = (
@@ -80,7 +98,12 @@ def ingest_tool_results(state: Mapping[str, Any], messages: Sequence[ToolMessage
                 "reason": ownership_error,
             })
 
-        update["searches_performed"].append(_build_receipt(message, envelope))
+        receipt = _build_receipt(message, envelope)
+        update["searches_performed"].append(receipt)
+        logger.info(
+            "pipeline.tool_receipt tool=%s status=%s candidate_id=%s ticker=%s code=%s",
+            receipt["tool"], envelope.status, envelope.candidate_id, envelope.ticker, envelope.code,
+        )
         if envelope.status in ADMISSIBLE_EVIDENCE_STATUSES:
             _route_success(
                 update,
@@ -206,7 +229,8 @@ def _route_success(
         return
     if tool_name in _CANDIDATE_SCOPED_TOOLS and candidate is not None:
         _route_candidate_tool(candidate, tool_name, clean, confidences, allow_partial=allow_partial)
-        return
+        if multi_candidate:
+            return
     if tool_name in _CANDIDATE_SCOPED_TOOLS and multi_candidate:
         return
     if tool_name == "get_market_data":
