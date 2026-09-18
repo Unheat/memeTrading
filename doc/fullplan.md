@@ -49,26 +49,26 @@ The system organizes institutional equity research into a **5-Stage Model-Direct
 ```text
                ┌────────────────────────────────────────────────────────┐
                │ STAGE 1: STRUCTURED PLANNER (planner)                  │
-               │  • Decomposes query into ResearchPlanSchema            │
-               │  • Establishes single vs multi-candidate scope         │
-               │  • Formulates initial hypotheses and work queue        │
+               │  • Pydantic structured output (ResearchPlanSchema)     │
+               │  • Decomposes query into research_type, ranking_count, │
+               │    candidate_entities, and primary_questions           │
+               │  • Populates prioritized deterministic work_queue      │
                └───────────────────────────┬────────────────────────────┘
                                            │
                                            ▼
                ┌────────────────────────────────────────────────────────┐
                │ STAGE 2: DEEP RESEARCH AGENT LOOP (executor)           │
                │  • The Analyst Workbench: Model-directed reasoning loop│
-               │  • Dynamic Tool Execution across 6 categories:         │
-               │    - Discovery: search_social, search_articles, web     │
+               │  • 20 Normalized Tools across 6 capabilities:          │
+               │    - Discovery: search_social, search_articles, web    │
                │    - Primary Docs: read_article, read_document (PDF)   │
-               │    - SEC Filings: list_sec_filings, pull_sec_filings   │
-               │    - SEC RAG: search_sec_evidence, read_sec_evidence,  │
-               │               verify_sec_claim                         │
+               │    - SEC Sub-Agent: investigate_sec, verify_sec_claim  │
                │    - Accounting: get_sec_financials (with 10-Q        │
                │                  de-cumulation & 8 forensic concepts)  │
                │    - Context: get_market_data, get_company_research,   │
                │               get_macro_context, insider activity      │
-               │    - Screening: register_candidate, compare_candidates │
+               │    - Screening: register_candidate (early vetoes),     │
+               │                 compare_candidates                     │
                │  • Diligence Sub-Agents on demand via tools:           │
                │    - conduct_candidate_diligence(ticker) sub-agent     │
                │      (Expectations -> Forensics -> Quant DCF ->        │
@@ -89,20 +89,22 @@ The system organizes institutional equity research into a **5-Stage Model-Direct
                ┌────────────────────────────────────────────────────────┐
                │ STAGE 4: GAP REFLECTION (reflect)                      │
                │  • Audits state against ResearchPlanSchema             │
-               │  • Detects missing peer filings or unread PDF evidence │
+               │  • Checks candidate diligence readiness & unread PDFs  │
                │  • Injects targeted gap prompts (up to 2 rounds)       │
+               │  • Fast-Path Early Veto Circuit Breaker (status=vetoed)│
+               │    bypasses uninvestable/fraudulent assets cleanly     │
                └───────────────────────────┬────────────────────────────┘
                                            │ (Research Complete / Budget Reached)
                                            ▼
                ┌────────────────────────────────────────────────────────┐
                │ STAGE 5: FINAL DECISION & GOVERNANCE (diligence_node)  │
-               │  • 1. Evidence Gate: Audits primary SEC citations      │
+               │  • 1. Evidence Gate (G1): Audits primary SEC citations │
                │  • 2. Candidate Promotion: Promotes winning candidate's│
                │       dossier (highest asymmetric R:R) into top state  │
                │  • 3. Instant Math Governance Gates (Zero engine rerun)│
-               │       - Accounting Gate (Full 8-Factor Beneish & Sloan)│
-               │       - Valuation Gate (DCF growth hurdle check)       │
-               │       - Asymmetry Gate (Reward-to-Risk ratio >= 3.0x)  │
+               │       - Accounting Gate (G2: Full 8-Factor Beneish)    │
+               │       - Valuation Gate (G3: calculator.mjs check)      │
+               │       - Asymmetry Gate (G4: Reward-to-Risk >= 3.0x)    │
                │  • 4. Investment Committee (CIO Deliberation):         │
                │       - Single LLM deliberation on Bull vs Bear evidence│
                │       - Enforces strict 3:1 Passing Discipline         │
@@ -113,6 +115,41 @@ The system organizes institutional equity research into a **5-Stage Model-Direct
                                            v
                        Creatorberry/faceless delivery (optional)
 ```
+
+The 5 core stages operate as follows:
+
+1. **Structured Research Planner (`planner_node`)**:
+   - The investigation enters at `planner_node`, which invokes the model with `ResearchPlanSchema` via structured outputs (`with_structured_output`).
+   - The planner categorizes the mandate (`single_diligence`, `multi_candidate_ranking`, or `general_deep_dive`), extracts explicit target tickers, extracts user-requested ranking counts (e.g. 2 for "best 2 tech stocks"), and formulates 3 to 5 falsifiable primary sub-questions.
+   - It initializes a deterministic `work_queue` of prioritized `ResearchWorkItem` objects (e.g. `evidence_tier="primary_sec"`, `evidence_tier="candidate_diligence"`), ensuring that all research mandates are tracked deterministically across turns.
+
+2. **High-Agency Tool Execution & Ingestion (`executor_node` + `tools` + `ingest_node`)**:
+   - The Lead Investigator model has full operational freedom over tool selection, sequencing, and pacing. It is not restricted to a fixed linear sequence.
+   - In multi-candidate ranking or comparative analysis, the model calls `register_candidate` to allocate separate, isolated candidate workspaces (`candidates[cid]`).
+   - Every tool call returns a typed envelope audited by `ingest_tool_results`:
+     - Company-specific metrics, quotes, and filings are routed exclusively to the owning candidate workspace (`candidates[cid]`).
+     - Global macro indicators (FRED Treasury yield curves) and market benchmarks are persisted into top-level state.
+     - Completed tool receipts advance corresponding items in `work_queue` from `queued` to `completed`.
+   - Context is managed dynamically via `prepare_context`: 1,000,000 token capacity with a 200,000 token watermark. Older verbose tool results are pruned into compact receipts while call-and-response pair IDs remain intact.
+
+3. **Supervisor Gap Reflection (`reflection_node`)**:
+   - When the executor turn finishes, the graph evaluates `should_continue_executor`. If tool budget remains and reflection rounds are under limit (default 2), it routes to `reflection_node`.
+   - The supervisor inspects all active candidate workspaces:
+     - Did every candidate receive market data and SEC financial statements?
+     - Did every active candidate receive valuation modeling (`valuation`) and Red Team diligence (`diligence_dossier`)?
+     - If multiple candidates are active, has `compare_candidates` been executed?
+     - Are there unread discovered investor PDF decks or unresolved items in `work_queue`?
+   - If actionable gaps exist, the supervisor injects a `DEEP RESEARCH GAP REFLECTION` message listing the exact missing items and routes back to `executor_node`.
+   - **Fast-Path Early Veto Circuit Breaker**: If the analyst uncovers an immediate disqualifying flaw (Item 4.01 auditor resignation, SEC fraud probe, balance sheet insolvency, or 7-day earnings blackout risk), it can register `register_candidate(status="vetoed", reason="...")`. The reflection supervisor recognizes the veto, marks candidate work items as completed, and allows an immediate clean exit without forcing 10+ wasteful tool calls on toxic assets.
+
+4. **Diligence Lenses & Investment Committee (`diligence_node`)**:
+   - Evaluates the four formal institutional gates:
+     - **G1 Research Completeness Gate**: Verifies required primary SEC and market context evidence exist for all non-vetoed candidates.
+     - **G2 Forensic Accounting Gate**: Evaluates Beneish M-Score manipulation risk, Sloan accruals quality, and SBC dilution burden.
+     - **G3 Valuation Gate**: Validates that Reverse DCF and Fair Value ranges are mathematically reproducible via the deterministic `calculator.mjs` engine.
+     - **G4 Asymmetry Gate**: Mathematically enforces that the upside to Base Fair Value outweighs downside to Bear Floor by at least 3.0 to 1.
+   - Runs the Chief Investment Officer deliberation and calculates Fractional Kelly position sizing in deterministic code.
+   - Renders the finalized publication-grade `memo.md` and machine-readable `investigation.json`.
 
 ### Outer-agent behavior
 
@@ -180,19 +217,29 @@ read_article(url: str) -> ArticleContent
 
 Use `adbar/trafilatura` for URL-to-cleaned-article-text and metadata. Do not implement a generic HTML/article parser. This is live research only, not an article RAG corpus. All outbound HTTP requests must pass through strict SSRF validation (blocking private/loopback/link-local/cloud-metadata targets before and after redirects).
 
+### `read_document`
+
+```python
+read_document(url: str, candidate_id: str | None = None, max_pages: int = 20) -> DocumentContent
+```
+
+Extracts cleaned prose, structured financial tables, and embedded links from authoritative primary documents, specifically investor presentations, slide decks, earnings press releases, whitepapers, and regulatory PDFs. It automatically harvests discovered PDF/document links and attaches extracted evidence directly to the candidate workspace.
+
 ### `search_web`
 
 ```python
-search_web(query: str, domains: list[str] | None = None) -> WebSearchResult
+search_web(query: str, domains: list[str] | None = None,
+           limit: int = 10, file_type: str | None = None) -> WebSearchResult
 ```
 
-One general research tool covers company/counterparty websites, IR pages, press releases, and regulatory announcements. Use `search_articles` for professional news and analysis. Do not add separate company, news, counterparty, article, or social agents.
+One general research tool covers company/counterparty websites, IR pages, press releases, and regulatory announcements. Supports `file_type='pdf'` to discover direct presentation slide decks or quarterly report PDFs (e.g. `query='NVIDIA AI capex investor presentation', file_type='pdf'`).
 
 ### `get_market_data`
 
 ```python
 get_market_data(ticker: str, period: str | None = None,
-                benchmark_ticker: str = "SPY") -> MarketDataResult
+                benchmark_ticker: str = "SPY",
+                candidate_id: str | None = None) -> MarketDataResult
 ```
 
 This remains the one market-context tool; do not add a separate technical-analysis agent or one tool per indicator. Use a provider abstraction: Yahoo/yfinance initially, Finnhub or Stooq fallback. Return normalized price, price change, volume/history, OHLCV, market capitalization, float and shares outstanding when reliable, plus available short interest.
@@ -202,41 +249,104 @@ Deterministic code derives only the compact context set needed to assess whether
 ### `get_company_research`
 
 ```python
-get_company_research(ticker: str) -> CompanyResearchResult
+get_company_research(ticker: str, candidate_id: str | None = None) -> CompanyResearchResult
 ```
 
 One Wall Street consensus benchmark tool; do not add separate analyst, estimate, or earnings-calendar tools. Returns normalized secondary research data: analyst price-target range (low, mean, high), consensus ratings (buy/hold/sell counts and trend), forward EPS and revenue estimates with revision direction, earnings calendar and next-earnings date. Every field declares its provider, as-of timestamp, and availability status; micro-caps and companies without institutional coverage return an explicit `unavailable` status per field rather than zeros. Provider abstraction: `yfinance` first (no key required); Finnhub optional when `FINNHUB_API_KEY` is configured (see keyed free-tier provider policy). The tool never produces a recommendation; the outer agent uses it only for the expectation-gap comparison against verified ground reality and SEC evidence.
 
-### `list_sec_filings`
+### `get_macro_context`
 
 ```python
-list_sec_filings(ticker: str, forms: list[str] | None = None,
-                 since: str | None = None) -> SecFilingList
+get_macro_context(series_ids: list[str]) -> MacroContextResult
 ```
 
-Metadata only: form, filing date, accession, filing URL, and cheaply available exhibits. No bodies download. Use a thin wrapper around `edgartools` and official SEC data; respect SEC identification and rate limits.
+Fetches official macroeconomic indicators from the Federal Reserve Economic Data (FRED) API (e.g. `DGS10` for 10-year Treasury yield curve, `FEDFUNDS` for federal funds rate, `CPIAUCSL` for inflation, `UNRATE` for unemployment). Used to establish the sovereign risk-free rate, cost of capital, and macroeconomic regime.
 
-### `pull_sec_filings`
+### `get_ownership_and_insider_activity`
 
 ```python
-pull_sec_filings(case_id: str,
-                 selections: list[SelectedSecDocument]) -> PulledCorpus
+get_ownership_and_insider_activity(ticker: str, candidate_id: str | None = None,
+                                   limit: int = 20) -> InsiderActivityResult
 ```
 
-`SelectedSecDocument` explicitly pairs a complete `FilingMetadata` record (accession, form, filing date, report date, CIK, ticker) with the document name and source URL to acquire. The outer agent chooses these exact records; it does not merely supply a ticker, form filter, and arbitrary limit. Download selected filing text and material exhibits to one case-local corpus, returning `corpus_id`, document metadata, and accessions. Never indiscriminately ingest EDGAR. All corpus storage is strictly isolated and validated via `case_path`.
+Audits insider transactions (SEC Form 4) and major ownership filings (13D/13G). Deterministically parses transaction codes to rigorously distinguish discretionary open-market insider buying (Code P) and selling (Code S) from non-discretionary tax withholding (Code F) or option exercises (Code M). Prevents misinterpreting executive equity compensation vesting as insider dumping.
+
+### `register_candidate`
+
+```python
+register_candidate(ticker: str, company: str,
+                   candidate_id: str | None = None,
+                   reason: str = "",
+                   status: str = "discovered") -> CandidateRegistrationResult
+```
+
+Registers a discovered candidate company into the screening workspace, allocating an isolated `CandidateResearchState` (`candidates[cid]`). Also acts as the **Fast-Path Early Veto** mechanism: if an analyst uncovers an immediate disqualifying fatal flaw in an 8-K (such as Item 4.01 auditor resignation, SEC fraud probe, balance sheet insolvency, or 7-day earnings blackout), it calls `register_candidate(ticker=..., status='vetoed', reason=...)`. The reflection supervisor recognizes the early veto and permits an immediate clean exit without wasteful DCF modeling.
+
+### `compare_candidates`
+
+```python
+compare_candidates(candidate_ids: list[str],
+                   metrics: list[str] | None = None) -> CandidateComparisonResult
+```
+
+Compiles a normalized cross-company comparison matrix across registered candidates. Extracts financial metrics (gross margin %, operating margin %, revenue, CapEx, free cash flow, valuation, Reverse DCF implied growth, and asymmetry ratios) from candidate workspaces, performs fiscal period alignment checks (flagging `comparable` vs `period_mismatch`), and renders `ComparisonCard` items for the durable state and final memo.
+
+### `evaluate_valuation`
+
+```python
+evaluate_valuation(ticker: str, candidate_id: str | None = None) -> ValuationResult
+```
+
+Executes deterministic quantitative valuation modeling via `app/valuation/calculator.mjs`. Solves for the Michael Mauboussin Reverse DCF implied growth rate ($g_{\text{implied}}$) baked into the current market price, computes intrinsic Fair Value ranges (Low / Base / High), and tests the 3:1 asymmetric reward-to-risk hurdle against verified SEC cash flows, net cash, and diluted shares.
+
+### `conduct_candidate_diligence`
+
+```python
+conduct_candidate_diligence(ticker: str, candidate_id: str | None = None,
+                           focus_questions: list[str] | None = None) -> DiligenceDossierResult
+```
+
+Spawns an isolated candidate deep diligence sub-agent with its own private context window. Evaluates:
+1. Michael Mauboussin Reverse Expectations & quantitative assumptions.
+2. Forensic accounting audit (Beneish M-Score manipulation risk, Sloan accruals, SBC dilution).
+3. Competitive moat durability & Hamilton Helmer 7 Powers rating.
+4. Deterministic DCF fair value range and implied growth rate via `calculator.mjs`.
+5. Air-gapped Bull Advocate (operating leverage catalysts).
+6. Hostile Bear Red Team stress-testing with minimum 4 falsifiable objections, 2 numeric kill triggers, and bear floor price.
+Returns a structured `diligence_dossier` that auto-promotes into the candidate workspace.
+
+### `investigate_sec` (Option C: High-Leverage SEC Specialist Sub-Agent)
+
+```python
+investigate_sec(ticker: str, task: str,
+                form: str | None = None,
+                candidate_id: str | None = None) -> SecInvestigationResult
+```
+
+Commands the specialized SEC Filing Analyst sub-agent to investigate open research questions or verify complex disclosures in official SEC EDGAR filings (10-K, 10-Q, 8-K, Form 4). Under the hood, the sub-agent:
+1. Auto-resolves ticker and CIK.
+2. Auto-discovers relevant filings matching `form` via `_list_sec_filings`.
+3. Auto-pulls documents and material exhibits to the case-local corpus via `_pull_sec_filings` if not already cached.
+4. Chunks and builds the local hybrid FAISS dense + BM25 sparse vector index.
+5. Executes hybrid RAG search with Reciprocal Rank Fusion (RRF) for the most relevant sections.
+6. A specialized SEC Analyst LLM reads the retrieved excerpts and synthesizes a concise, grounded research response citing exact accession numbers, filing forms, dates, and verbatim quotes.
+7. Auto-ingests verified evidence quotes directly into `candidate["evidence"]` and `state["evidence"]`.
 
 ### `verify_sec_claim`
 
 ```python
-verify_sec_claim(corpus_id: str, claim: str) -> SECVerification
+verify_sec_claim(claim: str, ticker: str | None = None,
+                 corpus_id: str | None = None,
+                 candidate_id: str | None = None) -> SECVerificationResult
 ```
 
-Verifier is a black-box local-evidence tool. Internals use BM25, dense embeddings, FAISS indexing (`sec.faiss`), and reciprocal rank fusion. The verifier runs without internet access or web search; inference is performed via an approved, allowlisted OpenAI-compatible endpoint with JSON Schema constraints. Offline fallback must abstain with `INSUFFICIENT_EVIDENCE` and never manufacture false confirmations.
+Tests a specific material claim or rumor from social media or news articles against official local SEC filings. Automatically resolves the candidate's local corpus directory from `ticker` (or uses `corpus_id` for backward compatibility), retrieves candidate chunks via hybrid RAG, runs the isolated claim assessor, and returns a grounded `CONFIRMED`, `CONTRADICTED`, or `INSUFFICIENT_EVIDENCE` verdict with verbatim supporting/contradicting quotes and accession citations.
 
 ### `get_sec_financials`
 
 ```python
-get_sec_financials(ticker: str, periods: int = 4) -> SecFinancialsResult
+get_sec_financials(ticker: str, periods: int = 4,
+                   candidate_id: str | None = None) -> SecFinancialsResult
 ```
 
 Deterministic SEC XBRL financial statement extraction tool. Extracts quarterly income statement (revenue, gross profit, operating income, net income, SG&A), balance sheet (liquid cash, total debt, net cash, inventories, total assets, accounts receivable, current assets, net PP&E, current liabilities), and cash flows (operating cash flow, CapEx, depreciation, stock-based compensation) directly from official SEC XBRL data.
@@ -246,54 +356,23 @@ Crucial Data Integrity Capabilities:
 2. **True Trailing Twelve Months (TTM) Free Cash Flow**: Computes discrete period FCF ($CFO - CapEx$) and sums the 4 most recent discrete quarters ($FCF_{TTM} = \sum_{k=1}^4 CFO_k - CapEx_k$), eliminating the severe $2\times$ to $4\times$ DCF valuation distortions that occur when raw quarterly or cumulative figures are annualized.
 3. **Complete Forensic Accounting Coverage**: Extracts all 8 US-GAAP concept inputs required by the Academic Triad Forensics models (Beneish 8-factor M-Score, Sloan Accrual Ratio, and SBC dilution burden) with zero synthetic fallbacks.
 
-### `read_document`
+### `list_sec_filings`
 
 ```python
-read_document(url: str, extract_tables: bool = True) -> DocumentContent
+list_sec_filings(ticker: str, forms: list[str] | None = None,
+                 since: str | None = None,
+                 candidate_id: str | None = None) -> SecFilingList
 ```
 
-Parses official company presentations, analyst reports, investor day slide decks, and earnings releases from direct PDF or HTML URLs. Extracts tabular figures, narrative sections, and harvests newly discovered document download links into `source_records` under strict SSRF validation.
+Metadata catalog browsing tool: returns form, filing date, accession number, filing URL, and document items (e.g. 8-K Item 1.01 or Item 4.01). Useful when the Lead Investigator needs to check available filing dates or identify specific 8-K event codes.
 
-### `search_sec_evidence` & `read_sec_evidence`
+### Low-Level SEC Corpus Plumbing Tools (`pull_sec_filings`, `search_sec_evidence`, `read_sec_evidence`)
 
-```python
-search_sec_evidence(query: str, corpus_id: str | None = None, ticker: str | None = None) -> list[dict[str, Any]]
-read_sec_evidence(chunk_id: str, corpus_id: str | None = None) -> dict[str, Any]
-```
-
-Model-visible exploratory retrieval over downloaded SEC filing chunks. Enables the analyst to search footnotes, segment disclosures, and MD&A sections using hybrid FAISS dense embeddings + BM25 reciprocal rank fusion, and read surrounding contextual chunks before formulating claims.
-
-### `register_candidate` & `compare_candidates`
-
-```python
-register_candidate(ticker: str, company: str | None = None, status: str = "active", reason: str | None = None) -> str
-compare_candidates(candidate_ids: list[str], metrics: list[str] | None = None) -> str
-```
-
-Manages candidate workspaces for multi-stock screening and ranking mandates. Isolates each candidate's SEC corpora, financials, market data, and diligence dossiers. `compare_candidates` generates normalized `ComparisonCard` matrices aligned by reporting period and accounting basis.
-
-### `conduct_candidate_diligence` & `evaluate_valuation`
-
-```python
-conduct_candidate_diligence(ticker: str, candidate_id: str | None = None, focus_questions: list[str] | None = None) -> str
-evaluate_valuation(ticker: str, fcf_growth_rate: float | None = None, discount_rate: float | None = None) -> str
-```
-
-Model-directed diligence tools that execute isolated candidate deep-dives on demand:
-- **Expectations Analyst**: Solves for market-implied growth hurdles and benchmarks against consensus revisions.
-- **Forensic Accounting Auditor**: Computes full 8-factor Beneish M-Score, Sloan Accrual Quality, and SBC dilution.
-- **Deterministic Quant Engine**: Executes `calculator.mjs` on audited TTM cash flows to compute Low/Base/High DCF fair values, sensitivity grids, and 3:1 asymmetry ratios.
-- **Air-Gapped Bull Advocate & Bear Red Team**: Generates asymmetric upside catalysts and numeric kill criteria with bounded downside floors.
-
-### `get_macro_context` & `get_ownership_and_insider_activity`
-
-```python
-get_macro_context(series_ids: list[str] | None = None) -> MacroContextResult
-get_ownership_and_insider_activity(ticker: str) -> InsiderActivityResult
-```
-
-- `get_macro_context`: Retrieves official macroeconomic indicators via FRED (Treasury yields, inflation, Fed Funds rate, credit spreads).
-- `get_ownership_and_insider_activity`: Audits insider Form 4 trades (buys, open-market sales, tax withholding Code F) and institutional ownership float.
+These lower-level tools are preserved for fine-grained chunk retrieval, testing fixtures, and headless automation:
+- `pull_sec_filings`: Downloads explicitly selected SEC documents using server-issued filing receipts.
+- `search_sec_evidence`: Direct FAISS+BM25 hybrid search inside local filing chunks.
+- `read_sec_evidence`: Reads exact filing text chunks by chunk ID.
+Server session context automatically injects `case_id` so the model never has to manage filesystem paths directly.
 
 ### Keyed free-tier provider policy
 
@@ -402,17 +481,23 @@ class InvestigationState(TypedDict):
     thesis_breakers: list[str]
     adversarial_report: Any | None
     bull_report: Any | None
+    forensic_report: dict[str, Any] | None
+    quant_report: dict[str, Any] | None
+    thematic_report: dict[str, Any] | None
+    sector_report: dict[str, Any] | None
+    moat_report: dict[str, Any] | None
     ic_verdict: Any | None
     budget_state: dict[str, Any]
+    research_plan: list[dict[str, Any]]
+    research_intent: dict[str, Any]
+    candidates: dict[str, Any]
+    comparisons: list[dict[str, Any]]
+    source_records: list[dict[str, Any]]
+    claim_records: list[dict[str, Any]]
     evidence_gate: dict[str, Any]
     accounting_gate: dict[str, Any]
     valuation_gate: dict[str, Any]
     asymmetry_gate: dict[str, Any]
-    forensic_report: dict[str, Any] | None
-    thematic_report: dict[str, Any] | None
-    sector_report: dict[str, Any] | None
-    moat_report: dict[str, Any] | None
-    quant_report: dict[str, Any] | None
 ```
 
 ### Three-Tier State Architecture

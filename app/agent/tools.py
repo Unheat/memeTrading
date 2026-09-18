@@ -51,10 +51,12 @@ def create_agent_tools(
     cases_root: Path | str | None = None,
     guard: ToolCallGuard | None = None,
     model: Any | None = None,
+    case_id: str | None = None,
 ) -> list[BaseTool]:
     """Create all normalized tools bound to LangChain BaseTool interfaces."""
     call_guard = guard or ToolCallGuard()
     root_path = Path(cases_root) if cases_root else Path("cases")
+    active_case_id = str(case_id) if case_id else "default"
 
     def _guard_check(tool_name: str, kwargs: dict[str, Any]) -> str | None:
         items = tuple(sorted((k, str(v)) for k, v in kwargs.items()))
@@ -186,9 +188,10 @@ def create_agent_tools(
             return json.dumps({"status": "error", "message": f"list_sec_filings error: {exc}"})
 
     @tool
-    def pull_sec_filings(case_id: str, selections: list[dict[str, Any]], candidate_id: str | None = None) -> str:
+    def pull_sec_filings(selections: list[dict[str, Any]], case_id: str | None = None, candidate_id: str | None = None) -> str:
         """Download explicitly selected SEC documents using server-issued filing/document receipts."""
-        suppressed = _guard_check("pull_sec_filings", {"case_id": case_id, "selections": str(selections), "candidate_id": candidate_id})
+        effective_case = case_id or active_case_id
+        suppressed = _guard_check("pull_sec_filings", {"case_id": effective_case, "selections": str(selections), "candidate_id": candidate_id})
         if suppressed:
             return suppressed
         try:
@@ -243,7 +246,7 @@ def create_agent_tools(
                         "message": "Selection must specify filing_receipt_id issued by list_sec_filings.",
                     })
 
-            effective_target = f"{case_id}/candidates/{candidate_id}" if candidate_id else case_id
+            effective_target = f"{effective_case}/candidates/{candidate_id}" if candidate_id else effective_case
             res = _pull_sec_filings(cases_root=root_path, case_id=effective_target, selections=selected_docs)
             if res.error:
                 return json.dumps({"status": "error", "code": res.error.code, "message": res.error.message})
@@ -257,13 +260,14 @@ def create_agent_tools(
             return json.dumps({"status": "error", "message": f"pull_sec_filings error: {exc}"})
 
     @tool
-    def search_sec_evidence(case_id: str, query: str, candidate_id: str | None = None, top_k: int = 5) -> str:
+    def search_sec_evidence(query: str, case_id: str | None = None, candidate_id: str | None = None, top_k: int = 5) -> str:
         """Search the locally pulled and indexed SEC corpus using hybrid FAISS dense + BM25 sparse + RRF retrieval."""
-        suppressed = _guard_check("search_sec_evidence", {"case_id": case_id, "query": query, "candidate_id": candidate_id})
+        effective_case = case_id or active_case_id
+        suppressed = _guard_check("search_sec_evidence", {"case_id": effective_case, "query": query, "candidate_id": candidate_id})
         if suppressed:
             return suppressed
         try:
-            target_id = f"{case_id}/candidates/{candidate_id}" if candidate_id else case_id
+            target_id = f"{effective_case}/candidates/{candidate_id}" if candidate_id else effective_case
             case_dir = case_path(root_path, target_id)
             embed_query = get_sec_query_embedder()
             receipts, err = _search_sec_evidence(case_directory=case_dir, query=query, embed_query=embed_query, candidate_id=candidate_id, top_k=top_k)
@@ -274,13 +278,14 @@ def create_agent_tools(
             return json.dumps({"status": "error", "message": f"search_sec_evidence error: {exc}"})
 
     @tool
-    def read_sec_evidence(case_id: str, chunk_ids: list[str], candidate_id: str | None = None) -> str:
+    def read_sec_evidence(chunk_ids: list[str], case_id: str | None = None, candidate_id: str | None = None) -> str:
         """Read exact SEC filing text chunks with preceding and following context."""
-        suppressed = _guard_check("read_sec_evidence", {"case_id": case_id, "chunk_ids": str(chunk_ids), "candidate_id": candidate_id})
+        effective_case = case_id or active_case_id
+        suppressed = _guard_check("read_sec_evidence", {"case_id": effective_case, "chunk_ids": str(chunk_ids), "candidate_id": candidate_id})
         if suppressed:
             return suppressed
         try:
-            target_id = f"{case_id}/candidates/{candidate_id}" if candidate_id else case_id
+            target_id = f"{effective_case}/candidates/{candidate_id}" if candidate_id else effective_case
             case_dir = case_path(root_path, target_id)
             receipts, err = _read_sec_evidence(case_directory=case_dir, chunk_ids=chunk_ids, candidate_id=candidate_id)
             if err:
@@ -290,9 +295,39 @@ def create_agent_tools(
             return json.dumps({"status": "error", "message": f"read_sec_evidence error: {exc}"})
 
     @tool
-    def verify_sec_claim(corpus_id: str, claim: str, candidate_id: str | None = None) -> str:
-        """Verify a specific factual claim against local SEC corpus documents. Returns CONFIRMED/CONTRADICTED."""
-        suppressed = _guard_check("verify_sec_claim", {"corpus_id": corpus_id, "claim": claim, "candidate_id": candidate_id})
+    def investigate_sec(ticker: str, task: str, form: str | None = None, candidate_id: str | None = None) -> str:
+        """Command the specialized SEC filing analyst sub-agent to investigate disclosures, commitments, lease liabilities, customer concentration, or footnotes in official SEC EDGAR filings (10-K, 10-Q, 8-K). Returns cited findings and verbatim quotes."""
+        clean_ticker = ticker.strip().upper()
+        cand_id = candidate_id or f"cand_{clean_ticker.lower()}"
+        suppressed = _guard_check("investigate_sec", {"ticker": clean_ticker, "task": task, "form": form or "", "candidate_id": cand_id})
+        if suppressed:
+            return suppressed
+        try:
+            from app.sec.agent import run_sec_investigation
+
+            res = run_sec_investigation(
+                cases_root=root_path,
+                case_id=active_case_id,
+                ticker=clean_ticker,
+                task=task,
+                form=form,
+                candidate_id=cand_id,
+                model=model,
+            )
+            return json.dumps(res)
+        except Exception as exc:
+            return json.dumps({"status": "error", "message": f"investigate_sec error: {exc}"})
+
+    @tool
+    def verify_sec_claim(claim: str, ticker: str | None = None, corpus_id: str | None = None, candidate_id: str | None = None) -> str:
+        """Verify a specific factual claim against local SEC corpus documents. Returns CONFIRMED/CONTRADICTED with citations."""
+        clean_ticker = ticker.strip().upper() if ticker else None
+        cand_id = candidate_id or (f"cand_{clean_ticker.lower()}" if clean_ticker else None)
+        target_corpus = corpus_id
+        if not target_corpus and clean_ticker:
+            target_corpus = f"{active_case_id}/candidates/{cand_id}" if cand_id else active_case_id
+
+        suppressed = _guard_check("verify_sec_claim", {"corpus_id": target_corpus or "", "claim": claim, "candidate_id": cand_id or ""})
         if suppressed:
             return suppressed
         try:
@@ -300,14 +335,24 @@ def create_agent_tools(
             from app.sec.default_assessor import get_default_sec_assessor
             from app.sec.embeddings import get_sec_embedder, get_sec_query_embedder
             from app.sec.retrieval import build_sec_index
+            from app.sec.acquisition import list_sec_filings as _list_sec_filings
+            from app.sec.pull import SelectedSecDocument
 
             try:
-                case_dir = case_path(root_path, corpus_id)
+                case_dir = case_path(root_path, target_corpus or active_case_id)
             except ValueError:
-                case_dir = root_path / corpus_id
+                case_dir = root_path / (target_corpus or active_case_id)
 
             index_file = case_dir / "sec" / "index" / "sec.faiss"
             if not index_file.exists():
+                if clean_ticker:
+                    disc_res = _list_sec_filings(ticker=clean_ticker, forms=["10-K", "10-Q", "8-K"])
+                    if disc_res.filings:
+                        selected_docs = [
+                            SelectedSecDocument(filing=f, document_name="primary_doc.htm", source_url=f.filing_url)
+                            for f in disc_res.filings[:2]
+                        ]
+                        _pull_sec_filings(cases_root=root_path, case_id=target_corpus or active_case_id, selections=selected_docs)
                 prep_res = prepare_sec_corpus(case_dir)
                 if prep_res.error is None:
                     build_sec_index(case_dir, embedder=get_sec_embedder())
@@ -324,8 +369,10 @@ def create_agent_tools(
             if res.error:
                 return json.dumps({"status": "error", "code": res.error.code, "message": res.error.message})
             d = {"status": "ok", "verification": res.verification.to_dict() if res.verification else None}
-            if candidate_id:
-                d["candidate_id"] = candidate_id
+            if cand_id:
+                d["candidate_id"] = cand_id
+            if clean_ticker:
+                d["ticker"] = clean_ticker
             return json.dumps(d)
         except Exception as exc:
             return json.dumps({"status": "error", "message": f"verify_sec_claim error: {exc}"})
@@ -476,6 +523,7 @@ def create_agent_tools(
     investment_tools = [
         get_market_data, get_company_research, list_sec_filings, pull_sec_filings,
         search_sec_evidence, read_sec_evidence, verify_sec_claim, get_sec_financials,
+        investigate_sec,
         get_ownership_and_insider_activity, get_macro_context, register_candidate, compare_candidates,
         evaluate_valuation, conduct_candidate_diligence,
     ]

@@ -6,7 +6,7 @@ Define the complete LangChain tool registry, duplicate suppression, deterministi
 
 ## Tool registry
 
-`create_agent_tools(cases_root)` returns these 17 model-visible tools:
+`create_agent_tools(cases_root)` returns these 20 model-visible tools:
 
 1. `search_social`: Social chatter and hype velocity.
 2. `search_articles`: Curated financial news and GDELT articles.
@@ -21,10 +21,13 @@ Define the complete LangChain tool registry, duplicate suppression, deterministi
 11. `read_sec_evidence`: Read exact filing chunks with preceding and following context.
 12. `verify_sec_claim`: Ground key factual assertions against local SEC filings.
 13. `get_sec_financials`: Deterministic XBRL metrics (gross margin %, inventory QoQ change, net cash, capex).
-14. `get_ownership_and_insider_activity`: Audit Form 4 insider transactions, isolating open-market buys/sales from tax withholding.
-15. `get_macro_context`: Pull official macroeconomic indicators from FRED (e.g. DGS10, FEDFUNDS, CPIAUCSL).
-16. `register_candidate`: Register a discovered candidate company for isolated research tracking.
-17. `compare_candidates`: Generate normalized cross-company comparison cards across registered candidates.
+14. `investigate_sec`: High-leverage SEC Specialist Sub-Agent investigating disclosures, commitments, lease liabilities, and footnotes.
+15. `get_ownership_and_insider_activity`: Audit Form 4 insider transactions, isolating open-market buys/sales from tax withholding.
+16. `get_macro_context`: Pull official macroeconomic indicators from FRED (e.g. DGS10, FEDFUNDS, CPIAUCSL).
+17. `register_candidate`: Register a discovered candidate company for isolated research tracking, or register early vetoes.
+18. `compare_candidates`: Generate normalized cross-company comparison cards across registered candidates.
+19. `evaluate_valuation`: Deterministic Reverse DCF, Fair Value ranges, and 3:1 asymmetry test via calculator.mjs.
+20. `conduct_candidate_diligence`: Launch isolated candidate deep diligence sub-agent with Bull/Bear adversarial audit.
 
 `ToolCallGuard` suppresses repeated identical signatures within a run. Tool exceptions become structured error payloads so the agent can adapt without crashing the graph.
 

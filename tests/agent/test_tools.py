@@ -21,6 +21,7 @@ def test_tool_registry_contains_all_10_tools():
         "read_sec_evidence",
         "verify_sec_claim",
         "get_sec_financials",
+        "investigate_sec",
         "get_ownership_and_insider_activity",
         "get_macro_context",
         "register_candidate",

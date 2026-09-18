@@ -41,23 +41,24 @@ flowchart TD
             t_soc["search_social: Retail sentiment & momentum"]
         end
 
-        subgraph T_SEC["2. SEC Hard Evidence"]
-            t_sec_list["list_sec_filings & pull_sec_filings: Discover 10-K/10-Q/8-K"]
-            t_sec_ev["search_sec_evidence & read_sec_evidence: Footnote retrieval"]
-            t_sec_ver["verify_sec_claim: Ground claims in SEC filings"]
+        subgraph T_SEC["2. SEC Hard Evidence & Analyst Sub-Agent"]
+            t_sec_inv["<b>investigate_sec</b>: High-leverage SEC Filing Analyst Sub-Agent<br/>(Auto-discovery, hybrid FAISS+BM25 RAG, and cited synthesis in 1 turn)"]
+            t_sec_ver["verify_sec_claim: Ground claims in SEC filings with auto-resolving ticker"]
             t_sec_fin["get_sec_financials: Deterministic XBRL accounting<br/>• Form 10-Q YTD Cash Flow De-cumulation<br/>• True TTM Free Cash Flow Base<br/>• 8 Forensic Concepts (Assets, Receivables, PP&E, SG&A)"]
+            t_sec_list["list_sec_filings: Official EDGAR catalog & 8-K item codes browsing"]
+            t_sec_plumb["pull_sec_filings / search_sec_evidence / read_sec_evidence: Low-level plumbing"]
         end
 
         subgraph T_MKT["3. Market & Context Data"]
-            t_mkt["get_market_data: Real-time price, beta, 52w range"]
-            t_co["get_company_research: Segments & management"]
-            t_own["get_ownership_and_insider_activity: Insider trades & float"]
-            t_macro["get_macro_context: Yields, inflation, regime"]
+            t_mkt["get_market_data: Real-time price, volume ratio, 50/200 SMA, ATR"]
+            t_co["get_company_research: Wall Street consensus targets & estimates"]
+            t_own["get_ownership_and_insider_activity: Form 4 insider trades (Code P vs S vs F)"]
+            t_macro["get_macro_context: Official FRED Treasury yields, inflation, rates"]
         end
 
         subgraph T_COMP["4. Candidate Screening & Ranking"]
-            t_reg["register_candidate: Build isolated candidate workspace"]
-            t_cmp["compare_candidates: Build cross-peer comparison matrix"]
+            t_reg["register_candidate: Build isolated candidate workspace<br/>(Supports Fast-Path Early Veto: status='vetoed')"]
+            t_cmp["compare_candidates: Build normalized cross-peer comparison matrix"]
         end
 
         subgraph T_DIL["5. Model-Directed Diligence Tools"]
@@ -101,7 +102,7 @@ flowchart TD
     %% STAGE 4: GAP REFLECTION
     %% ==========================================
     subgraph S4["Stage 4: Gap Reflection (reflect)"]
-        REFLECT["<b>Reflection Supervisor</b><br/>• Audits state against ResearchPlanSchema<br/>• Catches missing peer filings or unread PDFs<br/>• Injects gap prompts (up to 2 rounds)"]
+        REFLECT["<b>Reflection Supervisor</b><br/>• Audits state against ResearchPlanSchema & candidate workspaces<br/>• Catches missing diligence/valuation or unread PDFs<br/>• Injects targeted gap prompts (up to 2 rounds)<br/>• Fast-Path Early Veto Circuit Breaker (status='vetoed')<br/>  bypasses uninvestable/fraudulent assets cleanly"]
     end
 
     EXEC -->|Turn Complete / No More Tool Calls| S4
@@ -113,14 +114,14 @@ flowchart TD
     subgraph S5["Stage 5: Final Decision & Governance (diligence_node)"]
         direction TB
         
-        G_EV["<b>1. Evidence Gate</b><br/>Audit check: Are primary SEC citations verified?"]:::gate
+        G_EV["<b>1. Evidence Gate (G1)</b><br/>Audit check: Are primary SEC citations & market context verified?"]:::gate
         
         PROMO["<b>2. Read Promoted Candidate Dossier</b><br/>Pulls existing DCF, Bull Catalysts, and Bear Kill Triggers<br/>from Stage 2 for the winning/primary candidate"]:::read
 
         subgraph GATES["3. Governance Gates (Deterministic Instant Math)"]
-            G_ACC["<b>Accounting Gate</b><br/>Beneish M-Score check (reused from dossier)"]:::gate
-            G_VAL["<b>Valuation Gate</b><br/>DCF growth hurdle check (reused from dossier)"]:::gate
-            G_ASYM["<b>Asymmetry Gate</b><br/>Reward-to-Risk ratio ≥ 2.0x (reused from dossier)"]:::gate
+            G_ACC["<b>Accounting Gate (G2)</b><br/>Beneish M-Score manipulation check (reused from dossier)"]:::gate
+            G_VAL["<b>Valuation Gate (G3)</b><br/>DCF growth hurdle reproducibility check (calculator.mjs)"]:::gate
+            G_ASYM["<b>Asymmetry Gate (G4)</b><br/>Reward-to-Risk ratio ≥ 3.0x (reused from dossier)"]:::gate
             G_ACC --> G_VAL --> G_ASYM
         end
 
@@ -135,7 +136,7 @@ flowchart TD
 
     %% Class assignments
     class S1,S2,S3,S4,S5 stage;
-    class t_web,t_art,t_doc,t_soc,t_sec_list,t_sec_ev,t_sec_ver,t_sec_fin,t_mkt,t_co,t_own,t_macro,t_reg,t_cmp,t_val tool;
+    class t_web,t_art,t_doc,t_soc,t_sec_inv,t_sec_list,t_sec_plumb,t_sec_ver,t_sec_fin,t_mkt,t_co,t_own,t_macro,t_reg,t_cmp,t_val tool;
     class ENG_EXP,ENG_FOR,ENG_QNT,ENG_BULL,ENG_BEAR engine;
     class G_EV,G_ACC,G_VAL,G_ASYM,COMM,GATES gate;
     class PROMO read;
@@ -147,11 +148,11 @@ flowchart TD
 
 | Analysis Component | Stage 2 (The Analyst Workbench) | Stage 5 (The Boardroom Committee) |
 |---|---|---|
-| **Heavy Modeling & Sub-Agents** | Runs per-candidate on demand via `conduct_candidate_diligence(ticker)`: Quant DCF, Forensics, Bull Advocate, and Bear Red Team. | **Zero engine execution.** It never spins up sub-agents or re-runs models. |
-| **Candidate Selection** | Dynamically screens candidates, registers workspaces, and builds cross-candidate comparison matrices. | Promotes the **winning candidate's dossier** into state (prioritizing the highest asymmetric reward-to-risk ratio). |
-| **Evidence & Compliance** | Pulls 10-Ks, searches footnotes, verifies quotes, logs receipts. | Evaluates the **Evidence Gate**: ensures quotes are grounded in SEC accession numbers before voting. |
-| **Audit Gates** | Collects raw metrics (implied growth hurdle, Beneish M-Score, Bear floor). | Runs **instant mathematical checks**: Accounting Gate, Valuation Gate, and Asymmetry Gate. |
-| **Capital Allocation & Sizing** | Formulates thesis and upside catalysts. | The **Chief Investment Officer (CIO)** conducts a single formal deliberation, assigns conviction tier, and sizes the position via **Fractional Kelly %**. |
+| **Heavy Modeling & Sub-Agents** | Runs per-candidate on demand via `conduct_candidate_diligence(ticker)`: Quant DCF, Forensics, Bull Advocate, and Bear Red Team. Or commands the `investigate_sec` analyst sub-agent for deep filing retrieval. | **Zero engine execution.** It never spins up sub-agents or re-runs models. |
+| **Candidate Selection** | Dynamically screens candidates, registers workspaces (`register_candidate`), declares early vetoes (`status='vetoed'`), and builds cross-candidate comparison matrices (`compare_candidates`). | Promotes the **winning candidate's dossier** into state (prioritizing the highest asymmetric reward-to-risk ratio). |
+| **Evidence & Compliance** | Commands `investigate_sec` to auto-discover, pull, chunk, and cite 10-K/10-Qs; verifies rumors via `verify_sec_claim`. | Evaluates the **Evidence Gate (G1)**: ensures primary SEC citations and market context exist before voting. |
+| **Audit Gates** | Collects raw metrics (Reverse DCF implied growth hurdle, Beneish M-Score, Bear floor). | Runs **instant mathematical checks**: Accounting Gate (G2), Valuation Gate (G3), and Asymmetry Gate (G4 $\ge 3.0x$). |
+| **Capital Allocation & Sizing** | Formulates thesis, operating leverage catalysts, and downside floor prices. | The **Chief Investment Officer (CIO)** conducts a single formal deliberation, assigns conviction tier, and sizes the position via **Fractional Kelly %**. |
 
 ---
 
