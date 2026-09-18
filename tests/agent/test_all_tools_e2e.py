@@ -51,6 +51,7 @@ class ToolCoverageModel:
                 ("search_sec_evidence", {"case_id": "coverage", "candidate_id": "cand_msft", "query": "cloud gross margin"}),
                 ("read_sec_evidence", {"case_id": "coverage", "candidate_id": "cand_msft", "chunk_ids": ["chunk-1"]}),
                 ("verify_sec_claim", {"corpus_id": "coverage/candidates/cand_msft", "candidate_id": "cand_msft", "claim": "Microsoft reported cloud growth."}),
+                ("investigate_sec", {"ticker": "MSFT", "task": "Check datacenter capex", "candidate_id": "cand_msft"}),
                 ("compare_candidates", {"candidate_ids": ["cand_msft"], "metrics": ["revenue"]}),
                 ("conduct_candidate_diligence", {"ticker": "MSFT", "candidate_id": "cand_msft"}),
                 ("evaluate_valuation", {"ticker": "MSFT", "candidate_id": "cand_msft"}),
@@ -88,6 +89,7 @@ def test_e2e_every_registered_tool_persists_owned_receipts(monkeypatch, tmp_path
     monkeypatch.setattr(tools_module, "_search_sec_evidence", lambda **_: ([{"chunk_id": "chunk-1", "excerpt": "Cloud revenue grew."}], None))
     monkeypatch.setattr(tools_module, "_read_sec_evidence", lambda **_: ([{"chunk_id": "chunk-1", "text": "Cloud revenue grew by 20% in Q2."}], None))
     monkeypatch.setattr(tools_module, "_verify_sec_claim", lambda **_: SimpleNamespace(error=None, verification=SimpleNamespace(to_dict=lambda: {"claim": "Microsoft reported cloud growth.", "verdict": "CONFIRMED", "confidence": 0.9, "evidence_for": [{"quote": "Cloud revenue grew.", "source_url": "https://www.sec.gov/example"}], "evidence_against": []})))
+    monkeypatch.setattr("app.sec.agent.run_sec_investigation", lambda **_: {"status": "ok", "ticker": "MSFT", "candidate_id": "cand_msft", "task": "Check datacenter capex", "synthesis": "Datacenter capex verified.", "evidence": [{"quote": "Cloud revenue grew.", "source_url": "https://www.sec.gov/example"}]})
     monkeypatch.setattr(embeddings_module, "get_sec_query_embedder", lambda: object())
     monkeypatch.setattr(assessor_module, "get_default_sec_assessor", lambda: object())
 

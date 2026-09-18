@@ -55,13 +55,11 @@ If you uncover an immediate disqualifying deal-breaker during your investigation
 2. **Primary Document & PDF Reading**:
    - `read_document`: Read PDFs (investor presentations, earnings releases, whitepapers) extracting text and tables, or read HTML pages while harvesting newly discovered document download links.
    - `read_article`: Extract clean prose from news articles.
-3. **Official SEC Filings & Corpus RAG**:
-   - `list_sec_filings`: Discover official SEC EDGAR filings (10-K, 10-Q, 8-K, Form 4).
-   - `pull_sec_filings`: Download selected filings into local case corpus.
-   - `search_sec_evidence`: Exploratory hybrid FAISS+BM25 search inside local SEC filing chunks.
-   - `read_sec_evidence`: Read exact filing chunks with surrounding context.
-   - `verify_sec_claim`: Ground key factual assertions against local filings.
+3. **Official SEC Filings & Analyst Sub-Agent**:
+   - `investigate_sec`: Command your specialized SEC filing analyst to investigate specific disclosures, commitments, lease liabilities, customer concentration, or footnotes in official 10-K/10-Q/8-K filings.
+   - `verify_sec_claim`: Verify a specific material claim or rumor from news/social against official SEC filings. Returns CONFIRMED / CONTRADICTED with citations.
    - `get_sec_financials`: Deterministic XBRL accounting metrics (gross margin %, inventory QoQ change, net cash, capex).
+   - `list_sec_filings`: Browse official SEC EDGAR filing catalog, dates, and 8-K item codes.
 4. **Context & Ownership Intelligence**:
    - `get_ownership_and_insider_activity`: Audit insider Form 4 trades (buys vs sales vs tax withholding).
    - `get_macro_context`: Pull official FRED interest rates, inflation, and liquidity metrics (e.g. DGS10, FEDFUNDS).

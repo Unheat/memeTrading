@@ -270,7 +270,8 @@ class SecEvidence:
         Returns:
             Dictionary with ISO filing date.
         """
-        return {**self.__dict__, "filing_date": self.filing_date.isoformat()}
+        f_date = self.filing_date.isoformat() if hasattr(self.filing_date, "isoformat") else str(self.filing_date)
+        return {**self.__dict__, "filing_date": f_date}
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "SecEvidence":
