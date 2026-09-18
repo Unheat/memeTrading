@@ -91,6 +91,7 @@ def test_has_evidence_gaps_detects_incomplete_candidate_data() -> None:
 
     state["candidates"]["cand_1"]["market_context"] = {"quote": {"price": 120}}
     state["candidates"]["cand_1"]["sec_financials"] = {"periods": ["2026-Q1"]}
+    state["candidates"]["cand_1"]["valuation"] = {"fair_value": 140.0}
     state["comparisons"] = [{"comparison_id": "comp_1"}]
     assert _has_evidence_gaps(state) is False
 

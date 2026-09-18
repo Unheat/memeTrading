@@ -364,3 +364,113 @@ def test_candidate_diligence_dossier_promoted_without_redundant_execution(monkey
     assert observed_committee_state["bull_report"].ticker == "MSFT"
     assert observed_committee_state["adversarial_report"].bear_floor_price == 320.0
 
+
+def test_evidence_gaps_identifies_missing_candidate_diligence():
+    """Prove supervisor reflection catches candidates lacking diligence or valuation."""
+    from app.agent.graph import _has_evidence_gaps
+
+    state = {
+        "candidates": {
+            "cand_nvda": {
+                "candidate_id": "cand_nvda",
+                "ticker": "NVDA",
+                "market_context": {"quote": {"value": 120.0}},
+                "sec_financials": {"status": "ok", "periods": ["2026-Q2"]},
+            }
+        },
+        "source_records": [],
+        "work_queue": [],
+    }
+    # Missing diligence/valuation -> gap exists
+    assert _has_evidence_gaps(state) is True
+
+    # Once diligence dossier is present -> no gap
+    state["candidates"]["cand_nvda"]["diligence_dossier"] = {"status": "ok", "valuation": {"fair_value": 140.0}}
+    assert _has_evidence_gaps(state) is False
+
+    # Alternatively, valuation alone satisfies requirement
+    del state["candidates"]["cand_nvda"]["diligence_dossier"]
+    state["candidates"]["cand_nvda"]["valuation"] = {"fair_value": 140.0}
+    assert _has_evidence_gaps(state) is False
+
+
+def test_evidence_gaps_respects_early_veto_fast_path():
+    """Prove supervisor reflection honors fast-path early veto without forcing further tool calls."""
+    from app.agent.graph import _has_evidence_gaps
+
+    state = {
+        "candidates": {
+            "cand_toxic": {
+                "candidate_id": "cand_toxic",
+                "ticker": "TOXIC",
+                "status": "vetoed",
+                "veto_reason": "Auditor resignation under Item 4.01 8-K; internal control material weakness.",
+            }
+        },
+        "source_records": [],
+        "work_queue": [],
+    }
+    # Vetoed candidate does not block research completion
+    assert _has_evidence_gaps(state) is False
+
+
+def test_single_candidate_does_not_require_comparisons():
+    """Prove single candidate diligence does not trigger a missing comparison matrix gap."""
+    from app.agent.graph import _has_evidence_gaps
+
+    state = {
+        "candidates": {
+            "cand_msft": {
+                "candidate_id": "cand_msft",
+                "ticker": "MSFT",
+                "market_context": {"quote": {"value": 450.0}},
+                "sec_financials": {"status": "ok", "periods": ["2026-Q2"]},
+                "valuation": {"fair_value": 480.0},
+            }
+        },
+        "comparisons": [],
+        "source_records": [],
+        "work_queue": [],
+    }
+    assert _has_evidence_gaps(state) is False
+
+    # But two active candidates do require a comparison matrix
+    state["candidates"]["cand_aapl"] = {
+        "candidate_id": "cand_aapl",
+        "ticker": "AAPL",
+        "market_context": {"quote": {"value": 230.0}},
+        "sec_financials": {"status": "ok", "periods": ["2026-Q2"]},
+        "valuation": {"fair_value": 240.0},
+    }
+    assert _has_evidence_gaps(state) is True
+
+
+def test_register_candidate_tool_supports_veto_status_and_reason():
+    """Prove register_candidate tool and ingestion persist early vetoes in candidate workspace."""
+    from app.agent.tools import create_agent_tools
+    from app.agent.tool_result_ingestion import ingest_tool_results
+
+    tools = {t.name: t for t in create_agent_tools()}
+    reg_tool = tools["register_candidate"]
+
+    raw_result = reg_tool.invoke({
+        "ticker": "SMCI",
+        "company": "Super Micro Computer",
+        "status": "vetoed",
+        "reason": "Auditor resigned and special committee investigation active.",
+    })
+    payload = json.loads(raw_result)
+    assert payload["status"] == "ok"
+    assert payload["candidate_status"] == "vetoed"
+    assert "Auditor resigned" in payload["reason"]
+
+    tool_msg = ToolMessage(content=raw_result, name="register_candidate", tool_call_id="call-veto-1")
+    state = {"candidates": {}, "research_intent": {"requires_candidate_workspaces": True}}
+    updates = ingest_tool_results(state, [tool_msg])
+
+    assert "cand_smci" in updates["candidates"]
+    cand = updates["candidates"]["cand_smci"]
+    assert cand["status"] == "vetoed"
+    assert "Auditor resigned" in cand["veto_reason"]
+
+

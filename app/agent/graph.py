@@ -41,20 +41,28 @@ def _has_evidence_gaps(state: InvestigationState) -> bool:
     """Check if multi-candidate or deep research has actionable evidence gaps."""
     candidates = state.get("candidates") or {}
     if candidates:
-        if not state.get("comparisons") and len(candidates) >= 1:
+        active_candidates = [
+            c for c in candidates.values()
+            if isinstance(c, Mapping)
+            and c.get("status") not in {"vetoed", "rejected", "screened_out"}
+            and not c.get("veto_reason")
+        ]
+        if len(active_candidates) > 1 and not state.get("comparisons"):
             return True
-        for cand in candidates.values():
-            if isinstance(cand, Mapping):
-                if not cand.get("market_context"):
-                    return True
-                sec_fin = cand.get("sec_financials") or {}
-                if not (
-                    sec_fin.get("status") in {"ok", "ok_foreign_issuer_unstructured"}
-                    or bool(sec_fin.get("periods"))
-                    or cand.get("sec_corpora")
-                    or cand.get("evidence")
-                ):
-                    return True
+
+        for cand in active_candidates:
+            if not cand.get("market_context"):
+                return True
+            sec_fin = cand.get("sec_financials") or {}
+            if not (
+                sec_fin.get("status") in {"ok", "ok_foreign_issuer_unstructured"}
+                or bool(sec_fin.get("periods"))
+                or cand.get("sec_corpora")
+                or cand.get("evidence")
+            ):
+                return True
+            if not (cand.get("diligence_dossier") or cand.get("valuation") or cand.get("quant_report")):
+                return True
 
     sources = state.get("source_records") or []
     unread_pdfs = [
@@ -226,7 +234,10 @@ def create_research_graph(
             "research_plan": [plan_dict],
             "research_intent": intent.to_dict(),
             "work_queue": work_items,
-            "messages": [AIMessage(content=plan_summary)],
+            "messages": [
+                AIMessage(content=plan_summary),
+                HumanMessage(content="Execute the deep research plan using your available tools. Select high-priority investigations to begin."),
+            ],
         }
 
     def executor_node(state: InvestigationState) -> dict[str, Any]:
@@ -263,18 +274,34 @@ def create_research_graph(
             performed = state.get("searches_performed") or []
             tool_names = {r.get("tool") for r in performed if r.get("status") in {"ok", "partial"}}
             cand_diligence_done = set()
+            vetoed_cand_ids = set()
             for cid, c in (state.get("candidates") or {}).items():
-                if isinstance(c, Mapping) and c.get("diligence_dossier"):
+                if isinstance(c, Mapping):
                     t = c.get("ticker") or (c.get("diligence_dossier") or {}).get("ticker")
-                    if t:
-                        cand_diligence_done.add(str(t).upper())
+                    if c.get("diligence_dossier") or c.get("valuation") or c.get("quant_report"):
+                        if t:
+                            cand_diligence_done.add(str(t).upper())
+                    if c.get("status") in {"vetoed", "rejected", "screened_out"} or c.get("veto_reason"):
+                        if t:
+                            vetoed_cand_ids.add(str(t).upper())
+                        vetoed_cand_ids.add(str(cid).upper())
 
             updated_queue = []
             for item in work_queue:
                 w = dict(item)
                 if w.get("status") == "queued":
-                    c_id = w.get("candidate_id")
-                    if c_id and any(t.lower() in c_id.lower() for t in cand_diligence_done):
+                    c_id = w.get("candidate_id") or ""
+                    clean_cid = str(c_id).upper().strip()
+                    cid_ticker = clean_cid.removeprefix("WORK_CAND_").removeprefix("CAND_")
+                    is_done = (
+                        cid_ticker in cand_diligence_done
+                        or clean_cid in cand_diligence_done
+                        or c_id in cand_diligence_done
+                        or cid_ticker in vetoed_cand_ids
+                        or clean_cid in vetoed_cand_ids
+                        or c_id in vetoed_cand_ids
+                    )
+                    if c_id and is_done:
                         w["status"] = "completed"
                     elif w.get("evidence_tier") == "primary_sec" and ("get_sec_financials" in tool_names or "search_sec_evidence" in tool_names):
                         w["status"] = "completed"
@@ -313,10 +340,18 @@ def create_research_graph(
                 logger.warning("Structured reflection failed (%s); using deterministic check", exc)
 
         deterministic_gaps = []
-        if candidates and not comparisons and len(candidates) > 1:
+        active_candidates = [
+            c for c in candidates.values()
+            if isinstance(c, Mapping)
+            and c.get("status") not in {"vetoed", "rejected", "screened_out"}
+            and not c.get("veto_reason")
+        ]
+        if len(active_candidates) > 1 and not comparisons:
             deterministic_gaps.append("Cross-candidate comparison matrix is missing; call `compare_candidates`.")
         for cid, cand in candidates.items():
             if isinstance(cand, Mapping):
+                if cand.get("status") in {"vetoed", "rejected", "screened_out"} or cand.get("veto_reason"):
+                    continue
                 t = cand.get("ticker") or cid
                 if not cand.get("market_context"):
                     deterministic_gaps.append(f"Missing market data for candidate ${t}; call `get_market_data`.")
@@ -328,6 +363,10 @@ def create_research_graph(
                     or cand.get("evidence")
                 ):
                     deterministic_gaps.append(f"Missing SEC financial data for candidate ${t}; call `get_sec_financials` or pull filings.")
+                if not (cand.get("diligence_dossier") or cand.get("valuation") or cand.get("quant_report")):
+                    deterministic_gaps.append(
+                        f"Candidate ${t} lacks valuation and Red Team stress testing; call `conduct_candidate_diligence` or `evaluate_valuation` (or veto candidate if uninvestable)."
+                    )
 
         unread_pdfs = [
             str(s.get("url"))
@@ -396,16 +435,17 @@ def create_research_graph(
             best_ratio = -float("inf")
             for cid, c in candidates.items():
                 if isinstance(c, Mapping):
+                    is_vetoed = c.get("status") in {"vetoed", "rejected", "screened_out"} or bool(c.get("veto_reason"))
                     dossier = c.get("diligence_dossier")
-                    if dossier and isinstance(dossier, Mapping):
+                    if dossier and isinstance(dossier, Mapping) and not is_vetoed:
                         ratio = (dossier.get("valuation") or {}).get("reward_to_risk_ratio")
                         r_val = float(ratio) if ratio is not None else 0.0
                         if best_cand is None or r_val > best_ratio:
                             best_cand = c
                             best_ratio = r_val
-                    elif best_cand is None and c.get("ticker"):
+                    elif best_cand is None and c.get("ticker") and not is_vetoed:
                         best_cand = c
-            chosen_candidate = best_cand
+            chosen_candidate = best_cand or next((c for c in candidates.values() if isinstance(c, Mapping)), None)
 
         # Promote chosen candidate workspace and diligence dossier into top-level state
         if chosen_candidate:

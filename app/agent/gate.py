@@ -18,8 +18,12 @@ def _candidate_is_evidence_backed(candidate: Mapping[str, Any]) -> bool:
         candidate: Candidate-isolated workspace.
 
     Returns:
-        True only when market and primary/SEC evidence are available.
+        True only when market and primary/SEC evidence are available, or candidate was explicitly vetoed.
     """
+    if candidate.get("status") in {"vetoed", "rejected", "screened_out"} or candidate.get("veto_reason"):
+        return True
+    if candidate.get("diligence_dossier") and isinstance(candidate.get("diligence_dossier"), Mapping):
+        return True
     has_market = bool(candidate.get("market_context"))
     sec_fin = candidate.get("sec_financials")
     has_fin = False

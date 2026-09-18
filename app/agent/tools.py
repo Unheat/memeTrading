@@ -372,16 +372,24 @@ def create_agent_tools(
             return json.dumps({"status": "error", "message": f"get_macro_context error: {exc}"})
 
     @tool
-    def register_candidate(ticker: str, company: str, candidate_id: str | None = None, reason: str = "") -> str:
-        """Register a discovered candidate company into the screening workspace."""
+    def register_candidate(
+        ticker: str,
+        company: str,
+        candidate_id: str | None = None,
+        reason: str = "",
+        status: str = "discovered",
+    ) -> str:
+        """Register a discovered candidate company into the screening workspace, or update candidate status (e.g. status='vetoed', status='screened_out', status='discovered')."""
         clean_ticker = ticker.strip().upper()
         cand_id = candidate_id or f"cand_{clean_ticker.lower()}"
+        clean_status = status.strip().lower() if status else "discovered"
         return json.dumps({
             "status": "ok",
             "candidate_id": cand_id,
             "ticker": clean_ticker,
             "company": company.strip(),
             "reason": reason.strip(),
+            "candidate_status": clean_status,
         })
 
     @tool

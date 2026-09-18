@@ -148,5 +148,7 @@ def run_candidate_diligence(
         "bear_floor": getattr(bear, "bear_floor_price", None),
         "forensic_verdict": (cand_state.get("forensic_report") or {}).get("verdict"),
         "moat_rating": (cand_state.get("moat_report") or {}).get("analysis", {}).get("moat_rating"),
+        "market_context": cand_state.get("market_context"),
+        "sec_financials": cand_state.get("sec_financials"),
     }
     return dossier

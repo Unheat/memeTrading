@@ -201,8 +201,22 @@ def build_candidate_comparisons(
                 val = (sec.get("operating_margin_pct") or {}).get(latest_period)
                 if latest_period != "latest":
                     periods_seen.add(latest_period)
-            elif metric == "revenue":
+            elif metric in ("revenue", "sales"):
                 val = (sec.get("revenue") or {}).get(latest_period)
+                if latest_period != "latest":
+                    periods_seen.add(latest_period)
+            elif metric in ("revenue_growth", "sales_growth"):
+                consensus = cand.get("consensus_snapshot") or {}
+                rev_ests = consensus.get("revenue_estimates") or []
+                if rev_ests and isinstance(rev_ests[0], dict) and rev_ests[0].get("growth") is not None:
+                    val = rev_ests[0]["growth"]
+                else:
+                    rev_dict = sec.get("revenue") or {}
+                    if len(periods) >= 2:
+                        curr_rev = rev_dict.get(periods[0])
+                        prior_rev = rev_dict.get(periods[1])
+                        if curr_rev and prior_rev and prior_rev > 0:
+                            val = round((curr_rev - prior_rev) / prior_rev, 4)
                 if latest_period != "latest":
                     periods_seen.add(latest_period)
             elif metric == "net_cash":
@@ -235,7 +249,11 @@ def build_candidate_comparisons(
             elif metric in ("implied_growth", "implied_fcf_growth_rate", "reverse_dcf"):
                 dossier = cand.get("diligence_dossier") or {}
                 val_dict = dossier.get("valuation") or {}
-                val = (val_dict.get("reverse_dcf") or {}).get("implied_fcf_growth_rate")
+                val = val_dict.get("implied_growth_rate") or (val_dict.get("reverse_dcf") or {}).get("implied_fcf_growth_rate")
+            elif metric in ("reward_to_risk_ratio", "asymmetry", "reward_to_risk"):
+                dossier = cand.get("diligence_dossier") or {}
+                val_dict = dossier.get("valuation") or {}
+                val = val_dict.get("reward_to_risk_ratio")
 
             cand_values[ticker] = {
                 "value": val,

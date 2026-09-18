@@ -212,9 +212,28 @@ def _route_success(
         candidate_id = str(payload.get("candidate_id") or f"cand_{ticker.lower()}")
         if not ticker:
             return
-        existing = update["candidates"].setdefault(candidate_id, {"candidate_id": candidate_id, "ticker": ticker, "company": str(payload.get("company") or ""), "sec_corpora": [], "evidence": [], "contradictions": [], "fact_cards": [], "status": "discovered"})
+        cand_status = str(payload.get("candidate_status") or payload.get("status") or "discovered")
+        if cand_status == "ok":
+            cand_status = str(payload.get("candidate_status") or "discovered")
+        reason = str(payload.get("reason") or "")
+        existing = update["candidates"].setdefault(
+            candidate_id,
+            {
+                "candidate_id": candidate_id,
+                "ticker": ticker,
+                "company": str(payload.get("company") or ""),
+                "sec_corpora": [],
+                "evidence": [],
+                "contradictions": [],
+                "fact_cards": [],
+                "status": cand_status,
+            }
+        )
         existing["ticker"] = ticker
         existing["company"] = str(payload.get("company") or existing.get("company") or "")
+        existing["status"] = cand_status
+        if cand_status in {"vetoed", "rejected", "screened_out"}:
+            existing["veto_reason"] = reason
         return
     if tool_name == "compare_candidates":
         c_ids = payload.get("candidate_ids") or []
@@ -307,6 +326,10 @@ def _route_candidate_tool(
         candidate.setdefault("sec_evidence_excerpts", []).append(dict(payload))
     elif tool_name == "conduct_candidate_diligence":
         candidate["diligence_dossier"] = dict(payload)
+        if not candidate.get("market_context") and payload.get("market_context"):
+            candidate["market_context"] = dict(payload["market_context"])
+        if not candidate.get("sec_financials") and payload.get("sec_financials"):
+            candidate["sec_financials"] = dict(payload["sec_financials"])
     elif tool_name == "evaluate_valuation":
         candidate["quant_report"] = payload.get("quant_report")
         if payload.get("valuation"):

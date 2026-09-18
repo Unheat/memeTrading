@@ -17,7 +17,12 @@ llm:
   # Never paste the actual secret here. If omitted, LiteLLM uses its provider-standard
   # environment variable automatically (e.g. ANTHROPIC_API_KEY or GEMINI_API_KEY).
   models:
-    # 1. Primary: local 9Router proxy. Uses NINEROUTER_API_KEY from .env.
+    # 1. Primary: local 9Router proxy fastg. Uses NINEROUTER_API_KEY from .env.
+    - model: "openai/fastg"
+      base_url: "http://localhost:20128/v1"
+      api_key_env: "NINEROUTER_API_KEY"
+
+    # 2. Backup: local 9Router proxy stacks. Uses NINEROUTER_API_KEY from .env.
     - model: "openai/stacks"
       base_url: "http://localhost:20128/v1"
       api_key_env: "NINEROUTER_API_KEY"

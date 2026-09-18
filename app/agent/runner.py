@@ -101,6 +101,8 @@ def run_investigation(
             query=request.query, ticker=request.ticker, company=request.company, theme=request.theme,
             mandate=request.mandate, time_boundary=request.time_boundary, budget=budget,
             template_version=request.template_version, depth=request.depth,
+            requested_ranking_count=request.requested_ranking_count,
+            requested_position_decision=request.requested_position_decision,
         )
         initial_state = create_initial_state(effective_request, case_id=case_id)
         manifest["research_intent"] = initial_state["research_intent"]
