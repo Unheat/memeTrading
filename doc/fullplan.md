@@ -44,40 +44,69 @@ The system is a **general-purpose public equity research agent**, not a meme-sto
 
 ## Runtime architecture
 
-The system organizes institutional equity research into a **3-Stage Gated Pipeline** in LangGraph:
+The system organizes institutional equity research into a **5-Stage Model-Directed Deep Research Pipeline** in LangGraph (bridging The Analyst Workbench in Stage 2 with The Boardroom Committee in Stage 5):
 
 ```text
                ┌────────────────────────────────────────────────────────┐
-               │ STAGE 1: FORENSIC INVESTIGATOR (Free-Loop Tool Agent)  │
-               │  • Selects tools dynamically to resolve uncertainties: │
-               │    - search_social() / search_articles() / read_article│
-               │    - search_web() / get_market_data()                  │
-               │    - get_company_research() / get_sec_financials()     │
-               │    - list_sec_filings() / pull_sec_filings()           │
-               │    - verify_sec_claim() [Isolated local RAG]           │
-               │  • Post-Tool Ingestion: Deterministic fact projection  │
-               │  • Context Policy: Adaptive 1M window / 200k threshold │
-               │  • Pre-trade gates: ADDV >= $1M & Earnings > 7d        │
-               │  • Outputs: Grounded evidence list + draft thesis      │
+               │ STAGE 1: STRUCTURED PLANNER (planner)                  │
+               │  • Decomposes query into ResearchPlanSchema            │
+               │  • Establishes single vs multi-candidate scope         │
+               │  • Formulates initial hypotheses and work queue        │
                └───────────────────────────┬────────────────────────────┘
-                                           │ (Verified facts only)
+                                           │
                                            ▼
                ┌────────────────────────────────────────────────────────┐
-               │ STAGE 2: AIR-GAPPED ADVERSARIAL RED TEAM               │
-               │  • Hostile Short-Seller Mandate (Muddy Waters mindset) │
-               │  • Zero visibility into Stage 1 bullish draft          │
-               │  • Formulates: 4 Falsifiable Objections                │
-               │  • Sets: 2 Quantitative Numeric Kill Triggers          │
-               │  • Bounded Downside Floor & Stress Testing             │
+               │ STAGE 2: DEEP RESEARCH AGENT LOOP (executor)           │
+               │  • The Analyst Workbench: Model-directed reasoning loop│
+               │  • Dynamic Tool Execution across 6 categories:         │
+               │    - Discovery: search_social, search_articles, web     │
+               │    - Primary Docs: read_article, read_document (PDF)   │
+               │    - SEC Filings: list_sec_filings, pull_sec_filings   │
+               │    - SEC RAG: search_sec_evidence, read_sec_evidence,  │
+               │               verify_sec_claim                         │
+               │    - Accounting: get_sec_financials (with 10-Q        │
+               │                  de-cumulation & 8 forensic concepts)  │
+               │    - Context: get_market_data, get_company_research,   │
+               │               get_macro_context, insider activity      │
+               │    - Screening: register_candidate, compare_candidates │
+               │  • Diligence Sub-Agents on demand via tools:           │
+               │    - conduct_candidate_diligence(ticker) sub-agent     │
+               │      (Expectations -> Forensics -> Quant DCF ->        │
+               │       Bull Advocate -> Hostile Bear Red Team)          │
+               │    - evaluate_valuation(ticker) Reverse DCF            │
                └───────────────────────────┬────────────────────────────┘
-                                           │ (Bull Thesis + Bear Attack)
+                                           │ (Tool Call Dispatches)
                                            ▼
                ┌────────────────────────────────────────────────────────┐
-               │ STAGE 3: INVESTMENT COMMITTEE (CIO Allocation & Sizing)│
-               │  • Weighs Bull Thesis against Adversarial Red Team     │
-               │  • Enforces Strict 3:1 Asymmetric Reward-to-Risk Hurdle│
-               │  • Enforces Strict Fail-Closed Passing Discipline      │
-               │  • Computes Fractional Kelly Position Size (in code)   │
+               │ STAGE 3: EVIDENCE INGESTION (ingest)                   │
+               │  • Normalizes financial tables & receipts              │
+               │  • Enforces candidate workspace ownership quarantine   │
+               │  • Deterministically distills atomic, cited FactCards  │
+               │  • Logs immutable receipts to research-ledger.jsonl    │
+               └───────────────────────────┬────────────────────────────┘
+                                           │ (Feedback loop to Stage 2)
+                                           ▼
+               ┌────────────────────────────────────────────────────────┐
+               │ STAGE 4: GAP REFLECTION (reflect)                      │
+               │  • Audits state against ResearchPlanSchema             │
+               │  • Detects missing peer filings or unread PDF evidence │
+               │  • Injects targeted gap prompts (up to 2 rounds)       │
+               └───────────────────────────┬────────────────────────────┘
+                                           │ (Research Complete / Budget Reached)
+                                           ▼
+               ┌────────────────────────────────────────────────────────┐
+               │ STAGE 5: FINAL DECISION & GOVERNANCE (diligence_node)  │
+               │  • 1. Evidence Gate: Audits primary SEC citations      │
+               │  • 2. Candidate Promotion: Promotes winning candidate's│
+               │       dossier (highest asymmetric R:R) into top state  │
+               │  • 3. Instant Math Governance Gates (Zero engine rerun)│
+               │       - Accounting Gate (Full 8-Factor Beneish & Sloan)│
+               │       - Valuation Gate (DCF growth hurdle check)       │
+               │       - Asymmetry Gate (Reward-to-Risk ratio >= 3.0x)  │
+               │  • 4. Investment Committee (CIO Deliberation):         │
+               │       - Single LLM deliberation on Bull vs Bear evidence│
+               │       - Enforces strict 3:1 Passing Discipline         │
+               │       - Sizes portfolio weight via Fractional Kelly    │
                │  • Renders Final Institutional Memo & Audit JSON       │
                └───────────────────────────┬────────────────────────────┘
                                            │
@@ -210,7 +239,61 @@ Verifier is a black-box local-evidence tool. Internals use BM25, dense embedding
 get_sec_financials(ticker: str, periods: int = 4) -> SecFinancialsResult
 ```
 
-Deterministic SEC XBRL financial statement extraction tool. Extracts quarterly income statement (revenue, gross margin, operating margin), balance sheet (cash, short-term investments, total debt, inventories), and cash flows (operating cash flow, CapEx) directly from official SEC XBRL data. All extractions strictly distinguish discrete quarterly durations from cumulative YTD durations, sort periods by fiscal end-date, and preserve accounting units. Zero hallucination.
+Deterministic SEC XBRL financial statement extraction tool. Extracts quarterly income statement (revenue, gross profit, operating income, net income, SG&A), balance sheet (liquid cash, total debt, net cash, inventories, total assets, accounts receivable, current assets, net PP&E, current liabilities), and cash flows (operating cash flow, CapEx, depreciation, stock-based compensation) directly from official SEC XBRL data.
+
+Crucial Data Integrity Capabilities:
+1. **Form 10-Q Cash Flow De-cumulation Engine (`_decumulate_cash_flows`)**: Under SEC Regulation S-X Rule 10-01(a)(4), cash flow statements in Form 10-Q are filed on a cumulative year-to-date basis (Q1: 3M, Q2: 6M cumulative, Q3: 9M cumulative). The engine identifies monotonic cumulative patterns and derives true discrete quarterly amounts ($Q2_{discrete} = YTD_{6M} - Q1_{discrete}$, $Q3_{discrete} = YTD_{9M} - YTD_{6M}$, $Q4_{discrete} = FY_{12M} - YTD_{9M}$).
+2. **True Trailing Twelve Months (TTM) Free Cash Flow**: Computes discrete period FCF ($CFO - CapEx$) and sums the 4 most recent discrete quarters ($FCF_{TTM} = \sum_{k=1}^4 CFO_k - CapEx_k$), eliminating the severe $2\times$ to $4\times$ DCF valuation distortions that occur when raw quarterly or cumulative figures are annualized.
+3. **Complete Forensic Accounting Coverage**: Extracts all 8 US-GAAP concept inputs required by the Academic Triad Forensics models (Beneish 8-factor M-Score, Sloan Accrual Ratio, and SBC dilution burden) with zero synthetic fallbacks.
+
+### `read_document`
+
+```python
+read_document(url: str, extract_tables: bool = True) -> DocumentContent
+```
+
+Parses official company presentations, analyst reports, investor day slide decks, and earnings releases from direct PDF or HTML URLs. Extracts tabular figures, narrative sections, and harvests newly discovered document download links into `source_records` under strict SSRF validation.
+
+### `search_sec_evidence` & `read_sec_evidence`
+
+```python
+search_sec_evidence(query: str, corpus_id: str | None = None, ticker: str | None = None) -> list[dict[str, Any]]
+read_sec_evidence(chunk_id: str, corpus_id: str | None = None) -> dict[str, Any]
+```
+
+Model-visible exploratory retrieval over downloaded SEC filing chunks. Enables the analyst to search footnotes, segment disclosures, and MD&A sections using hybrid FAISS dense embeddings + BM25 reciprocal rank fusion, and read surrounding contextual chunks before formulating claims.
+
+### `register_candidate` & `compare_candidates`
+
+```python
+register_candidate(ticker: str, company: str | None = None, status: str = "active", reason: str | None = None) -> str
+compare_candidates(candidate_ids: list[str], metrics: list[str] | None = None) -> str
+```
+
+Manages candidate workspaces for multi-stock screening and ranking mandates. Isolates each candidate's SEC corpora, financials, market data, and diligence dossiers. `compare_candidates` generates normalized `ComparisonCard` matrices aligned by reporting period and accounting basis.
+
+### `conduct_candidate_diligence` & `evaluate_valuation`
+
+```python
+conduct_candidate_diligence(ticker: str, candidate_id: str | None = None, focus_questions: list[str] | None = None) -> str
+evaluate_valuation(ticker: str, fcf_growth_rate: float | None = None, discount_rate: float | None = None) -> str
+```
+
+Model-directed diligence tools that execute isolated candidate deep-dives on demand:
+- **Expectations Analyst**: Solves for market-implied growth hurdles and benchmarks against consensus revisions.
+- **Forensic Accounting Auditor**: Computes full 8-factor Beneish M-Score, Sloan Accrual Quality, and SBC dilution.
+- **Deterministic Quant Engine**: Executes `calculator.mjs` on audited TTM cash flows to compute Low/Base/High DCF fair values, sensitivity grids, and 3:1 asymmetry ratios.
+- **Air-Gapped Bull Advocate & Bear Red Team**: Generates asymmetric upside catalysts and numeric kill criteria with bounded downside floors.
+
+### `get_macro_context` & `get_ownership_and_insider_activity`
+
+```python
+get_macro_context(series_ids: list[str] | None = None) -> MacroContextResult
+get_ownership_and_insider_activity(ticker: str) -> InsiderActivityResult
+```
+
+- `get_macro_context`: Retrieves official macroeconomic indicators via FRED (Treasury yields, inflation, Fed Funds rate, credit spreads).
+- `get_ownership_and_insider_activity`: Audits insider Form 4 trades (buys, open-market sales, tax withholding Code F) and institutional ownership float.
 
 ### Keyed free-tier provider policy
 
@@ -287,9 +370,18 @@ Use `dgunning/edgartools` as primary acquisition library instead of writing tick
 class InvestigationState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
     case_id: str
+    depth: str
+    research_intent: dict[str, Any]
+    research_plan: list[dict[str, Any]]
+    source_records: list[dict[str, Any]]
+    claim_records: list[dict[str, Any]]
+    capability_outputs: dict[str, Any]
     ticker: str
     company: str | None
     cik: str | None
+    candidates: dict[str, Any]
+    candidate_leads: list[dict[str, Any]]
+    comparisons: list[dict[str, Any]]
     trigger: dict[str, Any]
     root_claims: list[str]
     evidence: list[dict[str, Any]]
@@ -297,29 +389,43 @@ class InvestigationState(TypedDict):
     unresolved_questions: list[str]
     sec_corpora: list[str]
     searches_performed: list[dict[str, Any]]
+    work_queue: list[dict[str, Any]]
+    fact_cards: list[dict[str, Any]]
     confidence: float | None
     tool_calls: int
     status: str
     causal_chain: dict[str, str] | None
     market_context: dict[str, Any] | None
+    sec_financials: dict[str, Any] | None
     consensus_snapshot: dict[str, Any] | None
     expectation_gap: dict[str, Any] | None
     thesis_breakers: list[str]
     adversarial_report: Any | None
+    bull_report: Any | None
     ic_verdict: Any | None
     budget_state: dict[str, Any]
+    evidence_gate: dict[str, Any]
+    accounting_gate: dict[str, Any]
+    valuation_gate: dict[str, Any]
+    asymmetry_gate: dict[str, Any]
+    forensic_report: dict[str, Any] | None
+    thematic_report: dict[str, Any] | None
+    sector_report: dict[str, Any] | None
+    moat_report: dict[str, Any] | None
+    quant_report: dict[str, Any] | None
 ```
 
-### Two-Tier State Architecture
+### Three-Tier State Architecture
 
-1. **Tier 1 (Ephemeral Conversational Working Set)**: `messages` contains the raw multi-turn dialogue with LangGraph `add_messages`. Before each model invocation, `prepare_context()` applies `ModelContextPolicy`:
+1. **Tier 1 (Ephemeral Conversational Working Set)**: `messages` contains the raw multi-turn dialogue managed with LangGraph `add_messages`. Before each model invocation, `prepare_context()` applies `ModelContextPolicy`:
    - Configurable for 1M-token windows (default `context_window_tokens=1,000,000`).
    - High activation threshold (`compact_threshold_tokens=200,000`), preserving full raw history during normal multi-turn investigation.
    - Reserved output tokens (`32,000`) and input safety margin (`32,000`) ensure the model never runs out of generation budget.
    - Pair-Safe Exchange Integrity: an assistant `AIMessage` with `tool_calls` and all matching `ToolMessage` results form an indivisible conversational unit that is never split or partially truncated.
-   - Deterministic Tool-Result Pruning: old oversized tool bodies (exceeding `8,000` tokens) are replaced with compact metadata envelopes (`name`, `id`, `status`, byte size, and SHA-256 digest) before dropping older conversational units.
+   - Deterministic Tool-Result Pruning: old oversized tool bodies (exceeding `8,000` tokens) are replaced with compact metadata envelopes (`name`, `id`, `status`, byte size, SHA-256 digest, and entity backlinks like `ticker` and `periods`) before dropping older conversational units.
    - Model-aware token counting uses provider hooks (`get_num_tokens_from_messages`) where available, with explicit conservative character-based fallback.
-2. **Tier 2 (Permanent Structured Evidence)**: `evidence`, `contradictions`, `market_context`, `consensus_snapshot`, `sec_corpora`, `searches_performed`, and `confidence` are populated deterministically by `ingest_tool_results` at tool-return time. They are never trimmed and are injected cleanly into the dynamic system prompt every turn.
+2. **Tier 2 (Permanent Structured Evidence & Candidate Workspaces)**: `candidates`, `evidence`, `contradictions`, `market_context`, `consensus_snapshot`, `sec_financials`, `sec_corpora`, `searches_performed`, `work_queue`, `source_records`, `claim_records`, and `comparisons` are populated deterministically by `ingest_tool_results` at tool-return time. They are never trimmed and maintain strict company identity isolation.
+3. **Tier 3 (Immutable FactCard Evidence Ledger & Context Reprojection)**: Primary financial metrics from SEC statements, market quotes, and verified citations are deterministically distilled into atomic `FactCard`s (`fact_{ticker}_{metric}_{period}`). These cards are stored in both candidate workspaces and top-level state, and are reprojected on every turn into the unprunable `SystemMessage` under `DURABLE RESEARCH STATE`. This guarantees zero factual or citation amnesia even when large `ToolMessage` payloads are compacted down to metadata digests.
 
 Persist readable Markdown plus structured JSON. Keep raw SEC sources and indexes per case:
 
@@ -441,8 +547,10 @@ Keyed API providers — Finnhub, Apify, and FRED — are black-box HTTPS API dep
 11. Implement the 3-Stage Institutional Gated Pipeline (`investigator -> air_gapped_red_team -> investment_committee`) with deterministic post-tool ingestion, adaptive 1M-context management, 3:1 asymmetry hurdle, passing discipline, and Fractional Kelly position sizing. *(Complete.)*
 12. Add optional media generator (`generate_media_package`) and Creatorberry/Faceless reel video execution bridge. *(Complete.)*
 13. Implement core financial accuracy and reporting fixes: fail-closed gating, strict 3.0x hurdle, discrete XBRL quarter extraction, and grounded media fallback. *(Complete.)*
-14. Add lightweight prompt-injection protection (XML data delimiters + fast regex sanitization for untrusted social/article text).
-15. E2E verification, golden SEC claim benchmark, and static-site publication build.
+14. Add lightweight prompt-injection protection (XML data delimiters + fast regex sanitization for untrusted social/article text). *(Complete.)*
+15. Transition to Universal Prompt-First Deep Research Pipeline (Structured Planner -> Analyst Workbench with model-directed diligence tools -> Evidence Ingestion -> Reflection Supervisor -> Boardroom Committee with instant math gates). *(Complete.)*
+16. Implement Phase 1 Data Integrity (Form 10-Q cash flow de-cumulation into true TTM FCF and 8-variable forensic concepts) and Phase 3 FactCard Evidence Ledger (deterministic tool fact distillation, compaction entity backlinks, and system prompt reprojection). *(Complete: 309 passing tests with zero regressions.)*
+17. E2E verification, golden SEC claim benchmark, and static-site publication build.
 
 ## Post-MVP Extension: Headless Subscription-Backed Execution
 

@@ -45,7 +45,7 @@ flowchart TD
             t_sec_list["list_sec_filings & pull_sec_filings: Discover 10-K/10-Q/8-K"]
             t_sec_ev["search_sec_evidence & read_sec_evidence: Footnote retrieval"]
             t_sec_ver["verify_sec_claim: Ground claims in SEC filings"]
-            t_sec_fin["get_sec_financials: 5Y standardized income & cash flow"]
+            t_sec_fin["get_sec_financials: Deterministic XBRL accounting<br/>• Form 10-Q YTD Cash Flow De-cumulation<br/>• True TTM Free Cash Flow Base<br/>• 8 Forensic Concepts (Assets, Receivables, PP&E, SG&A)"]
         end
 
         subgraph T_MKT["3. Market & Context Data"]
@@ -66,8 +66,8 @@ flowchart TD
             subgraph SUBAGENT["conduct_candidate_diligence(ticker) Sub-Agent"]
                 direction TB
                 ENG_EXP["Expectations Analyst<br/>Reverses consensus & market-implied growth"]
-                ENG_FOR["Forensic & Moat<br/>Beneish M-Score manipulation checks & moat score"]
-                ENG_QNT["Deterministic Quant DCF<br/>calculator.mjs on audited SEC cash flows"]
+                ENG_FOR["Forensic & Moat<br/>Full 8-Factor Beneish M-Score & Sloan Accruals"]
+                ENG_QNT["Deterministic Quant DCF<br/>calculator.mjs on audited TTM FCF & consensus assumptions"]
                 ENG_BULL["Bull Advocate<br/>Operating leverage catalysts & upside thesis"]
                 ENG_BEAR["Hostile Bear Red Team<br/>Catastrophic failure modes & numeric kill criteria"]
 
@@ -87,7 +87,7 @@ flowchart TD
     %% STAGE 3: INGESTION
     %% ==========================================
     subgraph S3["Stage 3: Evidence Ingestion (ingest)"]
-        INGEST["<b>Deterministic Ingest Engine</b><br/>• Normalizes financial tables & ratios<br/>• Logs immutable SEC receipts to disk ledger<br/>• Stores candidate dossiers into candidate state"]
+        INGEST["<b>Deterministic Ingest Engine</b><br/>• Normalizes financial tables & ratios<br/>• Distills atomic, cited FactCards into candidate and top state<br/>• Logs immutable SEC receipts to disk ledger<br/>• Stores candidate dossiers into candidate state"]
     end
 
     T_DISC --> S3
@@ -152,3 +152,39 @@ flowchart TD
 | **Evidence & Compliance** | Pulls 10-Ks, searches footnotes, verifies quotes, logs receipts. | Evaluates the **Evidence Gate**: ensures quotes are grounded in SEC accession numbers before voting. |
 | **Audit Gates** | Collects raw metrics (implied growth hurdle, Beneish M-Score, Bear floor). | Runs **instant mathematical checks**: Accounting Gate, Valuation Gate, and Asymmetry Gate. |
 | **Capital Allocation & Sizing** | Formulates thesis and upside catalysts. | The **Chief Investment Officer (CIO)** conducts a single formal deliberation, assigns conviction tier, and sizes the position via **Fractional Kelly %**. |
+
+---
+
+## 3. Data Integrity, Forensics & Evidence Preservation Engine
+
+### 3.1 Form 10-Q Cash Flow De-cumulation Engine
+Under SEC Regulation S-X Rule 10-01(a)(4), Form 10-Q cash flows are reported on a cumulative Year-To-Date (YTD) basis:
+- **Q1**: 3-month discrete period (~90 days).
+- **Q2**: 6-month cumulative period (~180 days).
+- **Q3**: 9-month cumulative period (~270 days).
+- **Q4 / 10-K**: 12-month annual period (~365 days).
+
+When cumulative amounts are detected, `app/sec/financials.py::_decumulate_cash_flows` derives true discrete quarterly amounts:
+$$Q2_{discrete} = YTD_{6M} - Q1_{discrete}$$
+$$Q3_{discrete} = YTD_{9M} - YTD_{6M}$$
+$$Q4_{discrete} = FY_{12M} - YTD_{9M}$$
+
+The de-cumulated quarterly cash flows are summed across the 4 most recent discrete quarters to compute **True Trailing Twelve Months (TTM) Free Cash Flow** ($FCF_{TTM} = \sum_{k=1}^4 CFO_k - CapEx_k$), which is passed directly to `calculator.mjs` as the annual base cash flow, eliminating historical $2\times$ to $4\times$ DCF valuation distortions.
+
+### 3.2 Academic Triad Forensic Accounting Models
+`app/market/forensics.py` extracts 8 official US-GAAP balance sheet and cash flow concepts (`total_assets`, `accounts_receivable`, `current_assets`, `ppe`, `depreciation`, `sg_and_a`, `stock_based_compensation`, `current_liabilities`) to compute:
+1. **Beneish 8-Factor M-Score (Messod Beneish, 1999)**:
+   $$M = -4.84 + 0.920 \cdot \text{DSRI} + 0.528 \cdot \text{GMI} + 0.404 \cdot \text{AQI} + 0.892 \cdot \text{SGI} + 0.115 \cdot \text{DEPI} - 0.172 \cdot \text{SGAI} + 4.037 \cdot \text{TATA} + 0.0327 \cdot \text{LVGI}$$
+   Detects revenue inflation, asset capitalization of operating costs, and artificial margin expansion ($M > -1.78$ triggers manipulator alert).
+2. **Sloan Accrual Quality (Richard Sloan, 1996)**:
+   $$\text{Accrual Ratio} = \frac{\text{Net Income} - \text{Cash from Operations}}{\text{Average Total Assets}}$$
+   Separates accounting paper profits from real cash generation.
+3. **Stock-Based Compensation Dilution Burden**:
+   $$\text{SBC Burden} = \frac{\text{Stock-Based Compensation}}{\text{Free Cash Flow}}$$
+   Flags hidden compensation dilution ($> 25\%$ of FCF indicates high shareholder dilution).
+
+### 3.3 Immutable FactCard Evidence Ledger & Context Compaction
+To ensure zero factual or citation amnesia during deep multi-turn investigations:
+1. **Deterministic Distillation (`app/agent/tool_result_ingestion.py`)**: Incoming tool payloads from `get_sec_financials` and `get_market_data` are immediately distilled into atomic, cited `FactCard` instances (`fact_{ticker}_{metric}_{period}`).
+2. **Entity Backlink Preservation (`app/agent/context.py`)**: When large `ToolMessage` payloads are pruned down to compact metadata envelopes under token limits, entity identifiers (`ticker`, `periods`) are retained in the envelope.
+3. **System Prompt Reprojection (`app/agent/prompts.py`)**: Active FactCards are projected into the `SystemMessage` under `DURABLE RESEARCH STATE`. Because `SystemMessage` is permanently preserved during context compaction, all audited metrics, citations, and verified quotes survive indefinitely across turns.
