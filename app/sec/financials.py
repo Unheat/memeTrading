@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
@@ -37,6 +37,16 @@ class SecFinancialsResult:
     provider: str
     as_of: str
     error_message: str | None = None
+    total_assets: dict[str, float | None] = field(default_factory=dict)
+    accounts_receivable: dict[str, float | None] = field(default_factory=dict)
+    current_assets: dict[str, float | None] = field(default_factory=dict)
+    ppe: dict[str, float | None] = field(default_factory=dict)
+    depreciation: dict[str, float | None] = field(default_factory=dict)
+    sg_and_a: dict[str, float | None] = field(default_factory=dict)
+    stock_based_compensation: dict[str, float | None] = field(default_factory=dict)
+    current_liabilities: dict[str, float | None] = field(default_factory=dict)
+    fcf: dict[str, float | None] = field(default_factory=dict)
+    ttm_fcf: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to JSON-serializable dictionary."""
@@ -60,6 +70,16 @@ class SecFinancialsResult:
             "provider": self.provider,
             "as_of": self.as_of,
             "error_message": self.error_message,
+            "total_assets": dict(self.total_assets),
+            "accounts_receivable": dict(self.accounts_receivable),
+            "current_assets": dict(self.current_assets),
+            "ppe": dict(self.ppe),
+            "depreciation": dict(self.depreciation),
+            "sg_and_a": dict(self.sg_and_a),
+            "stock_based_compensation": dict(self.stock_based_compensation),
+            "current_liabilities": dict(self.current_liabilities),
+            "fcf": dict(self.fcf),
+            "ttm_fcf": self.ttm_fcf,
         }
 
     @classmethod
@@ -85,6 +105,16 @@ class SecFinancialsResult:
             provider=str(data.get("provider", "sec_xbrl")),
             as_of=str(data.get("as_of", "")),
             error_message=str(data["error_message"]) if data.get("error_message") else None,
+            total_assets=dict(data.get("total_assets", {})),
+            accounts_receivable=dict(data.get("accounts_receivable", {})),
+            current_assets=dict(data.get("current_assets", {})),
+            ppe=dict(data.get("ppe", {})),
+            depreciation=dict(data.get("depreciation", {})),
+            sg_and_a=dict(data.get("sg_and_a", {})),
+            stock_based_compensation=dict(data.get("stock_based_compensation", {})),
+            current_liabilities=dict(data.get("current_liabilities", {})),
+            fcf=dict(data.get("fcf", {})),
+            ttm_fcf=float(data["ttm_fcf"]) if data.get("ttm_fcf") is not None else None,
         )
 
 
@@ -221,6 +251,79 @@ def _find_bs_metric(
     return None
 
 
+def _decumulate_cash_flows(periods: list[str], series: dict[str, float | None]) -> dict[str, float | None]:
+    """Convert cumulative YTD cash flow statement periods into discrete quarters if needed.
+
+    SEC Form 10-Q filings report cash flow on a cumulative year-to-date basis:
+      Q1: 3-month discrete (~90 days)
+      Q2: 6-month cumulative (~180 days)
+      Q3: 9-month cumulative (~270 days)
+      Q4: 12-month annual (Form 10-K)
+
+    If the series exhibits monotonic cumulative YTD growth within a fiscal year,
+    this derives discrete quarterly values:
+      Q2_discrete = Q2_cumulative - Q1
+      Q3_discrete = Q3_cumulative - Q2_cumulative
+      Q4_discrete = Q4_cumulative - Q3_cumulative
+    """
+    if not periods or not series:
+        return dict(series)
+
+    result = dict(series)
+    import re
+    from collections import defaultdict
+
+    def _extract_fy_and_q(p_str: str) -> tuple[int | None, int | None]:
+        m_q = re.search(r"Q([1-4])[-_\s]*(\d{4})", p_str, re.I)
+        if m_q:
+            return int(m_q.group(2)), int(m_q.group(1))
+        m_yq = re.search(r"(\d{4})[-_\s]*Q?([1-4])", p_str, re.I)
+        if m_yq:
+            return int(m_yq.group(1)), int(m_yq.group(2))
+        m_date = re.search(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})", p_str)
+        if m_date:
+            year, month = int(m_date.group(1)), int(m_date.group(2))
+            q = (month - 1) // 3 + 1
+            return year, q
+        m_fy = re.search(r"(\d{4})", p_str)
+        if m_fy:
+            return int(m_fy.group(1)), None
+        return None, None
+
+    by_year: dict[int, list[tuple[int, str]]] = defaultdict(list)
+    for p in periods:
+        fy, q = _extract_fy_and_q(p)
+        if fy is not None and q is not None:
+            by_year[fy].append((q, p))
+
+    for fy, q_list in by_year.items():
+        q_list.sort(key=lambda item: item[0])
+        if len(q_list) < 2:
+            continue
+
+        vals = [result.get(p) for _, p in q_list]
+        is_cumulative = False
+
+        if all(v is not None and v > 0 for v in vals):
+            if len(vals) >= 2 and vals[0] > 0 and vals[1] >= 1.5 * vals[0]:
+                is_cumulative = True
+            elif len(vals) >= 3 and vals[1] > 0 and vals[2] >= 1.3 * vals[1]:
+                is_cumulative = True
+
+        if is_cumulative:
+            for idx in range(len(q_list) - 1, 0, -1):
+                cur_q, cur_p = q_list[idx]
+                prev_q, prev_p = q_list[idx - 1]
+                cur_val = result.get(cur_p)
+                prev_val = result.get(prev_p)
+                if cur_val is not None and prev_val is not None:
+                    discrete_val = round(cur_val - prev_val, 2)
+                    if discrete_val >= 0:
+                        result[cur_p] = discrete_val
+
+    return result
+
+
 def _get_company(ticker: str) -> Any:
     """Instantiate edgartools Company object."""
     from edgar import Company
@@ -245,6 +348,14 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4) -> dict[str, Any]:
         "inventory": {},
         "cash_from_operations": {},
         "capex": {},
+        "total_assets": {},
+        "accounts_receivable": {},
+        "current_assets": {},
+        "ppe": {},
+        "depreciation": {},
+        "sg_and_a": {},
+        "stock_based_compensation": {},
+        "current_liabilities": {},
     }
 
     # 1. Income Statement
@@ -258,6 +369,7 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4) -> dict[str, Any]:
                 result["gross_profit"][col] = _find_row_val(inc_stmt, ["GrossProfit", "GrossMargin"], col)
                 result["operating_income"][col] = _find_row_val(inc_stmt, ["OperatingIncomeLoss", "OperatingIncome"], col)
                 result["net_income"][col] = _find_row_val(inc_stmt, ["NetIncomeLoss", "NetIncome"], col)
+                result["sg_and_a"][col] = _find_row_val(inc_stmt, ["SellingGeneralAndAdministrativeExpense", "GeneralAndAdministrativeExpense", "SellingAndMarketingExpense", "SellingExpense", "AdministrativeExpense"], col)
     except Exception as exc:
         logger.debug("Failed income statement extraction via dataframe: %s", exc)
 
@@ -321,15 +433,30 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4) -> dict[str, Any]:
             )
             result["total_debt"][col] = comb_debt
 
-    # 3. Cash Flow Statement (CFO and CapEx)
+        # D. Forensic Balance Sheet Concepts
+        result["total_assets"][col] = _find_bs_metric(["Assets", "AssetsCurrentAndNoncurrent"], col, bs_q, bs_a, fallback_cols=period_cols_available)
+        result["accounts_receivable"][col] = _find_bs_metric(["AccountsReceivableNetCurrent", "ReceivablesNetCurrent", "AccountsNotesAndLoansReceivableNetCurrent", "AccountsReceivableNet"], col, bs_q, bs_a, fallback_cols=period_cols_available)
+        result["current_assets"][col] = _find_bs_metric(["AssetsCurrent"], col, bs_q, bs_a, fallback_cols=period_cols_available)
+        result["ppe"][col] = _find_bs_metric(["PropertyPlantAndEquipmentNet", "PropertyPlantAndEquipmentGross"], col, bs_q, bs_a, fallback_cols=period_cols_available)
+        result["current_liabilities"][col] = _find_bs_metric(["LiabilitiesCurrent"], col, bs_q, bs_a, fallback_cols=period_cols_available)
+
+    # 3. Cash Flow Statement (CFO, CapEx, Depreciation, SBC)
     try:
         cf_stmt = company.cash_flow_statement(annual=False, periods=periods, as_dataframe=True)
         if cf_stmt is not None and hasattr(cf_stmt, "columns"):
             for col in result["periods"]:
                 result["cash_from_operations"][col] = _find_row_val(cf_stmt, ["NetCashProvidedByUsedInOperatingActivities", "NetCashProvidedByOperatingActivities", "OperatingCashFlow"], col)
                 result["capex"][col] = _find_row_val(cf_stmt, ["PaymentsToAcquirePropertyPlantAndEquipment", "PaymentsToAcquireProductiveAssets", "CapitalExpenditures"], col)
+                result["depreciation"][col] = _find_row_val(cf_stmt, ["DepreciationDepletionAndAmortization", "DepreciationAndAmortization", "Depreciation", "DepreciationAmortizationAndAccretionNet"], col)
+                result["stock_based_compensation"][col] = _find_row_val(cf_stmt, ["ShareBasedCompensation", "AllocatedShareBasedCompensationExpense", "StockOptionExpense", "ShareBasedPaymentArrangementNoncashExpense"], col)
     except Exception as exc:
         logger.debug("Failed cash flow extraction via dataframe: %s", exc)
+
+    # De-cumulate cash flows if reported on cumulative YTD basis in 10-Q
+    result["cash_from_operations"] = _decumulate_cash_flows(result["periods"], result["cash_from_operations"])
+    result["capex"] = _decumulate_cash_flows(result["periods"], result["capex"])
+    result["depreciation"] = _decumulate_cash_flows(result["periods"], result["depreciation"])
+    result["stock_based_compensation"] = _decumulate_cash_flows(result["periods"], result["stock_based_compensation"])
 
     if not result["periods"]:
         raise ValueError(f"No XBRL reporting periods found for ticker {ticker}")
@@ -416,11 +543,20 @@ def get_sec_financials(ticker: str, periods: int = 4) -> SecFinancialsResult:
     inv = raw.get("inventory", {})
     cfo = raw.get("cash_from_operations", {})
     capex = raw.get("capex", {})
+    tot_assets = raw.get("total_assets", {})
+    ar = raw.get("accounts_receivable", {})
+    ca = raw.get("current_assets", {})
+    ppe_val = raw.get("ppe", {})
+    depr = raw.get("depreciation", {})
+    sga = raw.get("sg_and_a", {})
+    sbc = raw.get("stock_based_compensation", {})
+    cl = raw.get("current_liabilities", {})
 
     gm_pct: dict[str, float | None] = {}
     opm_pct: dict[str, float | None] = {}
     net_cash: dict[str, float | None] = {}
     inv_qoq: dict[str, float | None] = {}
+    fcf: dict[str, float | None] = {}
 
     for i, p in enumerate(period_list):
         # Gross Margin %
@@ -446,6 +582,14 @@ def get_sec_financials(ticker: str, periods: int = 4) -> SecFinancialsResult:
         else:
             net_cash[p] = None
 
+        # Free Cash Flow (CFO - CapEx)
+        cf_val = cfo.get(p)
+        cx_val = capex.get(p)
+        if cf_val is not None and cx_val is not None:
+            fcf[p] = round(cf_val - cx_val, 2)
+        else:
+            fcf[p] = None
+
         # Inventory QoQ change %
         # period_list is newest-first e.g. [Q2, Q1, Q4, Q3], so prior quarter is i+1
         cur_inv = inv.get(p)
@@ -458,6 +602,15 @@ def get_sec_financials(ticker: str, periods: int = 4) -> SecFinancialsResult:
                 inv_qoq[p] = None
         else:
             inv_qoq[p] = None
+
+    # Calculate TTM FCF: sum of up to 4 most recent discrete quarters
+    valid_fcfs = [fcf[p] for p in period_list[:4] if fcf.get(p) is not None]
+    if len(valid_fcfs) == 4:
+        ttm_fcf = round(sum(valid_fcfs), 2)
+    elif len(valid_fcfs) >= 1:
+        ttm_fcf = round(valid_fcfs[0] * 4.0, 2)
+    else:
+        ttm_fcf = None
 
     return SecFinancialsResult(
         ticker=clean_ticker,
@@ -479,4 +632,14 @@ def get_sec_financials(ticker: str, periods: int = 4) -> SecFinancialsResult:
         provider="sec_xbrl",
         as_of=as_of,
         error_message=None,
+        total_assets=tot_assets,
+        accounts_receivable=ar,
+        current_assets=ca,
+        ppe=ppe_val,
+        depreciation=depr,
+        sg_and_a=sga,
+        stock_based_compensation=sbc,
+        current_liabilities=cl,
+        fcf=fcf,
+        ttm_fcf=ttm_fcf,
     )

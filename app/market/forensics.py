@@ -201,20 +201,84 @@ def evaluate_forensic_accounting(sec_financials: Mapping[str, Any] | None) -> di
     leverage = compute_leverage_profile(total_debt, cash, op_inc)
 
     # 4. Beneish M-Score Indices
-    # If consecutive periods exist, compute Gross Margin Index and Sales Growth Index
     rev_curr = _val("revenue", curr_p)
     rev_prev = _val("revenue", prev_p)
     gm_curr = _val("gross_margin_pct", curr_p)
     gm_prev = _val("gross_margin_pct", prev_p)
 
+    # 4a. SGI (Sales Growth Index)
     sgi = (rev_curr / rev_prev) if (rev_curr and rev_prev and rev_prev > 0) else 1.0
+
+    # 4b. GMI (Gross Margin Index)
     gmi = (gm_prev / gm_curr) if (gm_prev and gm_curr and gm_curr > 0) else 1.0
+
+    # 4c. DSRI (Days Sales in Receivables Index)
+    ar_curr = _val("accounts_receivable", curr_p)
+    ar_prev = _val("accounts_receivable", prev_p)
+    if ar_curr is not None and ar_prev and ar_prev > 0 and rev_curr and rev_prev and rev_curr > 0 and rev_prev > 0:
+        dsri = (ar_curr / rev_curr) / (ar_prev / rev_prev)
+    else:
+        dsri = 1.0
+
+    # 4d. AQI (Asset Quality Index)
+    ca_curr = _val("current_assets", curr_p)
+    ca_prev = _val("current_assets", prev_p)
+    ppe_curr = _val("ppe", curr_p)
+    ppe_prev = _val("ppe", prev_p)
+    if (
+        ca_curr is not None and ppe_curr is not None and total_assets and total_assets > 0
+        and ca_prev is not None and ppe_prev is not None and prev_assets and prev_assets > 0
+    ):
+        non_ca_curr = 1.0 - ((ca_curr + ppe_curr) / total_assets)
+        non_ca_prev = 1.0 - ((ca_prev + ppe_prev) / prev_assets)
+        aqi = (non_ca_curr / non_ca_prev) if non_ca_prev and non_ca_prev > 0 else 1.0
+    else:
+        aqi = 1.0
+
+    # 4e. DEPI (Depreciation Index)
+    depr_curr = _val("depreciation", curr_p)
+    depr_prev = _val("depreciation", prev_p)
+    if (
+        depr_curr is not None and ppe_curr is not None and (ppe_curr + depr_curr) > 0
+        and depr_prev is not None and ppe_prev is not None and (ppe_prev + depr_prev) > 0
+    ):
+        depr_rate_curr = depr_curr / (ppe_curr + depr_curr)
+        depr_rate_prev = depr_prev / (ppe_prev + depr_prev)
+        depi = (depr_rate_prev / depr_rate_curr) if depr_rate_curr and depr_rate_curr > 0 else 1.0
+    else:
+        depi = 1.0
+
+    # 4f. SGAI (Sales, General and Administrative expenses Index)
+    sga_curr = _val("sg_and_a", curr_p)
+    sga_prev = _val("sg_and_a", prev_p)
+    if sga_curr is not None and sga_prev and sga_prev > 0 and rev_curr and rev_prev and rev_curr > 0 and rev_prev > 0:
+        sgai = (sga_curr / rev_curr) / (sga_prev / rev_prev)
+    else:
+        sgai = 1.0
+
+    # 4g. LVGI (Leverage Index)
+    cl_curr = _val("current_liabilities", curr_p) or 0.0
+    cl_prev = _val("current_liabilities", prev_p) or 0.0
+    debt_prev = _val("total_debt", prev_p)
+    if total_assets and total_assets > 0 and prev_assets and prev_assets > 0:
+        lev_curr = (cl_curr + (total_debt or 0.0)) / total_assets
+        lev_prev = (cl_prev + (debt_prev or 0.0)) / prev_assets
+        lvgi = (lev_curr / lev_prev) if lev_prev and lev_prev > 0 else 1.0
+    else:
+        lvgi = 1.0
+
+    # 4h. TATA (Total Accruals to Total Assets)
     tata = ((op_inc - cfo) / total_assets) if (op_inc is not None and cfo is not None and total_assets and total_assets > 0) else 0.0
 
     beneish = compute_beneish_m_score(
-        sgi=sgi,
+        dsri=dsri,
         gmi=gmi,
+        aqi=aqi,
+        sgi=sgi,
+        depi=depi,
+        sgai=sgai,
         tata=tata,
+        lvgi=lvgi,
     )
 
     # Missing inputs audit

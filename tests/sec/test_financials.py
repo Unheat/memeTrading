@@ -16,6 +16,14 @@ def _mock_xbrl_data():
         "inventory": {"2026-Q2": 3_100_000_000, "2026-Q1": 3_500_000_000, "2025-Q4": 3_800_000_000, "2025-Q3": 4_000_000_000},
         "cash_from_operations": {"2026-Q2": 2_000_000_000, "2026-Q1": 1_800_000_000, "2025-Q4": 1_600_000_000, "2025-Q3": 1_500_000_000},
         "capex": {"2026-Q2": 1_200_000_000, "2026-Q1": 1_100_000_000, "2025-Q4": 1_000_000_000, "2025-Q3": 950_000_000},
+        "total_assets": {"2026-Q2": 20_000_000_000, "2026-Q1": 19_500_000_000, "2025-Q4": 19_000_000_000, "2025-Q3": 18_500_000_000},
+        "accounts_receivable": {"2026-Q2": 1_500_000_000, "2026-Q1": 1_400_000_000, "2025-Q4": 1_300_000_000, "2025-Q3": 1_200_000_000},
+        "current_assets": {"2026-Q2": 13_000_000_000, "2026-Q1": 12_500_000_000, "2025-Q4": 12_000_000_000, "2025-Q3": 11_500_000_000},
+        "ppe": {"2026-Q2": 6_000_000_000, "2026-Q1": 5_800_000_000, "2025-Q4": 5_500_000_000, "2025-Q3": 5_300_000_000},
+        "depreciation": {"2026-Q2": 500_000_000, "2026-Q1": 480_000_000, "2025-Q4": 460_000_000, "2025-Q3": 450_000_000},
+        "sg_and_a": {"2026-Q2": 1_000_000_000, "2026-Q1": 950_000_000, "2025-Q4": 900_000_000, "2025-Q3": 850_000_000},
+        "stock_based_compensation": {"2026-Q2": 150_000_000, "2026-Q1": 140_000_000, "2025-Q4": 130_000_000, "2025-Q3": 120_000_000},
+        "current_liabilities": {"2026-Q2": 3_500_000_000, "2026-Q1": 3_400_000_000, "2025-Q4": 3_300_000_000, "2025-Q3": 3_200_000_000},
     }
 
 
@@ -39,6 +47,52 @@ def test_get_sec_financials_success():
 
     # Check Net Cash: 8000M cash - 5000M debt = +3000M net cash
     assert result.net_cash["2026-Q2"] == pytest.approx(3_000_000_000)
+
+    # Check Forensic balance sheet & cash flow concepts
+    assert result.total_assets["2026-Q2"] == pytest.approx(20_000_000_000)
+    assert result.accounts_receivable["2026-Q2"] == pytest.approx(1_500_000_000)
+    assert result.current_assets["2026-Q2"] == pytest.approx(13_000_000_000)
+    assert result.ppe["2026-Q2"] == pytest.approx(6_000_000_000)
+    assert result.depreciation["2026-Q2"] == pytest.approx(500_000_000)
+    assert result.sg_and_a["2026-Q2"] == pytest.approx(1_000_000_000)
+    assert result.stock_based_compensation["2026-Q2"] == pytest.approx(150_000_000)
+    assert result.current_liabilities["2026-Q2"] == pytest.approx(3_500_000_000)
+
+    # Check FCF & TTM FCF: (2000-1200) + (1800-1100) + (1600-1000) + (1500-950) = 800 + 700 + 600 + 550 = 2650M
+    assert result.fcf["2026-Q2"] == pytest.approx(800_000_000)
+    assert result.ttm_fcf == pytest.approx(2_650_000_000)
+
+
+def test_decumulate_cash_flows_unaccumulates_ytd():
+    """Verify cumulative YTD Form 10-Q figures are de-cumulated into discrete quarters."""
+    from app.sec.financials import _decumulate_cash_flows
+
+    periods = ["2026-Q3", "2026-Q2", "2026-Q1"]
+    cumulative_cfo = {
+        "2026-Q1": 1_000_000_000.0,
+        "2026-Q2": 2_100_000_000.0,  # 6M YTD
+        "2026-Q3": 3_250_000_000.0,  # 9M YTD
+    }
+
+    discrete_cfo = _decumulate_cash_flows(periods, cumulative_cfo)
+    assert discrete_cfo["2026-Q1"] == pytest.approx(1_000_000_000.0)
+    assert discrete_cfo["2026-Q2"] == pytest.approx(1_100_000_000.0)  # 2100 - 1000
+    assert discrete_cfo["2026-Q3"] == pytest.approx(1_150_000_000.0)  # 3250 - 2100
+
+
+def test_decumulate_cash_flows_leaves_discrete_alone():
+    """Verify already-discrete figures are not subtracted."""
+    from app.sec.financials import _decumulate_cash_flows
+
+    periods = ["2026-Q3", "2026-Q2", "2026-Q1"]
+    discrete_cfo = {
+        "2026-Q1": 1_000_000_000.0,
+        "2026-Q2": 1_050_000_000.0,
+        "2026-Q3": 1_100_000_000.0,
+    }
+
+    result = _decumulate_cash_flows(periods, discrete_cfo)
+    assert result == discrete_cfo
 
 
 def test_get_sec_financials_unavailable_on_error():

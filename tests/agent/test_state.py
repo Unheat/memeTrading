@@ -129,6 +129,34 @@ def test_prepare_context_prunes_old_tool_body_and_retains_pair_metadata():
     assert prepared.messages[-2:] == tuple(messages[-2:])
 
 
+def test_prepare_context_prunes_json_tool_and_preserves_entity_backlink():
+    """Verify JSON tool messages preserve ticker and period backlinks upon compaction."""
+    json_body = json.dumps({"ticker": "MSFT", "periods": ["2026-Q2", "2026-Q1"], "payload": "x" * 300})
+    messages = [
+        HumanMessage(content="analyze MSFT"),
+        AIMessage(content="", tool_calls=[{"name": "get_sec_financials", "args": {"ticker": "MSFT"}, "id": "call-msft"}]),
+        ToolMessage(content=json_body, tool_call_id="call-msft", name="get_sec_financials", status="success"),
+        AIMessage(content="financials reviewed"),
+        HumanMessage(content="next step"),
+        AIMessage(content="done"),
+    ]
+    policy = ModelContextPolicy(
+        context_window_tokens=250,
+        reserved_output_tokens=0,
+        safety_margin_tokens=0,
+        compact_threshold_tokens=1,
+        tool_result_max_tokens=20,
+        latest_units_to_preserve=1,
+    )
+    prepared = prepare_context(messages, policy=policy)
+    tool_message = next(message for message in prepared.messages if isinstance(message, ToolMessage))
+    metadata = json.loads(tool_message.content)
+    assert metadata["ticker"] == "MSFT"
+    assert metadata["periods"] == ["2026-Q2", "2026-Q1"]
+    assert metadata["id"] == "call-msft"
+    assert metadata["name"] == "get_sec_financials"
+
+
 def test_prepare_context_drops_oldest_complete_unit_and_keeps_latest():
     """Verify hard-limit trimming drops whole old units and preserves newest unit."""
     old_unit = [

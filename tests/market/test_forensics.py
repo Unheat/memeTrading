@@ -107,3 +107,44 @@ def test_evaluate_forensic_accounting_end_to_end():
     assert report["sloan_accruals"]["quality_band"] == "NORMAL_EARNINGS_QUALITY"
     assert report["leverage"]["is_net_cash_positive"] is True
     assert len(report["red_flags"]) == 0
+
+
+def test_evaluate_forensic_accounting_computes_all_beneish_indices():
+    """Verify all 8 Beneish indices compute dynamically when full SEC balance sheet concepts are present."""
+    sec = {
+        "status": "ok",
+        "periods": ["2026-Q2", "2025-Q2"],
+        "revenue": {"2026-Q2": 100.0, "2025-Q2": 80.0},
+        "gross_margin_pct": {"2026-Q2": 0.50, "2025-Q2": 0.40},
+        "operating_income": {"2026-Q2": 30.0, "2025-Q2": 20.0},
+        "net_income": {"2026-Q2": 25.0, "2025-Q2": 15.0},
+        "cash_from_operations": {"2026-Q2": 35.0, "2025-Q2": 25.0},
+        "capex": {"2026-Q2": 10.0, "2025-Q2": 8.0},
+        "total_assets": {"2026-Q2": 200.0, "2025-Q2": 160.0},
+        "accounts_receivable": {"2026-Q2": 20.0, "2025-Q2": 12.0},
+        "current_assets": {"2026-Q2": 80.0, "2025-Q2": 60.0},
+        "ppe": {"2026-Q2": 70.0, "2025-Q2": 60.0},
+        "depreciation": {"2026-Q2": 7.0, "2025-Q2": 6.0},
+        "sg_and_a": {"2026-Q2": 15.0, "2025-Q2": 10.0},
+        "current_liabilities": {"2026-Q2": 30.0, "2025-Q2": 25.0},
+        "total_debt": {"2026-Q2": 40.0, "2025-Q2": 35.0},
+        "cash_and_equivalents": {"2026-Q2": 50.0, "2025-Q2": 40.0},
+        "stock_based_compensation": {"2026-Q2": 5.0, "2025-Q2": 4.0},
+    }
+
+    report = evaluate_forensic_accounting(sec)
+    indices = report["beneish_m_score"]["indices"]
+    # SGI: 100 / 80 = 1.25
+    assert indices["sgi"] == pytest.approx(1.25, abs=1e-2)
+    # GMI: 0.40 / 0.50 = 0.8
+    assert indices["gmi"] == pytest.approx(0.8, abs=1e-2)
+    # DSRI: (20/100) / (12/80) = 0.20 / 0.15 = 1.333
+    assert indices["dsri"] == pytest.approx(1.333, abs=1e-2)
+    # SGAI: (15/100) / (10/80) = 0.15 / 0.125 = 1.2
+    assert indices["sgai"] == pytest.approx(1.2, abs=1e-2)
+    # TATA: (30 - 35) / 200 = -5 / 200 = -0.025
+    assert indices["tata"] == pytest.approx(-0.025, abs=1e-2)
+    # Verify non-trivial AQI and LVGI
+    assert indices["aqi"] is not None
+    assert indices["lvgi"] is not None
+    assert indices["depi"] is not None

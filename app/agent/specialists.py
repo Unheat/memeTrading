@@ -481,16 +481,24 @@ def run_quant_analysis(state: InvestigationState) -> dict[str, Any]:
         "base_case_discount_rate": base_discount,
         "high_case_discount_rate": high_discount,
     }
+    ttm_fcf = _number(sec.get("ttm_fcf"))
+    fcf_base = ttm_fcf if (ttm_fcf is not None and ttm_fcf > 0) else fcf
+    fcf_mapping = (
+        "sec_financials.ttm_fcf"
+        if (ttm_fcf is not None and ttm_fcf > 0)
+        else f"sec_financials.cash_from_operations[{period}] - sec_financials.capex[{period}]"
+    )
+
     source_mapping = {
         "current_price": market_inputs["provenance"]["price_input_field"],
         "shares_diluted": market_inputs["provenance"]["shares_input_field"],
-        "fcf_base": f"sec_financials.cash_from_operations[{period}] - sec_financials.capex[{period}]",
+        "fcf_base": fcf_mapping,
         "net_cash": f"sec_financials.cash_and_equivalents[{bs_period}] - sec_financials.total_debt[{bs_period}]",
         "balance_sheet_period": bs_period,
         "market_price_provenance": market_inputs["provenance"],
     }
     model = {
-        "inputs": {"current_price": price, "fcf_base": fcf, "shares_diluted": shares, "net_cash": net_cash},
+        "inputs": {"current_price": price, "fcf_base": fcf_base, "shares_diluted": shares, "net_cash": net_cash},
         "assumptions": assumptions,
         "dcf": {
             "terminal_growth_rate": terminal_growth,

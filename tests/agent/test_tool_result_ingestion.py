@@ -91,6 +91,70 @@ def test_parallel_results_merge_without_losing_existing_state() -> None:
     assert [receipt["tool_call_id"] for receipt in update["searches_performed"][1:]] == [
         "market-1", "research-1", "financials-1", "pull-1", "verify-1", "verify-2"
     ]
+    # Check distilled FactCards from SEC financials
+    f_keys = [fc["metric_key"] for fc in update.get("fact_cards", [])]
+    assert "cash_from_operations" in f_keys
+    assert "capex" in f_keys
+
+
+def test_ingest_tool_results_distills_fact_cards_into_candidate_and_state() -> None:
+    """Verify atomic FactCards are distilled and stored with exact citations and provenance."""
+    state = {
+        "ticker": "MSFT",
+        "candidates": {
+            "cand_msft": {
+                "candidate_id": "cand_msft",
+                "ticker": "MSFT",
+                "status": "active",
+                "fact_cards": [],
+            }
+        },
+    }
+    messages = [
+        _message(
+            "get_sec_financials",
+            "fin-call-1",
+            {
+                "status": "ok",
+                "candidate_id": "cand_msft",
+                "ticker": "MSFT",
+                "periods": ["2026-Q2"],
+                "revenue": {"2026-Q2": 65_000_000_000.0},
+                "operating_income": {"2026-Q2": 28_000_000_000.0},
+                "cash_from_operations": {"2026-Q2": 30_000_000_000.0},
+                "capex": {"2026-Q2": 11_000_000_000.0},
+                "ttm_fcf": 75_000_000_000.0,
+            },
+        ),
+        _message(
+            "get_market_data",
+            "mkt-call-1",
+            {
+                "candidate_id": "cand_msft",
+                "ticker": "MSFT",
+                "quote": {"price": 425.50, "as_of": "2026-09-15T00:00:00Z"},
+            },
+        ),
+    ]
+
+    update = ingest_tool_results(state, messages)
+    top_cards = update["fact_cards"]
+    cand_cards = update["candidates"]["cand_msft"]["fact_cards"]
+
+    assert len(top_cards) >= 5
+    assert len(cand_cards) >= 5
+    top_ids = {c["fact_id"] for c in top_cards}
+    assert "fact_msft_revenue_2026_q2" in top_ids
+    assert "fact_msft_ttm_fcf" in top_ids
+    assert "fact_msft_spot_price" in top_ids
+
+    # Spot check card content
+    rev_card = next(c for c in top_cards if c["fact_id"] == "fact_msft_revenue_2026_q2")
+    assert rev_card["value"] == 65_000_000_000.0
+    assert rev_card["unit"] == "USD"
+    assert rev_card["ticker"] == "MSFT"
+    assert rev_card["candidate_id"] == "cand_msft"
+    assert "sec.gov" in rev_card["source_url"]
 
 
 def test_errors_duplicates_and_bad_json_are_receipts_not_evidence() -> None:

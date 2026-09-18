@@ -204,17 +204,28 @@ def _pruned_tool_message(message: ToolMessage) -> ToolMessage:
         message: Oversized tool result to replace.
 
     Returns:
-        ToolMessage retaining status, name, ID, original size, and content digest.
+        ToolMessage retaining status, name, ID, original size, content digest, and entity backlinks.
     """
     body = _stable_text(message.content)
     digest = hashlib.sha256(body.encode("utf-8")).hexdigest()[:TOOL_DIGEST_LENGTH]
-    metadata = {
+    metadata: dict[str, Any] = {
         "digest": digest,
         "id": message.tool_call_id,
         "name": message.name,
         "size": len(body.encode("utf-8")),
         "status": getattr(message, "status", None),
     }
+    try:
+        parsed = json.loads(body)
+        if isinstance(parsed, dict):
+            ticker = str(parsed.get("ticker") or "").upper().strip()
+            if ticker and ticker != "UNKNOWN":
+                metadata["ticker"] = ticker
+            if "periods" in parsed and isinstance(parsed["periods"], list):
+                metadata["periods"] = parsed["periods"]
+    except Exception:
+        pass
+
     return ToolMessage(
         content=json.dumps(metadata, sort_keys=True, separators=(",", ":")),
         tool_call_id=message.tool_call_id,

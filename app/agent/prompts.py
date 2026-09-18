@@ -129,6 +129,15 @@ def build_subject_packet(candidate_data: Mapping[str, Any]) -> dict[str, Any]:
             "moat_rating": dossier.get("moat_rating"),
         }
 
+    cand_facts = cand.get("fact_cards") or []
+    if cand_facts:
+        packet["fact_cards_count"] = len(cand_facts)
+        packet["key_facts"] = [
+            {"id": f.get("fact_id"), "metric": f.get("metric_key"), "period": f.get("period"), "val": f.get("value")}
+            for f in cand_facts[:12]
+            if isinstance(f, Mapping)
+        ]
+
     evidence = cand.get("evidence") or []
     if evidence:
         packet["evidence_count"] = len(evidence)
@@ -192,6 +201,22 @@ def build_research_system_prompt(state: InvestigationState) -> SystemMessage:
         if isinstance(w, Mapping)
     ]
 
+    # Compact FactCard ledger for durable cited financial facts
+    fact_cards = [
+        {
+            "id": fc.get("fact_id"),
+            "ticker": fc.get("ticker"),
+            "metric": fc.get("metric_key"),
+            "period": fc.get("period"),
+            "val": fc.get("value"),
+            "unit": fc.get("unit"),
+            "quote": fc.get("quote"),
+            "accession": fc.get("accession"),
+        }
+        for fc in state.get("fact_cards", [])
+        if isinstance(fc, Mapping)
+    ]
+
     projections = {
         "research_intent": state.get("research_intent", {}),
         "explicit_target": {"ticker": state.get("ticker"), "company": state.get("company"), "cik": state.get("cik")},
@@ -199,6 +224,7 @@ def build_research_system_prompt(state: InvestigationState) -> SystemMessage:
         "comparisons": state.get("comparisons", []),
         "work_queue": work_queue,
         "source_records": sources,
+        "fact_cards": fact_cards[:25],
         "evidence": evidence,
         "contradictions": state.get("contradictions", []),
         "unresolved_questions": state.get("unresolved_questions", []),

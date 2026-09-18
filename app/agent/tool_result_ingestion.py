@@ -246,6 +246,15 @@ def _route_success(
         else:
             _append_unique_mapping(update["comparisons"], clean)
         return
+    if tool_name in {"get_sec_financials", "get_market_data"}:
+        t_clean = str(ticker or payload.get("ticker") or (candidate.get("ticker") if candidate else "") or "").upper().strip()
+        c_id = str(payload.get("candidate_id") or (candidate.get("candidate_id") if candidate else "") or "")
+        cards = _distill_fact_cards(tool_name, clean, t_clean, c_id)
+        for card in cards:
+            if candidate is not None:
+                _append_fact_card(candidate.setdefault("fact_cards", []), card)
+            _append_fact_card(update.setdefault("fact_cards", []), card)
+
     if tool_name in _CANDIDATE_SCOPED_TOOLS and candidate is not None:
         _route_candidate_tool(candidate, tool_name, clean, confidences, allow_partial=allow_partial)
         if multi_candidate:
@@ -285,6 +294,140 @@ def _route_success(
         update.setdefault("capability_outputs", {}).setdefault(tool_name, []).append(clean)
     elif tool_name in {"search_articles", "search_social", "search_web", "read_article", "read_document"}:
         _record_source_payload(update, tool_name, clean)
+
+
+def _append_fact_card(target: list[dict[str, Any]], card: Mapping[str, Any]) -> None:
+    """Append a FactCard idempotently by unique fact_id."""
+    fid = str(card.get("fact_id") or "")
+    if not fid:
+        return
+    for existing in target:
+        if str(existing.get("fact_id") or "") == fid:
+            return
+    target.append(dict(card))
+
+
+def _distill_fact_cards(
+    tool_name: str,
+    payload: Mapping[str, Any],
+    ticker: str,
+    candidate_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Deterministically distill atomic, cited FactCards from tool payloads."""
+    from app.agent.screening import FactCard
+    import re
+
+    cards: list[dict[str, Any]] = []
+    t_clean = (ticker or str(payload.get("ticker") or "")).strip().upper()
+    if not t_clean or t_clean == "UNKNOWN":
+        return cards
+
+    c_id = candidate_id or f"cand_{t_clean.lower()}"
+
+    def _slug(p: str) -> str:
+        return re.sub(r"[^a-z0-9_]+", "_", p.strip().lower())
+
+    if tool_name == "get_sec_financials":
+        periods = payload.get("periods") or ()
+        metrics_to_extract = [
+            ("revenue", "USD"),
+            ("gross_profit", "USD"),
+            ("gross_margin_pct", "ratio"),
+            ("operating_income", "USD"),
+            ("operating_margin_pct", "ratio"),
+            ("net_income", "USD"),
+            ("cash_and_equivalents", "USD"),
+            ("total_debt", "USD"),
+            ("net_cash", "USD"),
+            ("inventory", "USD"),
+            ("cash_from_operations", "USD"),
+            ("capex", "USD"),
+            ("fcf", "USD"),
+            ("total_assets", "USD"),
+            ("accounts_receivable", "USD"),
+            ("current_assets", "USD"),
+            ("ppe", "USD"),
+            ("depreciation", "USD"),
+            ("sg_and_a", "USD"),
+            ("stock_based_compensation", "USD"),
+            ("current_liabilities", "USD"),
+        ]
+        provider = str(payload.get("provider", "sec_xbrl"))
+        source_url = f"https://www.sec.gov/edgar/browse/?CIK={t_clean}"
+
+        for metric_key, unit in metrics_to_extract:
+            series = payload.get(metric_key)
+            if isinstance(series, Mapping):
+                for p in periods:
+                    val = series.get(p)
+                    if val is not None:
+                        try:
+                            f_val = float(val)
+                        except (ValueError, TypeError):
+                            continue
+                        cards.append(
+                            FactCard(
+                                fact_id=f"fact_{t_clean.lower()}_{metric_key}_{_slug(str(p))}",
+                                candidate_id=c_id,
+                                ticker=t_clean,
+                                metric_key=metric_key,
+                                period=str(p),
+                                value=f_val,
+                                unit=unit,
+                                quote=f"SEC XBRL {metric_key} for {p}: {f_val}",
+                                source_url=source_url,
+                                accession=provider,
+                            ).to_dict()
+                        )
+
+        # Distill TTM FCF if computed
+        ttm_fcf = payload.get("ttm_fcf")
+        if ttm_fcf is not None:
+            try:
+                f_ttm = float(ttm_fcf)
+                cards.append(
+                    FactCard(
+                        fact_id=f"fact_{t_clean.lower()}_ttm_fcf",
+                        candidate_id=c_id,
+                        ticker=t_clean,
+                        metric_key="ttm_fcf",
+                        period="TTM",
+                        value=f_ttm,
+                        unit="USD",
+                        quote=f"Trailing twelve months Free Cash Flow: {f_ttm}",
+                        source_url=source_url,
+                        accession=provider,
+                    ).to_dict()
+                )
+            except (ValueError, TypeError):
+                pass
+
+    elif tool_name == "get_market_data":
+        quote = payload.get("quote") or {}
+        if isinstance(quote, Mapping):
+            price = quote.get("price")
+            as_of = str(quote.get("as_of", "latest"))[:10]
+            if price is not None:
+                try:
+                    f_price = float(price)
+                    cards.append(
+                        FactCard(
+                            fact_id=f"fact_{t_clean.lower()}_spot_price",
+                            candidate_id=c_id,
+                            ticker=t_clean,
+                            metric_key="price",
+                            period=f"SPOT-{as_of}",
+                            value=f_price,
+                            unit="USD",
+                            quote=f"Observed market price as of {as_of}: {f_price}",
+                            source_url="",
+                            accession="market_quote",
+                        ).to_dict()
+                    )
+                except (ValueError, TypeError):
+                    pass
+
+    return cards
 
 
 def _route_candidate_tool(
