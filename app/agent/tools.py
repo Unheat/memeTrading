@@ -52,11 +52,13 @@ def create_agent_tools(
     guard: ToolCallGuard | None = None,
     model: Any | None = None,
     case_id: str | None = None,
+    as_of_date: str | None = None,
 ) -> list[BaseTool]:
     """Create all normalized tools bound to LangChain BaseTool interfaces."""
     call_guard = guard or ToolCallGuard()
     root_path = Path(cases_root) if cases_root else Path("cases")
     active_case_id = str(case_id) if case_id else "default"
+    run_as_of = (as_of_date or "").strip() or None
 
     def _guard_check(tool_name: str, kwargs: dict[str, Any]) -> str | None:
         items = tuple(sorted((k, str(v)) for k, v in kwargs.items()))
@@ -88,7 +90,14 @@ def create_agent_tools(
             return suppressed
         try:
             res = _search_articles(query=query, ticker=ticker, sources=sources, days=days, limit=limit)
-            return json.dumps(sanitize_payload(res.to_dict()))
+            d = res.to_dict()
+            if run_as_of and "articles" in d and isinstance(d["articles"], list):
+                cutoff = run_as_of[:10]
+                d["articles"] = [
+                    a for a in d["articles"]
+                    if not a.get("published_at") or str(a.get("published_at"))[:10] <= cutoff
+                ]
+            return json.dumps(sanitize_payload(d))
         except Exception as exc:
             return json.dumps({"status": "error", "message": f"search_articles error: {exc}"})
 
@@ -137,7 +146,7 @@ def create_agent_tools(
         if suppressed:
             return suppressed
         try:
-            res = _get_market_data(ticker=ticker, period=period, benchmark_ticker=benchmark_ticker)
+            res = _get_market_data(ticker=ticker, period=period, benchmark_ticker=benchmark_ticker, as_of_date=run_as_of)
             d = res.to_dict()
             if candidate_id:
                 d["candidate_id"] = candidate_id
@@ -169,7 +178,7 @@ def create_agent_tools(
         try:
             from app.sec.receipts import get_sec_receipt_store
 
-            res = _list_sec_filings(ticker=ticker, forms=forms, since=since)
+            res = _list_sec_filings(ticker=ticker, forms=forms, since=since, until=run_as_of)
             if res.error:
                 return json.dumps({"status": "error", "code": res.error.code, "message": res.error.message})
             store = get_sec_receipt_store()
@@ -384,7 +393,7 @@ def create_agent_tools(
         if suppressed:
             return suppressed
         try:
-            res = _get_sec_financials(ticker=ticker, periods=periods)
+            res = _get_sec_financials(ticker=ticker, periods=periods, as_of_date=run_as_of)
             d = res.to_dict()
             if candidate_id:
                 d["candidate_id"] = candidate_id

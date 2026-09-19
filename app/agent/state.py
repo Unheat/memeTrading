@@ -112,6 +112,7 @@ class ResearchRequest:
     theme: str | None = None
     mandate: str | None = None
     time_boundary: str | None = None
+    as_of_date: str | None = None
     budget: BudgetLimits = field(default_factory=BudgetLimits)
     template_version: str | None = None
     depth: ResearchDepth = "deep"
@@ -126,6 +127,9 @@ class ResearchRequest:
             object.__setattr__(self, "ticker", self.ticker.strip().upper())
         else:
             object.__setattr__(self, "ticker", None)
+        effective_date = (self.as_of_date or self.time_boundary or "").strip() or None
+        object.__setattr__(self, "as_of_date", effective_date)
+        object.__setattr__(self, "time_boundary", effective_date)
         if self.depth not in {"standard", "deep"}:
             raise ValueError("depth must be standard or deep")
 
@@ -148,6 +152,7 @@ class InvestigationState(TypedDict):
 
     messages: Annotated[Sequence[BaseMessage], add_messages]
     case_id: str
+    as_of_date: str | None
     depth: str
     research_intent: dict[str, Any]
     research_plan: list[dict[str, Any]]
@@ -206,6 +211,7 @@ def create_initial_state(request: ResearchRequest, case_id: str) -> Investigatio
     intent = request.resolve_intent()
     return {
         "messages": [HumanMessage(content=request.query)], "case_id": case_id,
+        "as_of_date": request.as_of_date,
         "depth": request.depth, "research_intent": intent.to_dict(),
         "research_plan": [], "source_records": [], "claim_records": [], "capability_outputs": {},
         "ticker": request.ticker or "", "company": request.company, "cik": None,

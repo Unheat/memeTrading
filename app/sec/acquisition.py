@@ -202,6 +202,7 @@ def list_sec_filings(
     ticker: str,
     forms: Iterable[str] | None = None,
     since: date | str | None = None,
+    until: date | str | None = None,
     company_factory: CompanyFactory | None = None,
 ) -> FilingDiscoveryResult:
     """Discover filing metadata without downloading SEC documents.
@@ -210,6 +211,7 @@ def list_sec_filings(
         ticker: Caller-supplied 1–10 letter ticker.
         forms: Optional iterable of SEC form filters.
         since: Optional inclusive filing-date lower bound as a date or ISO string.
+        until: Optional inclusive filing-date upper bound (as-of / PIT cutoff).
         company_factory: Optional injected Edgartools-compatible test seam.
 
     Returns:
@@ -219,6 +221,7 @@ def list_sec_filings(
         normalized_ticker = _normalize_ticker(ticker)
         normalized_forms = _normalize_forms(forms)
         normalized_since = _normalize_since(since)
+        normalized_until = _normalize_since(until)
     except (AttributeError, TypeError, ValueError):
         return _failure("INVALID_INPUT", "Ticker, forms, or since date is invalid.", False)
 
@@ -247,6 +250,8 @@ def list_sec_filings(
             filings = tuple(filing for filing in filings if filing.form.upper() in allowed_forms)
         if normalized_since is not None:
             filings = tuple(filing for filing in filings if filing.filing_date >= normalized_since)
+        if normalized_until is not None:
+            filings = tuple(filing for filing in filings if filing.filing_date <= normalized_until)
         return FilingDiscoveryResult(
             tuple(sorted(filings, key=lambda filing: (filing.filing_date, filing.accession), reverse=True))
         )

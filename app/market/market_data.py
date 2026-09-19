@@ -60,21 +60,23 @@ def get_market_data(
     ticker: str,
     period: str | None = None,
     benchmark_ticker: str = "SPY",
+    as_of_date: str | None = None,
 ) -> MarketDataResult:
     """Return compact market context for one ticker; never a signal or advice.
 
     :param ticker: Uppercase ticker symbol.
     :param period: yfinance history period (default 6mo).
     :param benchmark_ticker: Benchmark for relative return (default SPY).
+    :param as_of_date: Optional PIT cutoff date (YYYY-MM-DD); bars after this date are filtered out.
     :returns: MarketDataResult with per-field provenance and availability.
     :raises ValueError: On invalid ticker.
     :raises MarketDataError: When primary history cannot be fetched at all.
     """
     clean_ticker = _validate_ticker(ticker)
     effective_period = period or DEFAULT_PERIOD
-    as_of = datetime.now(timezone.utc).isoformat()
+    as_of = as_of_date or datetime.now(timezone.utc).isoformat()
 
-    history = fetch_history(clean_ticker, effective_period)
+    history = fetch_history(clean_ticker, effective_period, as_of_date=as_of_date)
     closes = np.array(history["close"], dtype=float)
     volumes = np.array(history["volume"], dtype=float)
     highs = np.array(history["high"], dtype=float)
@@ -124,7 +126,7 @@ def get_market_data(
     # Benchmark-relative return: primary 1m return vs benchmark 1m return.
     benchmark_return = None
     try:
-        bench_history = fetch_history_benchmark(benchmark_ticker, effective_period)
+        bench_history = fetch_history_benchmark(benchmark_ticker, effective_period, as_of_date=as_of_date)
         bench_closes = np.array(bench_history["close"], dtype=float)
         asset_1m = returns["1m"].value
         bench_1m = metrics.simple_return(bench_closes, MONTH_LOOKBACK)

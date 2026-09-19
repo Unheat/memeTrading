@@ -116,13 +116,15 @@ def run_investigation(
         budget = configured_budget if request.budget == BudgetLimits() else request.budget
         effective_request = ResearchRequest(
             query=request.query, ticker=request.ticker, company=request.company, theme=request.theme,
-            mandate=request.mandate, time_boundary=request.time_boundary, budget=budget,
+            mandate=request.mandate, time_boundary=request.time_boundary, as_of_date=request.as_of_date, budget=budget,
             template_version=request.template_version, depth=request.depth,
             requested_ranking_count=request.requested_ranking_count,
             requested_position_decision=request.requested_position_decision,
         )
         initial_state = create_initial_state(effective_request, case_id=case_id)
         manifest["research_intent"] = initial_state["research_intent"]
+        if effective_request.as_of_date:
+            manifest["as_of_date"] = effective_request.as_of_date
         runtime = ModelRuntime(model=model) if model is not None else create_default_model_runtime(
             model=cfg.llm.model, base_url=cfg.llm.base_url, temperature=cfg.llm.temperature, endpoints=cfg.llm.models,
         )
@@ -131,6 +133,7 @@ def run_investigation(
             guard=ToolCallGuard(max_identical=budget.max_identical_calls),
             model=runtime.model,
             case_id=case_id,
+            as_of_date=effective_request.as_of_date,
         )
         graph = create_research_graph(
             runtime.model, tools, context_policy=runtime.context_policy, token_counter=runtime.token_counter,

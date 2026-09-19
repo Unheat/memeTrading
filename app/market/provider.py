@@ -49,9 +49,12 @@ def _yf_info(ticker: str) -> dict:
     return yf.Ticker(ticker).info or {}
 
 
-def fetch_history(ticker: str, period: str = DEFAULT_PERIOD) -> dict:
+def fetch_history(ticker: str, period: str = DEFAULT_PERIOD, as_of_date: str | None = None) -> dict:
     """Fetch OHLCV history for one ticker as plain lists.
 
+    :param ticker: Ticker symbol.
+    :param period: History period.
+    :param as_of_date: Optional PIT cutoff (YYYY-MM-DD); bars after this date are filtered out.
     :returns: dict with dates/open/high/low/close/volume lists (floats/strings).
     :raises MarketDataError: On empty frame or upstream failure.
     """
@@ -64,6 +67,15 @@ def fetch_history(ticker: str, period: str = DEFAULT_PERIOD) -> dict:
     try:
         if frame is None or len(frame) == 0:
             raise MarketDataError(PROVIDER_NAME, f"empty history for {ticker}")
+        if as_of_date:
+            cutoff = str(as_of_date)[:10]
+            try:
+                mask = [str(idx)[:10] <= cutoff for idx in frame.index]
+                frame = frame.iloc[mask] if hasattr(frame, "iloc") else frame[mask]
+            except Exception:
+                pass
+            if frame is None or len(frame) == 0:
+                raise MarketDataError(PROVIDER_NAME, f"empty history for {ticker} on or before {as_of_date}")
         close_series = frame["Close"]
         dates = [str(idx) for idx in frame.index]
         return {
@@ -80,9 +92,9 @@ def fetch_history(ticker: str, period: str = DEFAULT_PERIOD) -> dict:
         raise MarketDataError(PROVIDER_NAME, f"history parse failed for {ticker}: {exc}") from exc
 
 
-def fetch_history_benchmark(ticker: str, period: str = DEFAULT_PERIOD) -> dict:
+def fetch_history_benchmark(ticker: str, period: str = DEFAULT_PERIOD, as_of_date: str | None = None) -> dict:
     """Fetch OHLCV history for the benchmark ticker (same shape as fetch_history)."""
-    return fetch_history(ticker, period)
+    return fetch_history(ticker, period, as_of_date=as_of_date)
 
 
 def fetch_info(ticker: str) -> dict:

@@ -69,6 +69,12 @@ def parse_args() -> argparse.Namespace:
         default="deep",
         help="Research breadth policy",
     )
+    parser.add_argument(
+        "--as-of",
+        type=str,
+        default=None,
+        help="Historical Point-in-Time analysis date cutoff in YYYY-MM-DD format (for backtesting / historical evaluation)",
+    )
 
     # --- Media generation flags ---
     media_group = parser.add_argument_group("Media Generation (opt-in)")
@@ -192,6 +198,8 @@ def main() -> int:
         print(f"  • Theme:   {theme}")
     if company:
         print(f"  • Company: {company}")
+    if args.as_of:
+        print(f"  • As of:   {args.as_of} (Historical Point-in-Time Mode)")
     print(f"  • Model:   {config.llm.model}")
     print("  • Engine:  Multi-Stage Deep Research (Plan -> Execute -> Reflect -> Synthesize)")
     print(f"  • Depth:   {args.depth.capitalize()}")
@@ -211,6 +219,7 @@ def main() -> int:
         company=company,
         theme=theme,
         mandate=args.mandate,
+        as_of_date=args.as_of,
         depth=args.depth,
     )
 

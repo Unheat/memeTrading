@@ -150,6 +150,48 @@ def _sort_period_cols(cols: list[str]) -> list[str]:
     return sorted(cols, key=_parse_key, reverse=True)
 
 
+def _period_col_after_as_of(col: str, as_of_str: str | None) -> bool:
+    """Return True if a period column represents a date strictly after as_of_str (lookahead)."""
+    if not as_of_str:
+        return False
+    import re
+    from datetime import date
+    try:
+        as_of_d = date.fromisoformat(str(as_of_str)[:10])
+    except Exception:
+        return False
+    c = str(col).strip()
+    m_date = re.search(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})", c)
+    if m_date:
+        try:
+            col_d = date(int(m_date.group(1)), int(m_date.group(2)), int(m_date.group(3)))
+            return col_d > as_of_d
+        except ValueError:
+            pass
+    m_q = re.search(r"Q([1-4])\s*(\d{4})", c, re.I)
+    if m_q:
+        q_year = int(m_q.group(2))
+        if q_year > as_of_d.year:
+            return True
+        if q_year == as_of_d.year:
+            q_num = int(m_q.group(1))
+            as_of_q = (as_of_d.month - 1) // 3 + 1
+            return q_num > as_of_q
+    m_yq = re.search(r"(\d{4})\s*[-Q]\s*([1-4])", c, re.I)
+    if m_yq:
+        q_year = int(m_yq.group(1))
+        if q_year > as_of_d.year:
+            return True
+        if q_year == as_of_d.year:
+            q_num = int(m_yq.group(2))
+            as_of_q = (as_of_d.month - 1) // 3 + 1
+            return q_num > as_of_q
+    m_fy = re.search(r"(\d{4})", c)
+    if m_fy:
+        return int(m_fy.group(1)) > as_of_d.year
+    return False
+
+
 def _find_row_val(df: Any, concept_names: list[str], col: str) -> float | None:
     """Find a matching concept's finite numeric value, otherwise return ``None``.
 
@@ -330,7 +372,7 @@ def _get_company(ticker: str) -> Any:
     return Company(ticker)
 
 
-def _fetch_xbrl_statements(ticker: str, periods: int = 4) -> dict[str, Any]:
+def _fetch_xbrl_statements(ticker: str, periods: int = 4, as_of_date: str | None = None) -> dict[str, Any]:
     """Fetch raw statement series via edgartools with concept fallback."""
     from app.sec.identity import ensure_sec_identity
     ensure_sec_identity()
@@ -362,7 +404,7 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4) -> dict[str, Any]:
     try:
         inc_stmt = company.income_statement(annual=False, periods=periods, as_dataframe=True)
         if inc_stmt is not None and hasattr(inc_stmt, "columns"):
-            period_cols = _sort_period_cols([str(c) for c in inc_stmt.columns if _is_period_col(c)])
+            period_cols = [c for c in _sort_period_cols([str(c) for c in inc_stmt.columns if _is_period_col(c)]) if not _period_col_after_as_of(c, as_of_date)]
             result["periods"] = period_cols[:periods]
             for col in result["periods"]:
                 result["revenue"][col] = _find_row_val(inc_stmt, ["Revenues", "Revenue", "SalesRevenueNet", "RevenueFromContractWithCustomerExcludingAssessedTax"], col)
@@ -387,7 +429,7 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4) -> dict[str, Any]:
         logger.debug("Failed annual balance sheet extraction via dataframe: %s", exc)
 
     if not result["periods"] and bs_q is not None and hasattr(bs_q, "columns"):
-        result["periods"] = _sort_period_cols([str(c) for c in bs_q.columns if _is_period_col(c)])[:periods]
+        result["periods"] = [c for c in _sort_period_cols([str(c) for c in bs_q.columns if _is_period_col(c)]) if not _period_col_after_as_of(c, as_of_date)][:periods]
 
     period_cols_available = list(result["periods"])
     for col in result["periods"]:
@@ -464,18 +506,19 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4) -> dict[str, Any]:
     return result
 
 
-def get_sec_financials(ticker: str, periods: int = 4) -> SecFinancialsResult:
+def get_sec_financials(ticker: str, periods: int = 4, as_of_date: str | None = None) -> SecFinancialsResult:
     """Extract official quarterly SEC XBRL metrics with zero hallucination.
 
     :param ticker: Target company ticker (e.g. "MU").
     :param periods: Number of recent quarters to analyze (default 4).
+    :param as_of_date: Optional PIT cutoff (YYYY-MM-DD); periods filed after this date are excluded.
     :returns: SecFinancialsResult with deterministic margins and inventory trends.
     """
     clean_ticker = ticker.upper().strip()
-    as_of = datetime.now(timezone.utc).isoformat()
+    as_of = as_of_date or datetime.now(timezone.utc).isoformat()
 
     try:
-        raw = _fetch_xbrl_statements(clean_ticker, periods=periods)
+        raw = _fetch_xbrl_statements(clean_ticker, periods=periods, as_of_date=as_of_date)
     except Exception as exc:
         logger.warning("Failed to extract SEC XBRL financials for %s: %s", clean_ticker, exc)
         is_foreign = False
