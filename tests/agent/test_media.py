@@ -6,7 +6,11 @@ from langchain_core.messages import AIMessage
 
 from app.agent.state import ResearchRequest, create_initial_state
 from app.agent.media import (
+    CitationCard,
     MediaPackage,
+    build_source_registry,
+    format_source_registry_for_prompt,
+    format_bibliography_markdown,
     generate_article_markdown,
     generate_media_package,
     generate_reel_script,
@@ -50,24 +54,93 @@ def test_validate_dialogue_json_rejects_missing_emotion_tag():
         validate_dialogue_json(lines, character_pair="peter_stewie")
 
 
+def test_build_source_registry_extracts_and_indexes_sources():
+    """Verify build_source_registry extracts SEC, consensus, and market data into indexed CitationCards."""
+    req = ResearchRequest(query="Investigate NVDA", ticker="NVDA", company="NVIDIA Corp")
+    state = create_initial_state(req, case_id="case_nvda")
+
+    state["sec_financials"] = {
+        "status": "ok",
+        "provider": "0001045810-26-000045",
+        "periods": ["2026Q3", "2026Q2"],
+        "revenue": {"2026Q3": 35000000000.0},
+        "gross_margin_pct": {"2026Q3": 0.75},
+        "ttm_fcf": 45000000000.0,
+    }
+    state["consensus_snapshot"] = {
+        "target_mean_price": 180.0,
+        "target_low_price": 120.0,
+        "target_high_price": 240.0,
+        "ratings": {"buy": 35, "hold": 5, "sell": 1},
+    }
+    state["market_context"] = {
+        "quote": {"price": 140.50, "market_cap": 3400000000000.0, "as_of": "2026-09-18"},
+        "volume_ratio_20d": {"value": 1.25},
+    }
+    state["evidence"] = [
+        {
+            "form": "10-Q",
+            "accession": "0001045810-26-000045",
+            "source_url": "https://www.sec.gov/edgar/nvda-10q.htm",
+            "quote": "Data center compute revenue grew 150% YoY.",
+            "filing_date": "2026-08-28",
+        }
+    ]
+
+    cards = build_source_registry(state)
+    assert len(cards) >= 4
+
+    # Card [1] is SEC financials
+    assert cards[0].index == 1
+    assert cards[0].tag == "[1]"
+    assert cards[0].source_type == "SEC Filing"
+    assert any("Revenue: $35.00B" in f for f in cards[0].facts)
+    assert any("75.0%" in f for f in cards[0].facts)
+
+    # Card [2] is Consensus
+    assert cards[1].index == 2
+    assert cards[1].tag == "[2]"
+    assert cards[1].source_type == "Consensus"
+    assert any("Mean $180.00" in f for f in cards[1].facts)
+
+    # Card [3] is Market Data
+    assert cards[2].index == 3
+    assert cards[2].tag == "[3]"
+    assert cards[2].source_type == "Market Data"
+    assert any("$140.50" in f for f in cards[2].facts)
+
+    # Card [4] is SEC Evidence Excerpt
+    assert cards[3].index == 4
+    assert cards[3].tag == "[4]"
+    assert "Data center compute" in cards[3].quotes[0]
+
+    # Verify prompt text format
+    prompt_text = format_source_registry_for_prompt(cards)
+    assert "[1] **U.S. Securities & Exchange Commission" in prompt_text
+    assert "[2] **Wall Street Consensus" in prompt_text
+
+    # Verify bibliography format
+    biblio_text = format_bibliography_markdown(cards)
+    assert "## Primary Sources & Regulatory Receipts" in biblio_text
+    assert "1. **U.S. Securities & Exchange Commission" in biblio_text
+    assert "2. **Wall Street Consensus" in biblio_text
+
+
 class FakeArticleModel:
-    """Mock model returning article text."""
+    """Mock model returning article text with bracketed citations."""
 
     def invoke(self, messages):
         return AIMessage(
-            content="""# The DDR5 Shortage Is Real — And Micron's 10-Q Proves Who Wins
+            content="""# The Memory Boom Is Real — And Micron's 10-Q Proves Who Wins
 
-**Bottom Line**: Retail memory shortages are translating into expanding margins [1].
+**Bottom Line**: Memory shortages are driving unprecedented pricing power and gross margin expansion [1].
 
-## The Scuttlebutt Signal
-Forums reported empty shelves across MicroCenter [2].
+## The Wall Street Expectation Gap
+Consensus targets average $1,513.11 with 49 analysts covering the stock [2].
 
-## SEC Audit & Receipts
-According to Micron's Form 10-Q [1], gross margins expanded to 36%.
-
-## Primary Sources & Regulatory Receipts
-[1] Form 10-Q, Accession 0001193125-26-123456, https://www.sec.gov/Archives/edgar/data/723125/000119312526123456/doc.htm
-[2] Reddit r/buildapc thread on retail stockouts"""
+## SEC XBRL Margins & Financial Trajectory
+According to official SEC filings [1], gross margins expanded to 36.2%. The current share price trades at $927.60 [3].
+"""
         )
 
 
@@ -101,23 +174,45 @@ class FakeMediaModel:
 
 
 def test_generate_article_markdown():
-    """Verify generate_article_markdown passes memo to model and returns cited article."""
+    """Verify generate_article_markdown passes pre-indexed cards and appends verified bibliography."""
     req = ResearchRequest(query="Investigate MU DDR5 boom", ticker="MU", company="Micron")
     state = create_initial_state(req, case_id="case_mu_article")
+    state["sec_financials"] = {
+        "status": "ok",
+        "provider": "0001193125-26-123456",
+        "periods": ["2026Q3"],
+        "revenue": {"2026Q3": 34800000000.0},
+        "gross_margin_pct": {"2026Q3": 0.362},
+    }
+    state["consensus_snapshot"] = {
+        "target_mean_price": 1513.11,
+        "ratings": {"buy": 36, "hold": 4},
+    }
+    state["market_context"] = {
+        "quote": {"price": 927.60, "market_cap": 1048000000000.0},
+    }
     state["evidence"] = [
         {
             "form": "10-Q",
             "accession": "0001193125-26-123456",
             "source_url": "https://www.sec.gov/123",
-            "quote": "Gross margin expanded to 36%",
+            "quote": "Gross margin expanded to 36.2%",
             "filing_date": "2026-09-01",
         }
     ]
-    memo_md = "# Research Memo\nGross margin expanded to 36% [SEC 10-Q]."
+    memo_md = "# Research Memo\nGross margin expanded to 36.2% [SEC 10-Q]."
 
     article = generate_article_markdown(memo_md, state, model=FakeArticleModel())
+
+    # In-text citation tags present
     assert "[1]" in article
-    assert "0001193125-26-123456" in article
+    assert "[2]" in article
+    assert "[3]" in article
+
+    # Verified deterministic bibliography appended by Python
+    assert "## Primary Sources & Regulatory Receipts" in article
+    assert "SEC Accession `0001193125-26-123456`" in article
+    assert "https://finance.yahoo.com/quote/MU" in article
 
 
 def test_generate_reel_script_alternating_dialogue():

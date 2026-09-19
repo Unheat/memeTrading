@@ -24,23 +24,17 @@ MORTY_VOICE_ID = "3d445d095ba04681bcba7177faedf55a"
 
 VALID_EMOTION_PATTERN = re.compile(r"^\([a-zA-Z\s_-]+\)\s+", re.IGNORECASE)
 
-# Maximum number of FactCards to include in article context to avoid token bloat
-MAX_FACT_CARDS_IN_CONTEXT = 30
-
 MEDIA_ARTICLE_SYSTEM_PROMPT = """You are a senior financial investigative journalist and former hedge fund partner.
 Your mission is to write a deeply cited, publication-grade forensic research article (Substack / Institutional Investment Note style).
 
 RULES FOR CITATIONS:
-1. Every factual statement or financial number MUST cite a primary source using numbered brackets: [1], [2], [3].
-2. The bottom of the article MUST include a "## Primary Sources & Regulatory Receipts" section mapping every number to its exact SEC filing accession number, form type, filing date, and URL.
+1. Every factual statement, financial metric, or consensus target MUST cite its primary source using the exact bracketed tags from the Verified Primary Source Registry (e.g. [1], [2]).
+2. DO NOT invent, hallucinate, or alter any citation numbers, accession numbers, or URLs. Only cite from the provided registry tags.
 3. Include clear Markdown comparison tables for:
    - SEC XBRL Margins & Financial Trajectory
    - Wall Street Consensus vs Reality (The Expectation Gap)
 4. Highlight the 2 Quantitative Numeric Kill Criteria formulated by the Adversarial Red Team.
-
-IMPORTANT: You MUST only use facts, numbers, and citations that appear in the provided research memo and evidence receipts below.
-Do NOT fabricate, guess, or hallucinate any accession numbers, financial figures, filing dates, or URLs.
-If a specific number or citation is not present in the provided context, state that it was not available rather than inventing one.
+5. Conclude your analytical write-up cleanly; the verified regulatory bibliography will be attached automatically.
 """
 
 MEDIA_REEL_SYSTEM_PROMPT = """You are a master viral finance creator.
@@ -77,6 +71,61 @@ CAPTION:
 
 
 @dataclass(frozen=True)
+class CitationCard:
+    """A verified source record pre-bound to its audited facts and quotes."""
+
+    index: int
+    tag: str  # e.g. "[1]"
+    source_type: str  # "SEC Filing", "Consensus", "Market Data", "Financial News"
+    title: str
+    url: str
+    accession: str | None = None
+    filing_date: str | None = None
+    facts: tuple[str, ...] = ()
+    quotes: tuple[str, ...] = ()
+
+    def format_prompt_block(self) -> str:
+        """Render this card as a concise reference entry for the LLM prompt."""
+        lines = [f"{self.tag} **{self.title}**"]
+        details = []
+        if self.accession:
+            details.append(f"Accession: `{self.accession}`")
+        if self.filing_date:
+            details.append(f"Filing Date: {self.filing_date}")
+        if self.url:
+            details.append(f"URL: {self.url}")
+        if details:
+            lines.append(f"    {' | '.join(details)}")
+        if self.facts:
+            lines.append("    Audited Facts:")
+            for f in self.facts:
+                lines.append(f"    • {f}")
+        if self.quotes:
+            lines.append("    Primary Excerpts:")
+            for q in self.quotes:
+                lines.append(f"    • \"{q}\"")
+        return "\n".join(lines)
+
+    def format_bibliography_entry(self) -> str:
+        """Render this card as an authoritative Markdown bibliography entry."""
+        meta = []
+        if self.accession:
+            meta.append(f"SEC Accession `{self.accession}`")
+        if self.filing_date:
+            meta.append(f"Filing Date: {self.filing_date}")
+        if self.url:
+            meta.append(f"[Official Source]({self.url})")
+        meta_str = " | ".join(meta) if meta else self.source_type
+
+        entry = [f"{self.index}. **{self.title}** ({meta_str})"]
+        if self.facts:
+            entry.append(f"   * *Key Facts:* {'; '.join(self.facts[:5])}")
+        if self.quotes:
+            entry.append(f"   * *Primary Quote:* \"{self.quotes[0]}\"")
+        return "\n".join(entry)
+
+
+@dataclass(frozen=True)
 class MediaPackage:
     """Synchronized video reel script and cited research article."""
 
@@ -87,66 +136,210 @@ class MediaPackage:
     caption_text: str
 
 
-def _collect_evidence_receipts(state: InvestigationState) -> list[dict[str, Any]]:
-    """Consolidate evidence citations from top-level state and all candidate workspaces.
+def build_source_registry(state: InvestigationState) -> list[CitationCard]:
+    """Compile verified sources from state into pre-indexed citation cards.
+
+    Pairs every audited number, SEC filing, consensus target, and market quote
+    to an immutable 1-based index ([1], [2], [3]...).
 
     Args:
         state: Completed investigation state.
 
     Returns:
-        Deduplicated list of evidence items with source_url and quote fields.
+        List of pre-indexed CitationCard objects.
     """
+    cards: list[CitationCard] = []
+    ticker = state.get("ticker") or "RESEARCH"
+    card_idx = 1
+
+    # 1. SEC Financials & XBRL Accounting Card
+    sec_fin = state.get("sec_financials")
+    if not sec_fin:
+        for cand in (state.get("candidates") or {}).values():
+            if isinstance(cand, Mapping) and cand.get("sec_financials"):
+                sec_fin = cand["sec_financials"]
+                break
+
+    if sec_fin and isinstance(sec_fin, Mapping) and sec_fin.get("status") in {"ok", "ok_foreign_issuer_unstructured"}:
+        periods = sec_fin.get("periods") or ()
+        sec_facts = []
+        rev_map = sec_fin.get("revenue") or {}
+        gm_map = sec_fin.get("gross_margin_pct") or {}
+        cfo_map = sec_fin.get("cash_from_operations") or {}
+        capex_map = sec_fin.get("capex") or {}
+        debt_map = sec_fin.get("total_debt") or {}
+        cash_map = sec_fin.get("cash_and_equivalents") or {}
+
+        for p in list(periods)[:3]:
+            parts = []
+            if p in rev_map and rev_map[p] is not None:
+                parts.append(f"Revenue: ${float(rev_map[p]) / 1e9:.2f}B")
+            if p in gm_map and gm_map[p] is not None:
+                parts.append(f"Gross Margin: {float(gm_map[p]) * 100:.1f}%")
+            if p in cfo_map and cfo_map[p] is not None:
+                parts.append(f"CFO: ${float(cfo_map[p]) / 1e9:.2f}B")
+            if p in capex_map and capex_map[p] is not None:
+                parts.append(f"CapEx: ${float(capex_map[p]) / 1e9:.2f}B")
+            if parts:
+                sec_facts.append(f"Period {p}: {', '.join(parts)}")
+
+        if sec_fin.get("ttm_fcf") is not None:
+            sec_facts.append(f"TTM Free Cash Flow Base: ${float(sec_fin['ttm_fcf']) / 1e9:.2f}B")
+        if periods and periods[0] in debt_map and debt_map[periods[0]] is not None:
+            sec_facts.append(f"Latest Total Debt: ${float(debt_map[periods[0]]) / 1e9:.2f}B")
+        if periods and periods[0] in cash_map and cash_map[periods[0]] is not None:
+            sec_facts.append(f"Latest Cash & Equivalents: ${float(cash_map[periods[0]]) / 1e9:.2f}B")
+
+        sec_url = f"https://www.sec.gov/edgar/browse/?CIK={ticker}"
+        cards.append(
+            CitationCard(
+                index=card_idx,
+                tag=f"[{card_idx}]",
+                source_type="SEC Filing",
+                title=f"U.S. Securities & Exchange Commission (SEC) — Official XBRL Financial Statements (${ticker})",
+                url=sec_url,
+                accession=str(sec_fin.get("provider", "SEC-EDGAR-XBRL")),
+                facts=tuple(sec_facts),
+            )
+        )
+        card_idx += 1
+
+    # 2. Wall Street Consensus & Analyst Expectations Card
+    consensus = state.get("consensus_snapshot")
+    if not consensus:
+        for cand in (state.get("candidates") or {}).values():
+            if isinstance(cand, Mapping) and cand.get("consensus_snapshot"):
+                consensus = cand["consensus_snapshot"]
+                break
+
+    if consensus and isinstance(consensus, Mapping):
+        con_facts = []
+        ratings = consensus.get("ratings") or {}
+        tot_ratings = sum(int(v) for v in ratings.values() if isinstance(v, (int, float)))
+        if tot_ratings > 0:
+            rating_detail = ", ".join(f"{k.replace('_', ' ').title()}: {v}" for k, v in ratings.items() if v)
+            con_facts.append(f"Analyst Ratings: {tot_ratings} covering analysts ({rating_detail})")
+
+        pt_mean = consensus.get("target_mean_price")
+        pt_low = consensus.get("target_low_price")
+        pt_high = consensus.get("target_high_price")
+        if pt_mean is not None:
+            con_facts.append(f"Price Target Spectrum: Mean ${pt_mean:.2f}, Low ${pt_low or 0:.2f}, High ${pt_high or 0:.2f}")
+
+        rev_est = consensus.get("revenue_estimates") or {}
+        if rev_est.get("current_year_avg"):
+            con_facts.append(f"Consensus FY0 Revenue: ${float(rev_est['current_year_avg']) / 1e9:.2f}B")
+        if rev_est.get("next_year_avg"):
+            con_facts.append(f"Consensus FY1 (+1Y) Revenue: ${float(rev_est['next_year_avg']) / 1e9:.2f}B")
+
+        cards.append(
+            CitationCard(
+                index=card_idx,
+                tag=f"[{card_idx}]",
+                source_type="Consensus",
+                title=f"Wall Street Consensus Aggregator & Broker Estimates Archive (${ticker})",
+                url=f"https://finance.yahoo.com/quote/{ticker}",
+                facts=tuple(con_facts),
+            )
+        )
+        card_idx += 1
+
+    # 3. Real-Time Market Quotation & Execution Analytics Card
+    market = state.get("market_context")
+    if not market:
+        for cand in (state.get("candidates") or {}).values():
+            if isinstance(cand, Mapping) and cand.get("market_context"):
+                market = cand["market_context"]
+                break
+
+    if market and isinstance(market, Mapping) and market.get("quote"):
+        q = market.get("quote") or {}
+        m_facts = []
+        if q.get("price") is not None:
+            m_facts.append(f"Latest Market Price: ${float(q['price']):.2f}")
+        if q.get("market_cap") is not None:
+            m_facts.append(f"Market Capitalization: ${float(q['market_cap']) / 1e9:.2f}B")
+        vol_ratio = market.get("volume_ratio_20d", {}).get("value")
+        if vol_ratio is not None:
+            m_facts.append(f"20-Day Volume Ratio: {vol_ratio:.2f}x")
+        ret_1m = market.get("returns", {}).get("1m", {}).get("value")
+        if ret_1m is not None:
+            m_facts.append(f"1-Month Total Return: {ret_1m * 100:+.1f}%")
+        ret_3m = market.get("returns", {}).get("3m", {}).get("value")
+        if ret_3m is not None:
+            m_facts.append(f"3-Month Total Return: {ret_3m * 100:+.1f}%")
+
+        cards.append(
+            CitationCard(
+                index=card_idx,
+                tag=f"[{card_idx}]",
+                source_type="Market Data",
+                title=f"Market Quotation & Execution Analytics (${ticker})",
+                url=f"https://finance.yahoo.com/quote/{ticker}",
+                filing_date=str(q.get("as_of", ""))[:10] or None,
+                facts=tuple(m_facts),
+            )
+        )
+        card_idx += 1
+
+    # 4. Primary SEC Filing Claims & Excerpt Citations
     seen_urls: set[str] = set()
-    receipts: list[dict[str, Any]] = []
+    evidence_items: list[dict[str, Any]] = []
 
-    for item in state.get("evidence", []):
-        if isinstance(item, Mapping) and item.get("source_url"):
-            url = str(item["source_url"])
-            if url not in seen_urls:
-                seen_urls.add(url)
-                receipts.append(dict(item))
+    for ev in state.get("evidence", []):
+        if isinstance(ev, Mapping) and ev.get("source_url"):
+            evidence_items.append(dict(ev))
 
     for cand in (state.get("candidates") or {}).values():
         if isinstance(cand, Mapping):
-            for item in cand.get("evidence", []):
-                if isinstance(item, Mapping) and item.get("source_url"):
-                    url = str(item["source_url"])
-                    if url not in seen_urls:
-                        seen_urls.add(url)
-                        receipts.append(dict(item))
+            for ev in cand.get("evidence", []):
+                if isinstance(ev, Mapping) and ev.get("source_url"):
+                    evidence_items.append(dict(ev))
 
-    return receipts
+    for item in evidence_items:
+        url = str(item.get("source_url") or "").strip()
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+
+        form = item.get("form") or "SEC Filing"
+        accession = item.get("accession")
+        f_date = str(item.get("filing_date") or "") or None
+        quote = str(item.get("quote") or "").strip()
+        title = f"SEC Form {form} Document Excerpt" if accession else (item.get("title") or "Primary Source Reference")
+
+        cards.append(
+            CitationCard(
+                index=card_idx,
+                tag=f"[{card_idx}]",
+                source_type="SEC Filing" if accession else "Primary Article",
+                title=title,
+                url=url,
+                accession=accession,
+                filing_date=f_date,
+                quotes=(quote[:300],) if quote else (),
+            )
+        )
+        card_idx += 1
+
+    return cards
 
 
-def _collect_fact_cards(state: InvestigationState) -> list[dict[str, Any]]:
-    """Collect FactCards from top-level state and candidate workspaces.
+def format_source_registry_for_prompt(cards: list[CitationCard]) -> str:
+    """Format citation cards into a clean Markdown block for LLM prompt context."""
+    if not cards:
+        return "No pre-indexed primary sources available."
+    return "\n\n".join(card.format_prompt_block() for card in cards)
 
-    Args:
-        state: Completed investigation state.
 
-    Returns:
-        Deduplicated list of FactCards, capped at MAX_FACT_CARDS_IN_CONTEXT.
-    """
-    seen_ids: set[str] = set()
-    cards: list[dict[str, Any]] = []
-
-    for card in state.get("fact_cards", []):
-        if isinstance(card, Mapping):
-            fid = str(card.get("fact_id") or "")
-            if fid and fid not in seen_ids:
-                seen_ids.add(fid)
-                cards.append(dict(card))
-
-    for cand in (state.get("candidates") or {}).values():
-        if isinstance(cand, Mapping):
-            for card in cand.get("fact_cards", []):
-                if isinstance(card, Mapping):
-                    fid = str(card.get("fact_id") or "")
-                    if fid and fid not in seen_ids:
-                        seen_ids.add(fid)
-                        cards.append(dict(card))
-
-    return cards[:MAX_FACT_CARDS_IN_CONTEXT]
+def format_bibliography_markdown(cards: list[CitationCard]) -> str:
+    """Format citation cards into a deterministic bibliography section."""
+    if not cards:
+        return ""
+    lines = ["## Primary Sources & Regulatory Receipts\n"]
+    for card in cards:
+        lines.append(card.format_bibliography_entry() + "\n")
+    return "\n".join(lines).strip()
 
 
 def validate_dialogue_json(lines: list[dict[str, Any]], character_pair: str = "peter_stewie") -> bool:
@@ -193,11 +386,12 @@ def generate_article_markdown(
     state: InvestigationState,
     model: Any,
 ) -> str:
-    """Generate a publication-grade cited Substack article from the finalized research memo.
+    """Generate a publication-grade cited Substack article with pre-indexed citation cards.
 
-    The article writer receives the fully rendered memo (ground truth) plus structured
-    evidence receipts and FactCards. It transforms the technical research into an engaging
-    publication article with bracketed [1], [2] citations.
+    The article writer receives:
+    1. The fully rendered memo_markdown (ground truth analysis).
+    2. The pre-indexed Citation Cards ([1], [2], [3]...) explicitly binding each source to its facts.
+    Python then attaches the deterministic bibliography at the bottom.
 
     Args:
         memo_markdown: The finalized forensic research memo text.
@@ -205,44 +399,41 @@ def generate_article_markdown(
         model: LLM model instance.
 
     Returns:
-        Article markdown string with citations.
+        Article markdown string with verified citations and regulatory receipts.
     """
     ticker = state.get("ticker") or "RESEARCH"
     company = state.get("company") or ""
-    evidence_receipts = _collect_evidence_receipts(state)
-    fact_cards = _collect_fact_cards(state)
-
-    context_payload = json.dumps(
-        {
-            "ticker": ticker,
-            "company": company,
-            "evidence_receipts": evidence_receipts,
-            "fact_cards": fact_cards,
-            "sec_financials": state.get("sec_financials"),
-            "consensus_snapshot": state.get("consensus_snapshot"),
-            "market_context": state.get("market_context"),
-        },
-        indent=2,
-        default=str,
-    )
+    cards = build_source_registry(state)
+    registry_text = format_source_registry_for_prompt(cards)
 
     article_prompt = f"""Write an institutional, deeply cited forensic research article for ${ticker} ({company}).
+
+## Verified Primary Source Registry (Cite using the exact tags like [1], [2] next to claims)
+{registry_text}
 
 ## Audited Research Memo (Ground Truth — cite only from this content)
 ```markdown
 {memo_markdown}
-```
-
-## Verified Evidence Receipts & Financial Data
-```json
-{context_payload}
 ```
 """
     response = model.invoke([
         SystemMessage(content=MEDIA_ARTICLE_SYSTEM_PROMPT),
         HumanMessage(content=article_prompt),
     ])
-    return getattr(response, "content", "")
+    article_raw = getattr(response, "content", "")
+
+    # Strip any model-generated trailing bibliography to avoid duplicates or hallucinated links
+    clean_article = re.split(
+        r"\n##\s*(?:Primary Sources|Regulatory Receipts|References|Sources)",
+        article_raw,
+        flags=re.IGNORECASE,
+    )[0].strip()
+
+    # Deterministically append the authoritative bibliography from the verified Python cards
+    bibliography = format_bibliography_markdown(cards)
+    if bibliography:
+        return f"{clean_article}\n\n---\n\n{bibliography}\n"
+    return clean_article
 
 
 def generate_reel_script(
@@ -342,8 +533,7 @@ def generate_media_package(
 ) -> MediaPackage:
     """Generate the cited forensic article and Faceless video reel package.
 
-    Legacy wrapper that calls the decoupled generators. New code should use
-    generate_article_markdown and generate_reel_script directly.
+    Legacy wrapper that calls the decoupled generators.
 
     Args:
         state: InvestigationState with audited facts and consensus.
@@ -359,7 +549,6 @@ def generate_media_package(
     if not evidence or any(not item.get("source_url") or not item.get("quote") for item in evidence):
         raise ValueError("Media generation requires cited primary evidence; uncited material claims are blocked.")
 
-    # Build a minimal memo from state for the legacy path
     from app.agent.memo import render_forensic_memo, render_research_report
     explicit_position_request = bool((state.get("research_intent") or {}).get("requested_position_decision"))
     messages = state.get("messages", [])
