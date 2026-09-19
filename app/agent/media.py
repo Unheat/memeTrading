@@ -25,15 +25,15 @@ MORTY_VOICE_ID = "3d445d095ba04681bcba7177faedf55a"
 VALID_EMOTION_PATTERN = re.compile(r"^\([a-zA-Z\s_-]+\)\s+", re.IGNORECASE)
 
 MEDIA_ARTICLE_SYSTEM_PROMPT = """You are a senior financial investigative journalist and former hedge fund partner.
-Your mission is to write a deeply cited, publication-grade forensic research article (Substack / Institutional Investment Note style).
+Your mission is to write a deeply cited, publication-grade research article (Substack / Institutional Investment Note style).
 
 RULES FOR CITATIONS:
 1. Every factual statement, financial metric, or consensus target MUST cite its primary source using the exact bracketed tags from the Verified Primary Source Registry (e.g. [1], [2]).
 2. DO NOT invent, hallucinate, or alter any citation numbers, accession numbers, or URLs. Only cite from the provided registry tags.
 3. Include clear Markdown comparison tables for:
-   - SEC XBRL Margins & Financial Trajectory
+   - SEC XBRL Margins & Financial Trajectory across the analyzed candidates
    - Wall Street Consensus vs Reality (The Expectation Gap)
-4. Highlight the 2 Quantitative Numeric Kill Criteria formulated by the Adversarial Red Team.
+4. Highlight the Quantitative Numeric Kill Criteria formulated by the Adversarial Red Team for the top candidates.
 5. Conclude your analytical write-up cleanly; the verified regulatory bibliography will be attached automatically.
 """
 
@@ -140,7 +140,8 @@ def build_source_registry(state: InvestigationState) -> list[CitationCard]:
     """Compile verified sources from state into pre-indexed citation cards.
 
     Pairs every audited number, SEC filing, consensus target, and market quote
-    to an immutable 1-based index ([1], [2], [3]...).
+    to an immutable 1-based index ([1], [2], [3]...). Supports both single-stock
+    and multi-candidate ranking states.
 
     Args:
         state: Completed investigation state.
@@ -149,162 +150,168 @@ def build_source_registry(state: InvestigationState) -> list[CitationCard]:
         List of pre-indexed CitationCard objects.
     """
     cards: list[CitationCard] = []
-    ticker = state.get("ticker") or "RESEARCH"
     card_idx = 1
 
-    # 1. SEC Financials & XBRL Accounting Card
-    sec_fin = state.get("sec_financials")
-    if not sec_fin:
-        for cand in (state.get("candidates") or {}).values():
-            if isinstance(cand, Mapping) and cand.get("sec_financials"):
-                sec_fin = cand["sec_financials"]
-                break
+    # Determine candidate entities to inspect
+    candidates = state.get("candidates") or {}
+    intent = state.get("research_intent") or {}
+    is_multi = bool(intent.get("requires_candidate_workspaces")) or len(candidates) > 1
 
-    if sec_fin and isinstance(sec_fin, Mapping) and sec_fin.get("status") in {"ok", "ok_foreign_issuer_unstructured"}:
-        periods = sec_fin.get("periods") or ()
-        sec_facts = []
-        rev_map = sec_fin.get("revenue") or {}
-        gm_map = sec_fin.get("gross_margin_pct") or {}
-        cfo_map = sec_fin.get("cash_from_operations") or {}
-        capex_map = sec_fin.get("capex") or {}
-        debt_map = sec_fin.get("total_debt") or {}
-        cash_map = sec_fin.get("cash_and_equivalents") or {}
+    candidate_entities: list[dict[str, Any]] = []
+    if candidates and is_multi:
+        for c in candidates.values():
+            if isinstance(c, Mapping) and c.get("ticker"):
+                candidate_entities.append(dict(c))
+    elif candidates and len(candidates) == 1:
+        candidate_entities.append(dict(next(iter(candidates.values()))))
+    else:
+        candidate_entities.append({
+            "ticker": state.get("ticker") or "RESEARCH",
+            "company": state.get("company"),
+            "sec_financials": state.get("sec_financials"),
+            "consensus_snapshot": state.get("consensus_snapshot"),
+            "market_context": state.get("market_context"),
+        })
 
-        for p in list(periods)[:3]:
-            parts = []
-            if p in rev_map and rev_map[p] is not None:
-                parts.append(f"Revenue: ${float(rev_map[p]) / 1e9:.2f}B")
-            if p in gm_map and gm_map[p] is not None:
-                parts.append(f"Gross Margin: {float(gm_map[p]) * 100:.1f}%")
-            if p in cfo_map and cfo_map[p] is not None:
-                parts.append(f"CFO: ${float(cfo_map[p]) / 1e9:.2f}B")
-            if p in capex_map and capex_map[p] is not None:
-                parts.append(f"CapEx: ${float(capex_map[p]) / 1e9:.2f}B")
-            if parts:
-                sec_facts.append(f"Period {p}: {', '.join(parts)}")
+    # 1. Candidate Financials, Consensus, and Market Context Cards
+    for c in candidate_entities:
+        c_ticker = str(c.get("ticker") or "RESEARCH").upper()
+        sec_fin = c.get("sec_financials")
+        if sec_fin and isinstance(sec_fin, Mapping) and sec_fin.get("status") in {"ok", "ok_foreign_issuer_unstructured"}:
+            periods = sec_fin.get("periods") or ()
+            sec_facts = []
+            rev_map = sec_fin.get("revenue") or {}
+            gm_map = sec_fin.get("gross_margin_pct") or {}
+            cfo_map = sec_fin.get("cash_from_operations") or {}
+            capex_map = sec_fin.get("capex") or {}
+            debt_map = sec_fin.get("total_debt") or {}
+            cash_map = sec_fin.get("cash_and_equivalents") or {}
 
-        if sec_fin.get("ttm_fcf") is not None:
-            sec_facts.append(f"TTM Free Cash Flow Base: ${float(sec_fin['ttm_fcf']) / 1e9:.2f}B")
-        if periods and periods[0] in debt_map and debt_map[periods[0]] is not None:
-            sec_facts.append(f"Latest Total Debt: ${float(debt_map[periods[0]]) / 1e9:.2f}B")
-        if periods and periods[0] in cash_map and cash_map[periods[0]] is not None:
-            sec_facts.append(f"Latest Cash & Equivalents: ${float(cash_map[periods[0]]) / 1e9:.2f}B")
+            for p in list(periods)[:3]:
+                parts = []
+                if p in rev_map and rev_map[p] is not None:
+                    parts.append(f"Revenue: ${float(rev_map[p]) / 1e9:.2f}B")
+                if p in gm_map and gm_map[p] is not None:
+                    parts.append(f"Gross Margin: {float(gm_map[p]) * 100:.1f}%")
+                if p in cfo_map and cfo_map[p] is not None:
+                    parts.append(f"CFO: ${float(cfo_map[p]) / 1e9:.2f}B")
+                if p in capex_map and capex_map[p] is not None:
+                    parts.append(f"CapEx: ${float(capex_map[p]) / 1e9:.2f}B")
+                if parts:
+                    sec_facts.append(f"Period {p}: {', '.join(parts)}")
 
-        sec_url = f"https://www.sec.gov/edgar/browse/?CIK={ticker}"
-        cards.append(
-            CitationCard(
-                index=card_idx,
-                tag=f"[{card_idx}]",
-                source_type="SEC Filing",
-                title=f"U.S. Securities & Exchange Commission (SEC) — Official XBRL Financial Statements (${ticker})",
-                url=sec_url,
-                accession=str(sec_fin.get("provider", "SEC-EDGAR-XBRL")),
-                facts=tuple(sec_facts),
-            )
-        )
-        card_idx += 1
+            if sec_fin.get("ttm_fcf") is not None:
+                sec_facts.append(f"TTM Free Cash Flow Base: ${float(sec_fin['ttm_fcf']) / 1e9:.2f}B")
+            if periods and periods[0] in debt_map and debt_map[periods[0]] is not None:
+                sec_facts.append(f"Latest Total Debt: ${float(debt_map[periods[0]]) / 1e9:.2f}B")
+            if periods and periods[0] in cash_map and cash_map[periods[0]] is not None:
+                sec_facts.append(f"Latest Cash & Equivalents: ${float(cash_map[periods[0]]) / 1e9:.2f}B")
 
-    # 2. Wall Street Consensus & Analyst Expectations Card
-    consensus = state.get("consensus_snapshot")
-    if not consensus:
-        for cand in (state.get("candidates") or {}).values():
-            if isinstance(cand, Mapping) and cand.get("consensus_snapshot"):
-                consensus = cand["consensus_snapshot"]
-                break
+            if sec_facts:
+                cards.append(
+                    CitationCard(
+                        index=card_idx,
+                        tag=f"[{card_idx}]",
+                        source_type="SEC Filing",
+                        title=f"U.S. Securities & Exchange Commission (SEC) — Official XBRL Financial Statements (${c_ticker})",
+                        url=f"https://www.sec.gov/edgar/browse/?CIK={c_ticker}",
+                        accession=str(sec_fin.get("provider", "SEC-EDGAR-XBRL")),
+                        facts=tuple(sec_facts),
+                    )
+                )
+                card_idx += 1
 
-    if consensus and isinstance(consensus, Mapping):
-        con_facts = []
-        ratings = consensus.get("ratings") or {}
-        tot_ratings = sum(int(v) for v in ratings.values() if isinstance(v, (int, float)))
-        if tot_ratings > 0:
-            rating_detail = ", ".join(f"{k.replace('_', ' ').title()}: {v}" for k, v in ratings.items() if v)
-            con_facts.append(f"Analyst Ratings: {tot_ratings} covering analysts ({rating_detail})")
+        # Consensus Card for this candidate
+        consensus = c.get("consensus_snapshot")
+        if consensus and isinstance(consensus, Mapping):
+            con_facts = []
+            ratings = consensus.get("ratings") or {}
+            tot_ratings = sum(int(v) for v in ratings.values() if isinstance(v, (int, float)))
+            if tot_ratings > 0:
+                rating_detail = ", ".join(f"{k.replace('_', ' ').title()}: {v}" for k, v in ratings.items() if v)
+                con_facts.append(f"Analyst Ratings: {tot_ratings} covering analysts ({rating_detail})")
 
-        pt_mean = consensus.get("target_mean_price")
-        pt_low = consensus.get("target_low_price")
-        pt_high = consensus.get("target_high_price")
-        if pt_mean is not None:
-            con_facts.append(f"Price Target Spectrum: Mean ${pt_mean:.2f}, Low ${pt_low or 0:.2f}, High ${pt_high or 0:.2f}")
+            pt_mean = consensus.get("target_mean_price")
+            pt_low = consensus.get("target_low_price")
+            pt_high = consensus.get("target_high_price")
+            if pt_mean is not None:
+                con_facts.append(f"Price Target Spectrum: Mean ${pt_mean:.2f}, Low ${pt_low or 0:.2f}, High ${pt_high or 0:.2f}")
 
-        rev_est = consensus.get("revenue_estimates")
-        if isinstance(rev_est, list):
-            for r_item in rev_est:
-                if isinstance(r_item, Mapping):
-                    p_name = r_item.get("period")
-                    avg_val = r_item.get("avg")
-                    if avg_val is not None:
-                        con_facts.append(f"Consensus Revenue ({p_name}): ${float(avg_val) / 1e9:.2f}B")
-        elif isinstance(rev_est, Mapping):
-            if rev_est.get("current_year_avg"):
-                con_facts.append(f"Consensus FY0 Revenue: ${float(rev_est['current_year_avg']) / 1e9:.2f}B")
-            if rev_est.get("next_year_avg"):
-                con_facts.append(f"Consensus FY1 (+1Y) Revenue: ${float(rev_est['next_year_avg']) / 1e9:.2f}B")
+            rev_est = consensus.get("revenue_estimates")
+            if isinstance(rev_est, list):
+                for r_item in rev_est:
+                    if isinstance(r_item, Mapping):
+                        p_name = r_item.get("period")
+                        avg_val = r_item.get("avg")
+                        if avg_val is not None:
+                            con_facts.append(f"Consensus Revenue ({p_name}): ${float(avg_val) / 1e9:.2f}B")
+            elif isinstance(rev_est, Mapping):
+                if rev_est.get("current_year_avg"):
+                    con_facts.append(f"Consensus FY0 Revenue: ${float(rev_est['current_year_avg']) / 1e9:.2f}B")
+                if rev_est.get("next_year_avg"):
+                    con_facts.append(f"Consensus FY1 (+1Y) Revenue: ${float(rev_est['next_year_avg']) / 1e9:.2f}B")
 
-        eps_est = consensus.get("eps_estimates")
-        if isinstance(eps_est, list):
-            for e_item in eps_est:
-                if isinstance(e_item, Mapping):
-                    p_name = e_item.get("period")
-                    avg_val = e_item.get("avg")
-                    if avg_val is not None:
-                        con_facts.append(f"Consensus EPS ({p_name}): ${float(avg_val):.2f}")
-        elif isinstance(eps_est, Mapping):
-            if eps_est.get("current_year_avg"):
-                con_facts.append(f"Consensus FY0 EPS: ${float(eps_est['current_year_avg']):.2f}")
-            if eps_est.get("next_year_avg"):
-                con_facts.append(f"Consensus FY1 (+1Y) EPS: ${float(eps_est['next_year_avg']):.2f}")
+            eps_est = consensus.get("eps_estimates")
+            if isinstance(eps_est, list):
+                for e_item in eps_est:
+                    if isinstance(e_item, Mapping):
+                        p_name = e_item.get("period")
+                        avg_val = e_item.get("avg")
+                        if avg_val is not None:
+                            con_facts.append(f"Consensus EPS ({p_name}): ${float(avg_val):.2f}")
+            elif isinstance(eps_est, Mapping):
+                if eps_est.get("current_year_avg"):
+                    con_facts.append(f"Consensus FY0 EPS: ${float(eps_est['current_year_avg']):.2f}")
+                if eps_est.get("next_year_avg"):
+                    con_facts.append(f"Consensus FY1 (+1Y) EPS: ${float(eps_est['next_year_avg']):.2f}")
 
-        cards.append(
-            CitationCard(
-                index=card_idx,
-                tag=f"[{card_idx}]",
-                source_type="Consensus",
-                title=f"Wall Street Consensus Aggregator & Broker Estimates Archive (${ticker})",
-                url=f"https://finance.yahoo.com/quote/{ticker}",
-                facts=tuple(con_facts),
-            )
-        )
-        card_idx += 1
+            if con_facts:
+                cards.append(
+                    CitationCard(
+                        index=card_idx,
+                        tag=f"[{card_idx}]",
+                        source_type="Consensus",
+                        title=f"Wall Street Consensus Aggregator & Broker Estimates Archive (${c_ticker})",
+                        url=f"https://finance.yahoo.com/quote/{c_ticker}",
+                        facts=tuple(con_facts),
+                    )
+                )
+                card_idx += 1
 
-    # 3. Real-Time Market Quotation & Execution Analytics Card
-    market = state.get("market_context")
-    if not market:
-        for cand in (state.get("candidates") or {}).values():
-            if isinstance(cand, Mapping) and cand.get("market_context"):
-                market = cand["market_context"]
-                break
+        # Market Data Card for this candidate
+        market = c.get("market_context")
+        if market and isinstance(market, Mapping) and market.get("quote"):
+            q = market.get("quote") or {}
+            m_facts = []
+            if q.get("price") is not None:
+                m_facts.append(f"Latest Market Price: ${float(q['price']):.2f}")
+            if q.get("market_cap") is not None:
+                m_facts.append(f"Market Capitalization: ${float(q['market_cap']) / 1e9:.2f}B")
+            vol_ratio = market.get("volume_ratio_20d", {}).get("value")
+            if vol_ratio is not None:
+                m_facts.append(f"20-Day Volume Ratio: {vol_ratio:.2f}x")
+            ret_1m = market.get("returns", {}).get("1m", {}).get("value")
+            if ret_1m is not None:
+                m_facts.append(f"1-Month Total Return: {ret_1m * 100:+.1f}%")
+            ret_3m = market.get("returns", {}).get("3m", {}).get("value")
+            if ret_3m is not None:
+                m_facts.append(f"3-Month Total Return: {ret_3m * 100:+.1f}%")
 
-    if market and isinstance(market, Mapping) and market.get("quote"):
-        q = market.get("quote") or {}
-        m_facts = []
-        if q.get("price") is not None:
-            m_facts.append(f"Latest Market Price: ${float(q['price']):.2f}")
-        if q.get("market_cap") is not None:
-            m_facts.append(f"Market Capitalization: ${float(q['market_cap']) / 1e9:.2f}B")
-        vol_ratio = market.get("volume_ratio_20d", {}).get("value")
-        if vol_ratio is not None:
-            m_facts.append(f"20-Day Volume Ratio: {vol_ratio:.2f}x")
-        ret_1m = market.get("returns", {}).get("1m", {}).get("value")
-        if ret_1m is not None:
-            m_facts.append(f"1-Month Total Return: {ret_1m * 100:+.1f}%")
-        ret_3m = market.get("returns", {}).get("3m", {}).get("value")
-        if ret_3m is not None:
-            m_facts.append(f"3-Month Total Return: {ret_3m * 100:+.1f}%")
+            if m_facts:
+                cards.append(
+                    CitationCard(
+                        index=card_idx,
+                        tag=f"[{card_idx}]",
+                        source_type="Market Data",
+                        title=f"Market Quotation & Execution Analytics (${c_ticker})",
+                        url=f"https://finance.yahoo.com/quote/{c_ticker}",
+                        filing_date=str(q.get("as_of", ""))[:10] or None,
+                        facts=tuple(m_facts),
+                    )
+                )
+                card_idx += 1
 
-        cards.append(
-            CitationCard(
-                index=card_idx,
-                tag=f"[{card_idx}]",
-                source_type="Market Data",
-                title=f"Market Quotation & Execution Analytics (${ticker})",
-                url=f"https://finance.yahoo.com/quote/{ticker}",
-                filing_date=str(q.get("as_of", ""))[:10] or None,
-                facts=tuple(m_facts),
-            )
-        )
-        card_idx += 1
-
-    # 4. Primary SEC Filing Claims & Excerpt Citations
+    # 2. Primary SEC Filing Claims & Excerpt Citations
     seen_urls: set[str] = set()
     evidence_items: list[dict[str, Any]] = []
 
@@ -423,12 +430,44 @@ def generate_article_markdown(
     Returns:
         Article markdown string with verified citations and regulatory receipts.
     """
-    ticker = state.get("ticker") or "RESEARCH"
+    intent = state.get("research_intent") or {}
+    candidates = state.get("candidates") or {}
+    is_multi_candidate = bool(intent.get("requires_candidate_workspaces")) or len(candidates) > 1
+    query = (state.get("trigger") or {}).get("query") or (getattr(state.get("messages", [HumanMessage(content="")])[0], "content", "")) or "Equity Research"
+    ticker = state.get("ticker")
     company = state.get("company") or ""
+
     cards = build_source_registry(state)
     registry_text = format_source_registry_for_prompt(cards)
 
-    article_prompt = f"""Write an institutional, deeply cited forensic research article for ${ticker} ({company}).
+    if is_multi_candidate or not ticker or ticker in {"RESEARCH", "UNKNOWN"}:
+        cand_tickers = [
+            str(c.get("ticker")).upper()
+            for c in candidates.values()
+            if isinstance(c, Mapping) and c.get("ticker")
+        ]
+        cohort_str = ", ".join(f"${t}" for t in cand_tickers) if cand_tickers else "the evaluated candidate cohort"
+        article_prompt = f"""Write an institutional, deeply cited comparative research article addressing the research mandate:
+"{query}"
+
+## Evaluated Candidate Cohort
+{cohort_str}
+
+## Verified Primary Source Registry (Cite using the exact tags like [1], [2] next to claims)
+{registry_text}
+
+## Audited Research Memo (Ground Truth — cite only from this content)
+```markdown
+{memo_markdown}
+```
+
+Instructions:
+1. Synthesize the findings across the candidate cohort, focusing on the Top Ranked allocations established in the Audited Research Memo.
+2. Compare the winners' economic moats, SEC XBRL margin trajectories, and expectation gaps against the excluded or passed peers.
+3. Every factual statement, financial metric, or consensus target MUST cite its source from the registry above using [1], [2], etc.
+"""
+    else:
+        article_prompt = f"""Write an institutional, deeply cited forensic research article for ${ticker} ({company}).
 
 ## Verified Primary Source Registry (Cite using the exact tags like [1], [2] next to claims)
 {registry_text}

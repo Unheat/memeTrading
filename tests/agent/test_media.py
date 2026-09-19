@@ -215,6 +215,72 @@ def test_generate_article_markdown():
     assert "https://finance.yahoo.com/quote/MU" in article
 
 
+def test_build_source_registry_multi_candidate():
+    """Verify build_source_registry creates distinct cards for all candidates in a ranking run."""
+    req = ResearchRequest(query="Compare NVDA and GOOGL", ticker=None, requested_ranking_count=2)
+    state = create_initial_state(req, case_id="multi_cards")
+
+    state["candidates"] = {
+        "cand_nvda": {
+            "candidate_id": "cand_nvda",
+            "ticker": "NVDA",
+            "company": "NVIDIA Corp",
+            "sec_financials": {
+                "status": "ok",
+                "provider": "0001045810-26-000045",
+                "periods": ["2026Q3"],
+                "revenue": {"2026Q3": 35000000000.0},
+            },
+            "market_context": {"quote": {"price": 140.0}},
+        },
+        "cand_googl": {
+            "candidate_id": "cand_googl",
+            "ticker": "GOOGL",
+            "company": "Alphabet Inc",
+            "sec_financials": {
+                "status": "ok",
+                "provider": "0001652044-26-000048",
+                "periods": ["2026Q2"],
+                "revenue": {"2026Q2": 95000000000.0},
+            },
+            "market_context": {"quote": {"price": 180.0}},
+        },
+    }
+
+    cards = build_source_registry(state)
+    card_titles = [c.title for c in cards]
+
+    # Both NVDA and GOOGL must have their own citation cards
+    assert any("($NVDA)" in t for t in card_titles)
+    assert any("($GOOGL)" in t for t in card_titles)
+
+
+def test_generate_article_markdown_multi_candidate():
+    """Verify generate_article_markdown builds comparative prompt mentioning the candidate cohort."""
+    class CapturePromptModel:
+        def __init__(self):
+            self.captured_prompt = ""
+        def invoke(self, messages):
+            self.captured_prompt = messages[-1].content
+            return AIMessage(content="# Top Tech Allocations: NVDA and GOOGL\nComparison text with [1] and [2].")
+
+    req = ResearchRequest(query="Find 2 best tech stocks", ticker=None, requested_ranking_count=2)
+    state = create_initial_state(req, case_id="multi_art")
+    state["candidates"] = {
+        "cand_nvda": {"candidate_id": "cand_nvda", "ticker": "NVDA", "sec_financials": {"status": "ok", "periods": ["2026Q3"]}},
+        "cand_googl": {"candidate_id": "cand_googl", "ticker": "GOOGL", "sec_financials": {"status": "ok", "periods": ["2026Q2"]}},
+    }
+    memo_md = "# Deep Research Report\nTop 2: NVDA and GOOGL."
+
+    model = CapturePromptModel()
+    article = generate_article_markdown(memo_md, state, model=model)
+
+    assert "$NVDA" in model.captured_prompt
+    assert "$GOOGL" in model.captured_prompt
+    assert "comparative research article" in model.captured_prompt
+    assert "Top Ranked" in model.captured_prompt
+
+
 def test_generate_reel_script_alternating_dialogue():
     """Verify generate_reel_script produces alternating Peter/Stewie dialogue."""
     article = "# Test Article\nSome content about stocks."

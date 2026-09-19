@@ -365,6 +365,48 @@ def test_candidate_diligence_dossier_promoted_without_redundant_execution(monkey
     assert observed_committee_state["adversarial_report"].bear_floor_price == 320.0
 
 
+def test_multi_candidate_ranking_preserves_workspaces_without_arbitrary_promotion(monkeypatch):
+    """Prove multi-candidate ranking does not arbitrarily collapse into a single promoted candidate."""
+    class DirectFinishModel:
+        def bind_tools(self, tools):
+            return self
+        def invoke(self, messages):
+            return AIMessage(content="Multi-candidate analysis complete.")
+
+    graph = create_research_graph(model=DirectFinishModel(), tools=[])
+    req = ResearchRequest(
+        query="Find 2 best tech stocks",
+        ticker=None,
+        requested_ranking_count=2,
+    )
+    state = create_initial_state(req, case_id="multi_rank")
+    _add_sufficient_mocked_evidence(state)
+
+    # 2 candidates in ranking mode
+    state["candidates"] = {
+        "cand_googl": {
+            "candidate_id": "cand_googl",
+            "ticker": "GOOGL",
+            "company": "Alphabet Inc",
+            "diligence_dossier": {"status": "ok", "valuation": {"fair_value": 380.0, "reward_to_risk_ratio": 2.8}},
+        },
+        "cand_nvda": {
+            "candidate_id": "cand_nvda",
+            "ticker": "NVDA",
+            "company": "NVIDIA Corp",
+            "diligence_dossier": {"status": "ok", "valuation": {"fair_value": 240.0, "reward_to_risk_ratio": 3.4}},
+        },
+    }
+
+    final_state = graph.invoke(state)
+
+    # Must NOT overwrite root ticker with an arbitrary single candidate
+    assert final_state.get("ticker") in {None, "", "RESEARCH"}
+    # Both candidates remain in candidate workspaces
+    assert "cand_googl" in final_state["candidates"]
+    assert "cand_nvda" in final_state["candidates"]
+
+
 def test_evidence_gaps_identifies_missing_candidate_diligence():
     """Prove supervisor reflection catches candidates lacking diligence or valuation."""
     from app.agent.graph import _has_evidence_gaps

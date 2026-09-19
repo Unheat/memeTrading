@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -194,7 +195,13 @@ def run_investigation(
 
                 # Stage C: Video rendering via Faceless bridge (subprocess to external Node.js)
                 if effective_render:
-                    topic_slug = ticker.lower().replace(" ", "-")
+                    clean_ticker = (ticker or "").strip().lower()
+                    if not clean_ticker or clean_ticker in {"research", "unknown"}:
+                        clean_query = re.sub(r"[^a-z0-9]+", "-", request.query.lower())[:30].strip("-")
+                        topic_slug = clean_query or "deep-research"
+                    else:
+                        topic_slug = clean_ticker.replace(" ", "-")
+
                     bridge = FacelessBridge()
                     final_video = bridge.compose_reel(
                         dialogue_path=dialogue_path,

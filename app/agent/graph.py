@@ -422,6 +422,9 @@ def create_research_graph(
 
         ticker = state.get("ticker")
         candidates = state.get("candidates") or {}
+        intent_dict = state.get("research_intent") or {}
+        is_multi_candidate = bool(intent_dict.get("requires_candidate_workspaces"))
+
         chosen_candidate = None
 
         if ticker and ticker != "UNKNOWN" and candidates:
@@ -430,7 +433,8 @@ def create_research_graph(
                     chosen_candidate = c
                     break
 
-        if not chosen_candidate and candidates:
+        # Only promote a single candidate if NOT a multi-candidate workspace or if exactly one candidate exists
+        if not chosen_candidate and candidates and (not is_multi_candidate or len(candidates) == 1):
             best_cand = None
             best_ratio = -float("inf")
             for cid, c in candidates.items():
@@ -447,8 +451,8 @@ def create_research_graph(
                         best_cand = c
             chosen_candidate = best_cand or next((c for c in candidates.values() if isinstance(c, Mapping)), None)
 
-        # Promote chosen candidate workspace and diligence dossier into top-level state
-        if chosen_candidate:
+        # Promote chosen candidate workspace ONLY in single-stock mode
+        if chosen_candidate and (not is_multi_candidate or len(candidates) == 1):
             c_ticker = str(
                 chosen_candidate.get("ticker")
                 or (chosen_candidate.get("diligence_dossier") or {}).get("ticker")
@@ -512,7 +516,8 @@ def create_research_graph(
                 )
                 updates["thesis_breakers"] = list(dossier.get("bear_kill_triggers") or ())
 
-        if ticker and ticker != "UNKNOWN":
+        # Only run single-stock gate checks and committee deliberation if not multi-candidate or single candidate
+        if ticker and ticker != "UNKNOWN" and (not is_multi_candidate or len(candidates) == 1):
             st = {**state, **updates}
             if chosen_candidate:
                 if not st.get("market_context") and chosen_candidate.get("market_context"):
