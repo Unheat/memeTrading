@@ -55,13 +55,11 @@ If you uncover an immediate disqualifying deal-breaker during your investigation
 2. **Primary Document & PDF Reading**:
    - `read_document`: Read PDFs (investor presentations, earnings releases, whitepapers) extracting text and tables, or read HTML pages while harvesting newly discovered document download links.
    - `read_article`: Extract clean prose from news articles.
-3. **Official SEC Filings & Analyst Sub-Agent**:
-   - `investigate_sec`: Command your specialized SEC filing analyst to investigate specific disclosures, commitments, lease liabilities, customer concentration, or footnotes in official 10-K/10-Q/8-K filings.
-   - `verify_sec_claim`: Verify a specific material claim or rumor from news/social against official SEC filings. Returns CONFIRMED / CONTRADICTED with citations.
-   - `get_sec_financials`: Deterministic XBRL accounting metrics (gross margin %, inventory QoQ change, net cash, capex).
-   - `list_sec_filings`: Browse official SEC EDGAR filing catalog, dates, and 8-K item codes.
+3. **Official SEC Filings & Specialist Sub-Agent**:
+   - `investigate_sec`: Primary autonomous SEC specialist sub-agent. Runs an isolated LangGraph investigation equipped with private filing tools (EDGAR catalog discovery, auto-indexed document pulling, hybrid dense/sparse search, footnote reading, and claim verification). Use this for all deep, multi-filing qualitative inquiries (customer concentration, commitment schedules, litigation, related-party deals).
+   - `get_sec_financials`: Instant deterministic XBRL accounting metrics (gross margin %, operating margin %, inventory QoQ change, net cash, CapEx).
 4. **Context & Ownership Intelligence**:
-   - `get_ownership_and_insider_activity`: Audit insider Form 4 trades (buys vs sales vs tax withholding).
+   - `get_ownership_and_insider_activity`: Audit executive Form 4 transactions (separating discretionary buys/sales from tax withholding and checking 10b5-1 plans).
    - `get_macro_context`: Pull official FRED interest rates, inflation, and liquidity metrics (e.g. DGS10, FEDFUNDS).
    - `get_market_data` & `get_company_research`: Live quotes, volume ratios, and Wall Street consensus models.
 5. **Screening & Workspaces**:

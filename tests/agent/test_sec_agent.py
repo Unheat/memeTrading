@@ -204,3 +204,116 @@ def test_verify_sec_claim_resolves_with_ticker(tmp_path: Path, monkeypatch):
     assert payload["status"] == "ok"
     assert payload["verification"]["verdict"] == "CONTRADICTED"
     assert "non-binding" in payload["verification"]["evidence_against"][0]["quote"]
+
+
+class MockMultiTurnSecAnalystModel:
+    """Mock model that executes tools via LangGraph before producing final JSON."""
+
+    def __init__(self):
+        self.step = 0
+        self.bound_tools = []
+
+    def bind_tools(self, tools):
+        self.bound_tools = tools
+        return self
+
+    def invoke(self, messages):
+        self.step += 1
+        if self.step == 1:
+            # Turn 1: sub-agent calls list_filings
+            return AIMessage(
+                content="",
+                tool_calls=[{
+                    "name": "list_filings",
+                    "args": {"forms": ["10-K"]},
+                    "id": "call_list_1",
+                    "type": "tool_call",
+                }],
+            )
+        elif self.step == 2:
+            # Turn 2: sub-agent calls search_corpus
+            return AIMessage(
+                content="",
+                tool_calls=[{
+                    "name": "search_corpus",
+                    "args": {"query": "datacenter capex commitments"},
+                    "id": "call_search_1",
+                    "type": "tool_call",
+                }],
+            )
+        else:
+            # Final Turn: sub-agent returns cited institutional synthesis
+            return AIMessage(
+                content=json.dumps({
+                    "assessment": "CONFIRMED",
+                    "synthesis": "Microsoft Form 10-K confirmed $35.8B capex primarily for AI datacenters.",
+                    "findings": ["Direct footnote disclosure verified."],
+                })
+            )
+
+
+def test_autonomous_sec_subagent_multiturn_graph_execution(tmp_path: Path, monkeypatch):
+    """Verify autonomous SEC analyst sub-agent runs through its LangGraph sub-graph and executes tools."""
+    from app.sec.acquisition import FilingDiscoveryResult
+    from app.sec.schemas import FilingMetadata
+    from app.sec.retrieval import RetrievalResult, RetrievedSecChunk
+    from app.sec.corpus import CorpusChunk
+
+    fake_filing = FilingMetadata(
+        ticker="MSFT",
+        cik="0000789019",
+        form="10-K",
+        filing_date=date.fromisoformat("2026-02-01"),
+        accession="0000789019-26-000001",
+        filing_url="https://www.sec.gov/form10k",
+    )
+    monkeypatch.setattr(
+        "app.sec.agent._list_sec_filings",
+        lambda *args, **kwargs: FilingDiscoveryResult(filings=[fake_filing], error=None),
+    )
+
+    sample_text = "Capital expenditures for datacenters were $35.8 billion."
+    fake_chunk = CorpusChunk(
+        chunk_id="chunk-subagent-1",
+        ordinal=0,
+        accession="0000789019-26-000001",
+        form="10-K",
+        filing_date=date.fromisoformat("2026-02-01"),
+        document_name="primary_doc.htm",
+        source_url="https://www.sec.gov/form10k",
+        relative_path=Path("sec/documents/primary_doc.htm"),
+        start_offset=0,
+        end_offset=len(sample_text),
+        text=sample_text,
+    )
+    monkeypatch.setattr(
+        "app.sec.agent.search_sec_corpus",
+        lambda *args, **kwargs: RetrievalResult(
+            results=(RetrievedSecChunk(chunk=fake_chunk, dense_rank=1, sparse_rank=1, rrf_score=0.9, rerank_score=0.9, rerank_status="NOT_APPLIED"),),
+            error=None,
+        ),
+    )
+
+    # Set up directory with index
+    case_dir = tmp_path / "subagent_case" / "candidates" / "cand_msft" / "sec" / "index"
+    case_dir.mkdir(parents=True, exist_ok=True)
+    (case_dir / "sec.faiss").write_bytes(b"mock_index")
+
+    mock_model = MockMultiTurnSecAnalystModel()
+    result = run_sec_investigation(
+        cases_root=tmp_path,
+        case_id="subagent_case",
+        ticker="MSFT",
+        task="Investigate capex commitments",
+        form="10-K",
+        candidate_id="cand_msft",
+        model=mock_model,
+    )
+
+    assert result["status"] == "ok"
+    assert result["assessment"] == "CONFIRMED"
+    assert "35.8B" in result["synthesis"]
+    assert len(result["evidence"]) >= 1
+    assert result["evidence"][0]["form"] == "10-K"
+    assert result["evidence"][0]["chunk_id"] == "chunk-subagent-1"
+
