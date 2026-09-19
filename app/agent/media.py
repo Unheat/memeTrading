@@ -226,11 +226,33 @@ def build_source_registry(state: InvestigationState) -> list[CitationCard]:
         if pt_mean is not None:
             con_facts.append(f"Price Target Spectrum: Mean ${pt_mean:.2f}, Low ${pt_low or 0:.2f}, High ${pt_high or 0:.2f}")
 
-        rev_est = consensus.get("revenue_estimates") or {}
-        if rev_est.get("current_year_avg"):
-            con_facts.append(f"Consensus FY0 Revenue: ${float(rev_est['current_year_avg']) / 1e9:.2f}B")
-        if rev_est.get("next_year_avg"):
-            con_facts.append(f"Consensus FY1 (+1Y) Revenue: ${float(rev_est['next_year_avg']) / 1e9:.2f}B")
+        rev_est = consensus.get("revenue_estimates")
+        if isinstance(rev_est, list):
+            for r_item in rev_est:
+                if isinstance(r_item, Mapping):
+                    p_name = r_item.get("period")
+                    avg_val = r_item.get("avg")
+                    if avg_val is not None:
+                        con_facts.append(f"Consensus Revenue ({p_name}): ${float(avg_val) / 1e9:.2f}B")
+        elif isinstance(rev_est, Mapping):
+            if rev_est.get("current_year_avg"):
+                con_facts.append(f"Consensus FY0 Revenue: ${float(rev_est['current_year_avg']) / 1e9:.2f}B")
+            if rev_est.get("next_year_avg"):
+                con_facts.append(f"Consensus FY1 (+1Y) Revenue: ${float(rev_est['next_year_avg']) / 1e9:.2f}B")
+
+        eps_est = consensus.get("eps_estimates")
+        if isinstance(eps_est, list):
+            for e_item in eps_est:
+                if isinstance(e_item, Mapping):
+                    p_name = e_item.get("period")
+                    avg_val = e_item.get("avg")
+                    if avg_val is not None:
+                        con_facts.append(f"Consensus EPS ({p_name}): ${float(avg_val):.2f}")
+        elif isinstance(eps_est, Mapping):
+            if eps_est.get("current_year_avg"):
+                con_facts.append(f"Consensus FY0 EPS: ${float(eps_est['current_year_avg']):.2f}")
+            if eps_est.get("next_year_avg"):
+                con_facts.append(f"Consensus FY1 (+1Y) EPS: ${float(eps_est['next_year_avg']):.2f}")
 
         cards.append(
             CitationCard(
