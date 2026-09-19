@@ -228,3 +228,175 @@ def settle_decision(
         }
     except Exception as exc:
         return {"status": "error", "message": f"Settlement calculation failed: {exc}"}
+
+
+@dataclass
+class BacktestSummary:
+    """Multi-dimensional performance scorecard of the model and deterministic gates."""
+
+    total_runs: int
+    approved_longs: int
+    passed_discipline: int
+    validation_watch: int
+    settled_runs: int
+    pending_settlement: int
+    hit_rate_approved_longs: float | None = None
+    mean_alpha_approved_longs: float = 0.0
+    mean_alpha_passed_discipline: float = 0.0
+    bear_floor_breach_count: int = 0
+    forensic_high_risk_count: int = 0
+    forensic_high_risk_mean_return: float = 0.0
+    forward_days: int = 90
+    benchmark_ticker: str = "SPY"
+
+    def render(self) -> str:
+        """Render a clean terminal/markdown scorecard of backtest results."""
+        lines = [
+            "=" * 72,
+            " 📊 INSTITUTIONAL DEEP RESEARCH BACKTEST SCORECARD",
+            "=" * 72,
+            f"• Forward Horizon:     {self.forward_days} days vs {self.benchmark_ticker}",
+            f"• Total Evaluations:   {self.total_runs} (Settled: {self.settled_runs}, Pending: {self.pending_settlement})",
+            "",
+            "## 1. Investment Committee Verdict Distribution",
+            f"  - Approved Longs:     {self.approved_longs}",
+            f"  - Passed Discipline:  {self.passed_discipline}",
+            f"  - Validation Watch:   {self.validation_watch}",
+            "",
+            "## 2. Decision Performance & Alpha vs Benchmark",
+        ]
+        if self.hit_rate_approved_longs is not None:
+            lines.append(f"  - Approved Longs Hit Rate:    {self.hit_rate_approved_longs:.1%} (beat {self.benchmark_ticker})")
+            lines.append(f"  - Approved Longs Mean Alpha:  {self.mean_alpha_approved_longs:+.2%}")
+        else:
+            lines.append("  - Approved Longs Alpha:       No settled approved positions")
+        lines.append(f"  - Passed Decisions Mean Alpha:{self.mean_alpha_passed_discipline:+.2%}")
+        lines.append("")
+        lines.append("## 3. Forensic & Capital Safety Safeguards")
+        lines.append(f"  - High Manipulation Risks:    {self.forensic_high_risk_count} flagged by Beneish/Sloan")
+        if self.forensic_high_risk_count > 0:
+            lines.append(f"  - High-Risk Realized Return:  {self.forensic_high_risk_mean_return:+.2%}")
+        lines.append(f"  - Bear Floor Downside Breaches: {self.bear_floor_breach_count}")
+        lines.append("=" * 72)
+        return "\n".join(lines)
+
+
+def summarize_backtest(
+    records: list[BacktestDecisionRecord],
+    forward_days: int = 90,
+    benchmark_ticker: str = "SPY",
+) -> BacktestSummary:
+    """Aggregate decision records and compute hit rate, alpha, and forensic safety stats."""
+    total = len(records)
+    approved_longs = 0
+    passed_discipline = 0
+    validation_watch = 0
+    settled_count = 0
+    pending_count = 0
+
+    approved_alphas: list[float] = []
+    passed_alphas: list[float] = []
+    bear_floor_breaches = 0
+    high_risk_returns: list[float] = []
+    high_risk_count = 0
+
+    for rec in records:
+        v = (rec.verdict or "").upper()
+        if "APPROVED" in v:
+            approved_longs += 1
+        elif "PASSED" in v:
+            passed_discipline += 1
+        elif "WATCH" in v or "NO_POSITION" in v:
+            validation_watch += 1
+
+        is_high_risk = (rec.forensic_verdict or "").upper() == "HIGH_MANIPULATION_RISK"
+        if is_high_risk:
+            high_risk_count += 1
+
+        # Settlement
+        settle = settle_decision(rec.ticker, rec.as_of_date, forward_days=forward_days, benchmark_ticker=benchmark_ticker)
+        if settle.get("status") == "settled":
+            settled_count += 1
+            alpha = float(settle["alpha_pct"]) / 100.0
+            ret = float(settle["asset_return_pct"]) / 100.0
+            end_px = float(settle["end_price"])
+
+            if "APPROVED" in v:
+                approved_alphas.append(alpha)
+                # Check if downside bear floor was breached
+                if rec.bear_floor and end_px < rec.bear_floor:
+                    bear_floor_breaches += 1
+            else:
+                passed_alphas.append(alpha)
+
+            if is_high_risk:
+                high_risk_returns.append(ret)
+        elif settle.get("status") == "pending_settlement":
+            pending_count += 1
+
+    hit_rate = (
+        sum(1 for a in approved_alphas if a > 0) / len(approved_alphas)
+        if approved_alphas else None
+    )
+    mean_approved_alpha = (sum(approved_alphas) / len(approved_alphas)) if approved_alphas else 0.0
+    mean_passed_alpha = (sum(passed_alphas) / len(passed_alphas)) if passed_alphas else 0.0
+    mean_high_risk_ret = (sum(high_risk_returns) / len(high_risk_returns)) if high_risk_returns else 0.0
+
+    return BacktestSummary(
+        total_runs=total,
+        approved_longs=approved_longs,
+        passed_discipline=passed_discipline,
+        validation_watch=validation_watch,
+        settled_runs=settled_count,
+        pending_settlement=pending_count,
+        hit_rate_approved_longs=hit_rate,
+        mean_alpha_approved_longs=mean_approved_alpha,
+        mean_alpha_passed_discipline=mean_passed_alpha,
+        bear_floor_breach_count=bear_floor_breaches,
+        forensic_high_risk_count=high_risk_count,
+        forensic_high_risk_mean_return=mean_high_risk_ret,
+        forward_days=forward_days,
+        benchmark_ticker=benchmark_ticker,
+    )
+
+
+def run_backtest_grid(
+    tickers: list[str],
+    start_date: str,
+    end_date: str,
+    every_n_days: int = 30,
+    cases_root: Path | str = "cases/backtests",
+    forward_days: int = 90,
+    model: Any | None = None,
+    budget_max_tool_calls: int = 25,
+) -> tuple[list[BacktestDecisionRecord], BacktestSummary]:
+    """Execute a backtest sweep across tickers and historical dates."""
+    dates = generate_date_grid(start_date, end_date, every_n_days=every_n_days)
+    records: list[BacktestDecisionRecord] = []
+
+    for ticker in tickers:
+        clean_t = ticker.strip().upper()
+        for d in dates:
+            logger.info("Running backtest cell for %s as of %s", clean_t, d)
+            try:
+                rec = run_backtest_cell(
+                    ticker=clean_t,
+                    as_of_date=d,
+                    cases_root=cases_root,
+                    model=model,
+                    budget_max_tool_calls=budget_max_tool_calls,
+                )
+                records.append(rec)
+            except Exception as exc:
+                logger.error("Backtest cell failed for %s on %s: %s", clean_t, d, exc)
+                records.append(
+                    BacktestDecisionRecord(
+                        ticker=clean_t,
+                        as_of_date=d,
+                        case_id="failed",
+                        status=f"error: {exc}",
+                    )
+                )
+
+    summary = summarize_backtest(records, forward_days=forward_days)
+    return records, summary
