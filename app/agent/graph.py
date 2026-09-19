@@ -9,6 +9,7 @@ All stages execute continuously and gracefully without abort tripwires.
 """
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Mapping
 from typing import Any, Literal, Sequence
@@ -54,12 +55,15 @@ def _has_evidence_gaps(state: InvestigationState) -> bool:
             if not cand.get("market_context"):
                 return True
             sec_fin = cand.get("sec_financials") or {}
-            if not (
-                sec_fin.get("status") in {"ok", "ok_foreign_issuer_unstructured"}
+            fin_status = sec_fin.get("status")
+            has_financial_coverage = (
+                fin_status in {"ok", "ok_foreign_issuer_unstructured"}
                 or bool(sec_fin.get("periods"))
-                or cand.get("sec_corpora")
-                or cand.get("evidence")
-            ):
+                or bool(cand.get("sec_corpora"))
+                or bool(cand.get("evidence"))
+                or (fin_status == "unavailable" and bool(cand.get("fact_cards") or cand.get("market_context")))
+            )
+            if not has_financial_coverage:
                 return True
             if not (cand.get("diligence_dossier") or cand.get("valuation") or cand.get("quant_report")):
                 return True
@@ -157,7 +161,7 @@ def create_research_graph(
     policy = context_policy or ModelContextPolicy()
 
     def planner_node(state: InvestigationState) -> dict[str, Any]:
-        """Stage 1: Generate structured ResearchPlanSchema using structured output."""
+        """Stage 1: Generate structured ResearchPlanSchema using structured output and scout intelligence."""
         if state.get("research_plan"):
             return {}
 
@@ -165,6 +169,33 @@ def create_research_graph(
         ticker = state.get("ticker") or None
         company = state.get("company") or None
         intent_dict = state.get("research_intent") or {}
+        as_of = state.get("as_of_date")
+
+        # Preliminary scout search to discover real-world entities, tickers, and recent catalysts
+        scout_context = ""
+        tool_map = {getattr(t, "name", ""): t for t in tools}
+        web_tool = tool_map.get("search_web")
+        article_tool = tool_map.get("search_articles")
+        if str(query).strip() and (web_tool or article_tool):
+            try:
+                raw_scout = None
+                if web_tool:
+                    raw_scout = web_tool.invoke({"query": str(query)[:180], "limit": 5})
+                elif article_tool:
+                    raw_scout = article_tool.invoke({"query": str(query)[:180], "limit": 5})
+                if raw_scout:
+                    scout_data = json.loads(raw_scout) if isinstance(raw_scout, str) else raw_scout
+                    lines = []
+                    for item in (scout_data.get("records", []) or scout_data.get("articles", [])):
+                        t_str = item.get("title") or ""
+                        s_str = item.get("snippet") or item.get("summary") or ""
+                        if t_str or s_str:
+                            lines.append(f"- {t_str}: {s_str}")
+                    if lines:
+                        scout_context = "\n".join(lines[:5])
+                        logger.info("pipeline.planner_scout_obtained count=%s", len(lines[:5]))
+            except Exception as exc:
+                logger.debug("Preliminary scout search failed (%s); proceeding with ungrounded planning", exc)
 
         if not hasattr(model, "with_structured_output"):
             plan = ResearchPlanSchema(
@@ -178,7 +209,14 @@ def create_research_graph(
             return {"research_plan": [plan.model_dump()]}
 
         try:
-            plan = generate_research_plan(model, str(query), ticker=ticker, company=company)
+            plan = generate_research_plan(
+                model,
+                str(query),
+                ticker=ticker,
+                company=company,
+                scout_context=scout_context,
+                as_of_date=as_of,
+            )
         except Exception as exc:
             logger.warning("Structured planner failed (%s); using fallback plan", exc)
             plan = ResearchPlanSchema(
@@ -192,6 +230,37 @@ def create_research_graph(
 
         plan_dict = plan.model_dump() if hasattr(plan, "model_dump") else plan.dict()
         intent = ResearchIntent.from_plan(plan_dict, explicit_subjects=tuple(s for s in (ticker, company) if s))
+
+        # Auto-seed candidate workspaces to prevent entity_conflict on early tool calls
+        seeded_candidates = dict(state.get("candidates") or {})
+        for c_ticker in plan.candidate_entities or []:
+            clean_c = c_ticker.strip().upper()
+            cid = f"cand_{clean_c.lower()}"
+            if cid not in seeded_candidates:
+                seeded_candidates[cid] = {
+                    "candidate_id": cid,
+                    "ticker": clean_c,
+                    "company": "",
+                    "sec_corpora": [],
+                    "evidence": [],
+                    "contradictions": [],
+                    "fact_cards": [],
+                    "status": "discovered",
+                }
+        if ticker:
+            clean_t = ticker.strip().upper()
+            cid = f"cand_{clean_t.lower()}"
+            if cid not in seeded_candidates:
+                seeded_candidates[cid] = {
+                    "candidate_id": cid,
+                    "ticker": clean_t,
+                    "company": str(company or ""),
+                    "sec_corpora": [],
+                    "evidence": [],
+                    "contradictions": [],
+                    "fact_cards": [],
+                    "status": "discovered",
+                }
 
         work_items = []
         is_equity = bool(ticker or company or plan.candidate_entities)
@@ -234,6 +303,7 @@ def create_research_graph(
             "research_plan": [plan_dict],
             "research_intent": intent.to_dict(),
             "work_queue": work_items,
+            "candidates": seeded_candidates,
             "messages": [
                 AIMessage(content=plan_summary),
                 HumanMessage(content="Execute the deep research plan using your available tools. Select high-priority investigations to begin."),
@@ -305,7 +375,7 @@ def create_research_graph(
                         w["status"] = "completed"
                     elif w.get("evidence_tier") == "primary_sec" and ("get_sec_financials" in tool_names or "search_sec_evidence" in tool_names):
                         w["status"] = "completed"
-                    elif len(state.get("evidence") or []) >= 2 and w.get("evidence_tier") == "general":
+                    elif (len(state.get("evidence") or []) >= 2 or len(state.get("source_records") or []) >= 2 or len(updates.get("source_records") or []) >= 2) and w.get("evidence_tier") == "general":
                         w["status"] = "completed"
                 updated_queue.append(w)
             updates["work_queue"] = updated_queue
@@ -356,12 +426,15 @@ def create_research_graph(
                 if not cand.get("market_context"):
                     deterministic_gaps.append(f"Missing market data for candidate ${t}; call `get_market_data`.")
                 sec_fin = cand.get("sec_financials") or {}
-                if not (
-                    sec_fin.get("status") in {"ok", "ok_foreign_issuer_unstructured"}
+                fin_status = sec_fin.get("status")
+                has_financial_coverage = (
+                    fin_status in {"ok", "ok_foreign_issuer_unstructured"}
                     or bool(sec_fin.get("periods"))
-                    or cand.get("sec_corpora")
-                    or cand.get("evidence")
-                ):
+                    or bool(cand.get("sec_corpora"))
+                    or bool(cand.get("evidence"))
+                    or (fin_status == "unavailable" and bool(cand.get("fact_cards") or cand.get("market_context")))
+                )
+                if not has_financial_coverage:
                     deterministic_gaps.append(f"Missing SEC financial data for candidate ${t}; call `get_sec_financials` or pull filings.")
                 if not (cand.get("diligence_dossier") or cand.get("valuation") or cand.get("quant_report")):
                     deterministic_gaps.append(

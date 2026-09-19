@@ -91,12 +91,18 @@ def create_agent_tools(
         try:
             res = _search_articles(query=query, ticker=ticker, sources=sources, days=days, limit=limit)
             d = res.to_dict()
-            if run_as_of and "articles" in d and isinstance(d["articles"], list):
+            if run_as_of:
                 cutoff = run_as_of[:10]
-                d["articles"] = [
-                    a for a in d["articles"]
-                    if not a.get("published_at") or str(a.get("published_at"))[:10] <= cutoff
-                ]
+                # In backtest mode, strictly enforce Point-In-Time (PIT):
+                # block undated items AND block items published after cutoff date
+                items_key = "records" if "records" in d else ("articles" if "articles" in d else None)
+                if items_key and isinstance(d[items_key], list):
+                    d[items_key] = [
+                        a for a in d[items_key]
+                        if (a.get("published_utc") or a.get("published_at"))
+                        and str(a.get("published_utc") or a.get("published_at"))[:10] <= cutoff
+                    ]
+            # In normal flow (run_as_of is None): never block data, even if undated
             return json.dumps(sanitize_payload(d))
         except Exception as exc:
             return json.dumps({"status": "error", "message": f"search_articles error: {exc}"})
@@ -109,7 +115,23 @@ def create_agent_tools(
             return suppressed
         try:
             res = _read_article(url=url)
-            return json.dumps(sanitize_payload(res.to_dict()))
+            d = res.to_dict()
+            if run_as_of:
+                cutoff = run_as_of[:10]
+                pub = d.get("published_utc")
+                if not pub:
+                    return json.dumps({
+                        "status": "unavailable",
+                        "url": url,
+                        "extraction_note": "undated_item_blocked_in_backtest: Point-In-Time discipline excludes undated article in historical backtest.",
+                    })
+                if str(pub)[:10] > cutoff:
+                    return json.dumps({
+                        "status": "unavailable",
+                        "url": url,
+                        "extraction_note": f"look_ahead_blocked: Article published {pub} is after cutoff {cutoff}.",
+                    })
+            return json.dumps(sanitize_payload(d))
         except Exception as exc:
             return json.dumps({"status": "error", "message": f"read_article error: {exc}"})
 
@@ -121,8 +143,31 @@ def create_agent_tools(
             return suppressed
         try:
             res = _read_document(url=url, candidate_id=candidate_id, max_pages=max_pages)
-            if isinstance(res, dict) and candidate_id:
-                res["candidate_id"] = candidate_id
+            if isinstance(res, dict):
+                if candidate_id:
+                    res["candidate_id"] = candidate_id
+                if run_as_of and res.get("status") == "ok":
+                    cutoff = run_as_of[:10]
+                    import re
+                    date_regex = re.compile(r"\b(20\d{2}[-/]\d{2}[-/]\d{2})\b")
+                    doc_text = str(res.get("text") or "")[:2000]
+                    m = date_regex.search(doc_text) or date_regex.search(url)
+                    if m:
+                        doc_date = m.group(1).replace("/", "-")
+                        if doc_date[:10] > cutoff:
+                            return json.dumps({
+                                "status": "unavailable",
+                                "url": url,
+                                "message": f"look_ahead_blocked: Document dated {doc_date} is after cutoff {cutoff}.",
+                                "candidate_id": candidate_id,
+                            })
+                    else:
+                        return json.dumps({
+                            "status": "unavailable",
+                            "url": url,
+                            "message": "undated_item_blocked_in_backtest: Point-In-Time discipline excludes undated document in historical backtest.",
+                            "candidate_id": candidate_id,
+                        })
             return json.dumps(res)
         except Exception as exc:
             return json.dumps({"status": "error", "message": f"read_document error: {exc}"})
@@ -135,8 +180,28 @@ def create_agent_tools(
             return suppressed
         try:
             res = _search_web(query=query, domains=domains, limit=limit, file_type=file_type)
-            return json.dumps(sanitize_payload(res.to_dict()))
+            d = res.to_dict()
+            if run_as_of and "records" in d and isinstance(d["records"], list):
+                cutoff = run_as_of[:10]
+                import re
+                date_regex = re.compile(r"\b(20\d{2}[-/]\d{2}[-/]\d{2})\b")
+                filtered_records = []
+                for r in d["records"]:
+                    snippet = str(r.get("snippet") or "")
+                    url = str(r.get("url") or "")
+                    m = date_regex.search(snippet) or date_regex.search(url)
+                    if m:
+                        record_date = m.group(1).replace("/", "-")
+                        if record_date[:10] <= cutoff:
+                            filtered_records.append(r)
+                    else:
+                        # In backtest mode, undated web items are blocked
+                        continue
+                d["records"] = filtered_records
+            # In normal flow (run_as_of is None): never block data, even if undated
+            return json.dumps(sanitize_payload(d))
         except Exception as exc:
+            return json.dumps({"status": "error", "message": f"search_web error: {exc}"})
             return json.dumps({"status": "error", "message": f"search_web error: {exc}"})
 
     @tool

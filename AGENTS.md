@@ -105,3 +105,9 @@ The developer of this project is a beginner learning full-stack, web extension, 
 - **Documenting New Workarounds:** If you exhaust standard solutions and must implement a non-obvious workaround:
   1. Add an inline comment: `# WORKAROUND: [Explain upstream failure] -> [Why this weird approach works]`.
   2. Briefly document the quirk and affected modules in this file so future turns follow the same pattern without re-debugging.
+
+## Subagent spawn for zcode
+- spawn "reaserch" model when searching internet or local references for tools, solutions, ...
+-spawn "code-explore" model when plan to make change to code or analyze code.
+
+-avoid use defaule "explore" or "general-purpose" agent due to lack of tools access

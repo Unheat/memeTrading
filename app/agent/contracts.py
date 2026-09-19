@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 ToolStatus = Literal[
     "ok",
     "partial",
+    "ok_foreign_issuer_unstructured",
     "not_applicable",
     "unavailable",
     "paywalled",
@@ -21,7 +22,7 @@ ToolStatus = Literal[
     "error",
 ]
 
-ADMISSIBLE_EVIDENCE_STATUSES = frozenset({"ok", "partial"})
+ADMISSIBLE_EVIDENCE_STATUSES = frozenset({"ok", "partial", "ok_foreign_issuer_unstructured"})
 NON_EVIDENCE_STATUSES = frozenset({
     "not_applicable", "unavailable", "paywalled", "invalid_input",
     "entity_conflict", "duplicate_suppressed", "error",

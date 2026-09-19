@@ -415,7 +415,7 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
     candidates = state.get("candidates") or {}
     rows = [
         f"| {candidate.get('ticker') or 'UNKNOWN'} | {candidate.get('company') or 'Unknown'} | {'yes' if candidate.get('market_context') else 'no'} | {'yes' if candidate.get('sec_financials') or candidate.get('sec_corpora') or candidate.get('evidence') else 'no'} |"
-        for candidate in candidates.values() if isinstance(candidate, dict)
+        for candidate in candidates.values() if isinstance(candidate, Mapping)
     ] or ["| None | No registered candidates | no | no |"]
     ranking = "Not requested" if not requested_count else f"Requested ranking count: {requested_count}; registered candidates: {len(candidates)}"
     ranking_line = f"**Ranking Requirement**: {ranking}\n" if requested_count else ""

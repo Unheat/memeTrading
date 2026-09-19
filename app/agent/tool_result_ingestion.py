@@ -85,6 +85,13 @@ def ingest_tool_results(state: Mapping[str, Any], messages: Sequence[ToolMessage
                             "pipeline.candidate_id_resolved tool=%s ticker=%s candidate_id=%s",
                             tool_name, ticker, matched_ids[0],
                         )
+                    elif not matched_ids and bool((update.get("research_intent") or {}).get("requires_candidate_workspaces")):
+                        auto_id = f"cand_{ticker.lower()}"
+                        payload = {**payload, "candidate_id": auto_id}
+                        logger.info(
+                            "pipeline.candidate_id_assigned tool=%s ticker=%s candidate_id=%s",
+                            tool_name, ticker, auto_id,
+                        )
             envelope = ToolResultEnvelope.from_payload(payload)
 
         ownership_error = (
@@ -164,10 +171,29 @@ def _candidate_ownership_error(update: Mapping[str, Any], tool_name: str, payloa
     if not candidate_id:
         return f"{tool_name} requires candidate_id for multi-candidate research"
     candidate = (update.get("candidates") or {}).get(str(candidate_id))
-    if not isinstance(candidate, Mapping):
-        return f"unknown candidate_id: {candidate_id}"
     corpus = payload.get("corpus") if isinstance(payload.get("corpus"), Mapping) else {}
     payload_ticker = str(payload.get("ticker") or corpus.get("ticker") or "").upper().strip()
+
+    if not isinstance(candidate, Mapping):
+        # Auto-register workspace for planned/discovered candidates on first write
+        if candidate_id and payload_ticker and str(candidate_id).startswith("cand_"):
+            new_candidate = {
+                "candidate_id": str(candidate_id),
+                "ticker": payload_ticker,
+                "company": str(payload.get("company") or ""),
+                "sec_corpora": [],
+                "evidence": [],
+                "contradictions": [],
+                "fact_cards": [],
+                "status": "discovered",
+            }
+            if "candidates" in update and isinstance(update["candidates"], dict):
+                update["candidates"][str(candidate_id)] = new_candidate
+            candidate = new_candidate
+            logger.info("pipeline.candidate_auto_registered candidate_id=%s ticker=%s", candidate_id, payload_ticker)
+        else:
+            return f"unknown candidate_id: {candidate_id}"
+
     candidate_ticker = str(candidate.get("ticker") or "").upper().strip()
     if payload_ticker and candidate_ticker and payload_ticker != candidate_ticker:
         return f"candidate ticker mismatch: {candidate_ticker} != {payload_ticker}"
@@ -177,7 +203,6 @@ def _candidate_ownership_error(update: Mapping[str, Any], tool_name: str, payloa
     if payload_cik and candidate_cik and payload_cik != candidate_cik:
         return f"candidate CIK mismatch: {candidate_cik} != {payload_cik}"
 
-    corpus = payload.get("corpus")
     corpus_id = payload.get("corpus_id") or (corpus.get("corpus_id") if isinstance(corpus, Mapping) else None)
     allowed_corpora = set(str(item) for item in candidate.get("sec_corpora", ()) if item)
     if corpus_id and allowed_corpora and str(corpus_id) not in allowed_corpora:
@@ -188,7 +213,14 @@ def _candidate_ownership_error(update: Mapping[str, Any], tool_name: str, payloa
 def _candidate(update: dict[str, Any], payload: Mapping[str, Any]) -> dict[str, Any] | None:
     """Return the validated candidate workspace for a payload, when present."""
     candidate_id = payload.get("candidate_id")
-    return update["candidates"].get(str(candidate_id)) if candidate_id else None
+    if candidate_id and candidate_id in update["candidates"]:
+        return update["candidates"][str(candidate_id)]
+    ticker = str(payload.get("ticker") or "").upper().strip()
+    if ticker:
+        for cid, cand in update["candidates"].items():
+            if isinstance(cand, Mapping) and str(cand.get("ticker") or "").upper().strip() == ticker:
+                return cand
+    return None
 
 
 def _route_success(

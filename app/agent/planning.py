@@ -112,6 +112,8 @@ def generate_research_plan(
     query: str,
     ticker: Optional[str] = None,
     company: Optional[str] = None,
+    scout_context: Optional[str] = None,
+    as_of_date: Optional[str] = None,
 ) -> ResearchPlanSchema:
     """Generate a structured research plan from user prompt using LLM structured output.
 
@@ -120,6 +122,8 @@ def generate_research_plan(
         query: Free-form user research prompt.
         ticker: Optional explicit single ticker if provided by caller.
         company: Optional explicit company name if provided by caller.
+        scout_context: Optional preliminary web/news snippets gathered prior to planning.
+        as_of_date: Optional PIT cutoff date for backtest discipline.
 
     Returns:
         Validated ResearchPlanSchema instance.
@@ -130,16 +134,20 @@ def generate_research_plan(
         "Guidelines:\n"
         "1. Identify whether this is a multi-candidate ranking/screening, a single-company deep diligence, or a general thematic investigation.\n"
         "2. If the user asks for a specific count (e.g. '5 best tech stocks', 'top 10 AI companies', 'compare 3 peers'), set ranking_count to that integer.\n"
-        "3. Identify explicit or promising candidate entities (tickers/names) to investigate.\n"
+        "3. Identify explicit or promising candidate entities (tickers/names) to investigate. If preliminary scout intelligence is provided, use it to ground exact real-world tickers and entities.\n"
         "4. Formulate 3 to 5 targeted, high-signal questions focusing on valuation, real financial performance (SEC/XBRL), operational durability, and market setup.\n"
         "5. Set requires_candidate_workspaces to True whenever multiple candidate companies are being researched or compared."
     ))
 
     user_text = f"Research Request: {query}"
+    if as_of_date:
+        user_text += f"\nPoint-In-Time Research As-Of Date: {as_of_date}"
     if ticker:
         user_text += f"\nExplicit Ticker: {ticker}"
     if company:
         user_text += f"\nExplicit Company: {company}"
+    if scout_context and scout_context.strip():
+        user_text += f"\n\nPreliminary Scout Intelligence (Live Discovery):\n{scout_context.strip()}"
 
     messages = [system_prompt, HumanMessage(content=user_text)]
     return _invoke_structured(model, messages, ResearchPlanSchema)

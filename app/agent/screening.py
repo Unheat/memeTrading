@@ -183,7 +183,8 @@ def build_candidate_comparisons(
                 val = (mkt.get("quote") or {}).get("price") or (mkt.get("quote") or {}).get("value")
             elif metric == "market_cap":
                 fund = mkt.get("fundamentals") or {}
-                val = fund.get("market_cap")
+                raw_mc = fund.get("market_cap")
+                val = (raw_mc.get("value") if isinstance(raw_mc, dict) else raw_mc) if raw_mc is not None else None
                 if val is None:
                     p = (mkt.get("quote") or {}).get("price") or (mkt.get("quote") or {}).get("value")
                     sh_raw = fund.get("shares_outstanding")
@@ -192,7 +193,11 @@ def build_candidate_comparisons(
                         val = round(p * sh, 2)
             elif metric == "pe_ratio":
                 fund = mkt.get("fundamentals") or {}
-                val = fund.get("pe_ratio") or fund.get("trailing_pe")
+                raw_pe = fund.get("pe_ratio") or fund.get("trailing_pe")
+                val = (raw_pe.get("value") if isinstance(raw_pe, dict) else raw_pe) if raw_pe is not None else None
+                if val is None:
+                    consensus = cand.get("consensus_snapshot") or {}
+                    val = consensus.get("pe_ratio") or (mkt.get("quote") or {}).get("pe_ratio")
             elif metric in ("gross_margin", "gross_margin_pct"):
                 val = (sec.get("gross_margin_pct") or {}).get(latest_period)
                 if latest_period != "latest":

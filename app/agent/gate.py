@@ -33,7 +33,14 @@ def _candidate_is_evidence_backed(candidate: Mapping[str, Any]) -> bool:
             has_fin = True
         elif status != "unavailable" and len(sec_fin.get("periods", [])) > 0:
             has_fin = True
-    has_sec = bool(has_fin or candidate.get("sec_corpora") or candidate.get("evidence") or candidate.get("sec_filings"))
+    has_sec = bool(
+        has_fin
+        or candidate.get("sec_corpora")
+        or candidate.get("evidence")
+        or candidate.get("sec_filings")
+        or candidate.get("fact_cards")
+        or (candidate.get("status") == "discovered" and (candidate.get("quant_report") or candidate.get("valuation")))
+    )
     return has_market and has_sec
 
 
