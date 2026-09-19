@@ -612,6 +612,7 @@ All repository donors used by the project stay unmodified in `reference/`; packa
 15. `OpenBB-finance/OpenBB`: inspected only for provider-standardization ideas. Do not copy, install, or run its provider/plugin runtime: its repository is AGPL-3.0 and materially broader than this product.
 16. `HalcyonVector/Stock-Market-Intelligence`: selective market-context donor. Its `backend/app/services/technicals.py` contains small deterministic SMA, EMA, RSI, MACD, Bollinger Band, and ATR calculations (SMA and ATR already ported), while `backend/app/adapters/sentiment_live.py` supplied the StockTwits symbol-stream adapter adapted into `app/social/providers/stocktwits.py` (unauthenticated stream, null-body and `entities: null` guards retained). Do not inherit its web UI, API, scoring, forecasting, backtesting, portfolio, caching, or background-ingestion architecture.
 17. `Creatorberry/faceless`: source-script-to-reel workflow only.
+18. `tauricresearch/tradingagents`: Point-in-Time (PIT) date windowing, vendor coverage gap detection, Pydantic coercion, and outer grid evaluation harness donor. Adapted `date_window.py` (`as_of`, `in_window`, `coverage_gap`) into `app/market/date_window.py`, `_coerce_optional_float` into `app/contracts/coercion.py`, and outer backtest harness into `app/evaluation/backtest.py`. Excluded its 3-way conversational risk debate, conversational bull/bear ping-pong, prompt-invented price targets, and single-ticker graph lock.
 
 Keyed API providers — Finnhub, Apify, and FRED — are black-box HTTPS API dependencies, not repository donors: no clone, no copied code; their use is recorded in the dependency boundary per the Donor Code Provenance policy.
 
@@ -635,7 +636,9 @@ Keyed API providers — Finnhub, Apify, and FRED — are black-box HTTPS API dep
 14. Add lightweight prompt-injection protection (XML data delimiters + fast regex sanitization for untrusted social/article text). *(Complete.)*
 15. Transition to Universal Prompt-First Deep Research Pipeline (Structured Planner -> Analyst Workbench with model-directed diligence tools -> Evidence Ingestion -> Reflection Supervisor -> Boardroom Committee with instant math gates). *(Complete.)*
 16. Implement Phase 1 Data Integrity (Form 10-Q cash flow de-cumulation into true TTM FCF and 8-variable forensic concepts) and Phase 3 FactCard Evidence Ledger (deterministic tool fact distillation, compaction entity backlinks, and system prompt reprojection). *(Complete: 309 passing tests with zero regressions.)*
-17. E2E verification, golden SEC claim benchmark, and static-site publication build.
+17. Implement Point-in-Time (PIT) date windowing and zero-redesign outer backtest harness (`app/market/date_window.py`, `app/contracts/coercion.py`, `app/evaluation/backtest.py`, and `--as-of` CLI flag). *(Complete.)*
+    - **CRITICAL DUAL-MODE DESIGN CONSTRAINT**: In normal research flow (`as_of_date is None`), NEVER block, drop, or truncate data that has no date (such as live web searches, company overview pages, IR links, or articles without published timestamps). Undated data must remain 100% unrestricted in live mode; only filter lookahead dates or drop undated live web artifacts during historical backtest runs (`as_of_date` set to a past date).
+18. E2E verification, golden SEC claim benchmark, and static-site publication build.
 
 ## Post-MVP Extension: Headless Subscription-Backed Execution
 
@@ -648,7 +651,7 @@ For users running the system who wish to use their flat-rate ChatGPT or Claude P
 
 - Specialist-agent hierarchies, bull/bear debates, separate news/social/SEC-download agents.
 - Knowledge graphs, Neo4j, global SEC RAG, fine-tuning, portfolio optimization, prediction models, broker execution.
-- Backtesting, article RAG, and invented model-only financial analysis when reputable current professional analysis is available.
+- Complex internal event-driven portfolio simulation or graph rewrites for backtesting (outer grid evaluation harness calling the atomic runner via `app/evaluation/backtest.py` is implemented instead); article RAG; and invented model-only financial analysis when reputable current professional analysis is available.
 - Every-EDGAR ingestion; outer agent controls pulls.
 - Instagram, TikTok, Discord, Telegram; continuous X firehose (keyed on-demand Apify X search is permitted; a continuous feed is not).
 - Keyed providers as hard dependencies: Finnhub, Apify, and FRED are optional with keyless fallback; the system must run with zero API keys.
