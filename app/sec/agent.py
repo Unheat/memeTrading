@@ -405,6 +405,7 @@ def run_sec_investigation(
             if prep_res.error is None:
                 build_sec_index(case_dir, embedder=get_sec_embedder())
 
+    # If index still doesn't exist (no filings found or pull failed), return graceful notice
     if not index_file.exists():
         return {
             "status": "unavailable",
@@ -417,6 +418,7 @@ def run_sec_investigation(
             "evidence": [],
         }
 
+    # 2. Hybrid FAISS dense + BM25 sparse retrieval
     embed_query = get_sec_query_embedder()
     retrieval = search_sec_corpus(case_dir, task, embed_query=embed_query)
     if retrieval.error or not retrieval.results:
@@ -431,6 +433,7 @@ def run_sec_investigation(
             "evidence": [],
         }
 
+    # Format retrieved evidence chunks
     evidence_list = []
     chunk_texts_for_prompt = []
     for idx, item in enumerate(retrieval.results[:top_k], start=1):
@@ -450,6 +453,7 @@ def run_sec_investigation(
             f"--- Excerpt {idx} (Form: {chunk.form} | Date: {chunk.filing_date} | Accession: {chunk.accession}) ---\n{chunk.text}"
         )
 
+    # 3. Model synthesis if model provided
     if model is not None and hasattr(model, "invoke"):
         try:
             human_prompt = f"""Investigate the following SEC question/claim for ${clean_ticker}:
@@ -486,6 +490,7 @@ Answer the task directly based on these filings in strictly valid JSON."""
         except Exception as exc:
             logger.warning("SEC analyst model synthesis failed (%s); using direct excerpts", exc)
 
+    # Offline / deterministic fallback
     summary_text = f"Found {len(evidence_list)} relevant SEC excerpts for ${clean_ticker}."
     return {
         "status": "ok",
