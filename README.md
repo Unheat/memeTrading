@@ -204,13 +204,16 @@ python main.py
 # Single-ticker investigation
 python main.py --ticker MU --query "DRAM cycle pricing power and gross margin expansion"
 
+# Historical backtest audit — cuts off data as of date to eliminate lookahead bias
+python main.py --ticker TSLA --as-of 2024-01-15 --query "Robotaxi regulatory path and auto gross margin floor"
+
 # Thematic beneficiary discovery across an entire sector
 python main.py --query "Find key supply chain beneficiaries of advanced EUV lithography"
 
 # Generate research memo + cited Substack article
 python main.py --ticker NVDA --query "Blackwell thermal and packaging yields" --article
 
-# Generate complete viral character reel (Peter & Stewie)
+# Generate cited article + viral video reel derived from it (Peter & Stewie)
 python main.py --ticker TSLA --query "Robotaxi regulatory path and auto gross margin" --video
 ```
 
@@ -225,10 +228,10 @@ python main.py --ticker TSLA --query "Robotaxi regulatory path and auto gross ma
 | :--- | :--- |
 | `python main.py` | Interactive research agent prompt. |
 | `python main.py -t <TICKER> -q "<QUERY>"` | Single-ticker forensic equity diligence. |
+| `python main.py -t <TICKER> --as-of <DATE>` | Cuts off market, news, and SEC data as of date for backtesting without lookahead bias. |
 | `python main.py -q "<THEME>" --depth deep` | Thematic discovery & automatic candidate registration. |
-| `python main.py -t <TICKER> --as-of <DATE>` | Historical Point-in-Time audit without lookahead bias. |
 | `python main.py -t <TICKER> --article` | Generates cited Substack forensic article (`article.md`). |
-| `python main.py -t <TICKER> --video` | Generates article, character script, and renders MP4 video. |
+| `python main.py -t <TICKER> --video` | Generates cited article, character script based on the article, and renders MP4 video. |
 | `python scripts/run_backtest.py` | Historical backtest sweep evaluating verdicts against `SPY` alpha. |
 | `node app/valuation/calculator.mjs` | Standalone deterministic Reverse DCF & scenario calculator. |
 

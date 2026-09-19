@@ -67,9 +67,9 @@ python main.py --query "Is there a cloud GPU wait time bottleneck for NVDA and h
 | `--depth` | | `choice` | `deep` | Research breadth and tool budget policy. Choices: `standard` (15–25 tool calls), `deep` (35–50 tool calls). |
 | `--as-of` | | `str` | `None` | Historical Point-in-Time analysis cutoff date in `YYYY-MM-DD` format. Excludes lookahead filings and drops undated web items. |
 | `--article` | | `flag` | `False` | Generate a cited Substack-style forensic article (`article.md`). |
-| `--video` | | `flag` | `False` | Generate article, dialogue script, and render 1080x1920 video reel (`.mp4`) via local Faceless pipeline. |
-| `--video-script-only` | | `flag` | `False` | Generate article and dialogue script (`faceless/dialogue.json`), but skip video rendering. |
-| `--article-video`<br/>`--media` | | `flag` | `False` | Generate both the cited article and the rendered viral video reel. |
+| `--video` | | `flag` | `False` | Generate cited article (`article.md`), dialogue script derived from the article, and render 1080x1920 video reel (`.mp4`) via local Faceless pipeline. |
+| `--video-script-only` | | `flag` | `False` | Generate cited article and dialogue script (`faceless/dialogue.json`) based on the article, but skip MP4 video rendering. |
+| `--article-video`<br/>`--media` | | `flag` | `False` | Generate both the cited forensic article and the rendered viral video reel. |
 | `--character-pair` | | `choice` | `config` | Character duo for viral dialogue. Choices: `peter_stewie` (Peter & Stewie Griffin), `rick_morty` (Rick Sanchez & Morty Smith). |
 | `--verbose` | `-v` | `flag` | `False` | Enable detailed terminal debug logs showing tool calls, state transitions, and raw JSON payloads. |
 
@@ -86,7 +86,7 @@ python main.py -t NVDA -q "Analyze Blackwell rack thermal limits" --article
 # 2. Generate article + dialogue script without video rendering
 python main.py -t NVDA -q "Analyze Blackwell rack thermal limits" --video-script-only
 
-# 3. Generate article + dialogue script + rendered .mp4 video reel
+# 3. Generate cited article + character dialogue derived from it + rendered .mp4 video reel
 python main.py -t NVDA -q "Analyze Blackwell rack thermal limits" --video
 
 # 4. Generate full media suite with Rick & Morty character pair
