@@ -112,35 +112,60 @@ def run_backtest_cell(
     )
 
     verdict_str = None
-    conviction_str = None
-    kelly_pct = None
-    asym = None
+    fs = res.final_state or {}
+    case_dir = Path(cases_root) / res.case_id
+    artifacts_list: list[str] = []
+    inv_data: dict[str, Any] = {}
+    inv_path = case_dir / "investigation.json"
+    if inv_path.exists():
+        artifacts_list.append("investigation.json")
+        try:
+            import json
+            inv_data = json.loads(inv_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.warning("Failed to parse investigation.json for backtest record: %s", exc)
+
+    if (case_dir / "memo.md").exists():
+        artifacts_list.append("memo.md")
+    if (case_dir / "run-manifest.json").exists():
+        artifacts_list.append("run-manifest.json")
+
+    def _get_field(obj: Any, field_name: str) -> Any:
+        if obj is None:
+            return None
+        if isinstance(obj, dict):
+            return obj.get(field_name)
+        return getattr(obj, field_name, None)
+
+    ic = fs.get("ic_verdict") or inv_data.get("ic_verdict")
+    verdict_str = _get_field(ic, "verdict")
+    conviction_str = _get_field(ic, "conviction_tier")
+    kelly_pct = _get_field(ic, "kelly_position_size_pct")
+    asym = _get_field(ic, "reward_to_risk_ratio")
+
+    candidates = fs.get("candidates") or inv_data.get("candidates") or {}
     curr_px = None
     fv = None
     bf = None
-    forensic_v = None
+    forensic_v = _get_field(fs.get("forensic_report") or inv_data.get("forensic_report"), "verdict")
 
-    if res.manifest:
-        # Read from investigation.json if available
-        inv_path = Path(res.case_directory) / "investigation.json"
-        if inv_path.exists():
-            try:
-                import json
-                inv_data = json.loads(inv_path.read_text(encoding="utf-8"))
-                ic = inv_data.get("ic_verdict") or {}
-                if isinstance(ic, dict):
-                    verdict_str = ic.get("verdict")
-                    conviction_str = ic.get("conviction_tier")
-                    kelly_pct = ic.get("kelly_position_size_pct")
-                    asym = ic.get("reward_to_risk_ratio")
-                    curr_px = ic.get("current_price")
-                    fv = ic.get("base_target_price")
-                    bf = ic.get("bear_floor_price")
-                forensic = inv_data.get("forensic_report") or {}
-                if isinstance(forensic, dict):
-                    forensic_v = forensic.get("verdict")
-            except Exception as exc:
-                logger.warning("Failed to parse investigation.json for backtest record: %s", exc)
+    for cand in candidates.values():
+        if isinstance(cand, dict) and cand.get("diligence_dossier"):
+            dossier = cand["diligence_dossier"]
+            if bf is None:
+                bf = dossier.get("bear_floor")
+            if fv is None:
+                val = dossier.get("valuation") or {}
+                fv = val.get("fair_value") or (val.get("fair_value_range") or {}).get("base")
+            if curr_px is None:
+                curr_px = (dossier.get("market_context") or {}).get("quote", {}).get("price")
+            if forensic_v is None:
+                forensic_v = dossier.get("forensic_verdict")
+
+    if (case_dir / "memo.md").exists():
+        artifacts_list.append("memo.md")
+    if (case_dir / "run-manifest.json").exists():
+        artifacts_list.append("run-manifest.json")
 
     return BacktestDecisionRecord(
         ticker=clean_ticker,
@@ -155,7 +180,7 @@ def run_backtest_cell(
         fair_value=fv,
         bear_floor=bf,
         forensic_verdict=forensic_v,
-        artifacts=list(res.artifacts.keys()),
+        artifacts=artifacts_list,
     )
 
 
@@ -187,8 +212,8 @@ def settle_decision(
 
     try:
         # Fetch asset history up to settlement date
-        hist_asset = fetch_history(ticker, period="2y", as_of_date=settle_str)
-        hist_bench = fetch_history(benchmark_ticker, period="2y", as_of_date=settle_str)
+        hist_asset = fetch_history(ticker, period="5y", as_of_date=settle_str)
+        hist_bench = fetch_history(benchmark_ticker, period="5y", as_of_date=settle_str)
 
         dates_a = [d[:10] for d in hist_asset["dates"]]
         closes_a = hist_asset["close"]

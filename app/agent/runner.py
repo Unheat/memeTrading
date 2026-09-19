@@ -88,7 +88,13 @@ def run_investigation(
     cfg = config or load_config()
     root = Path(cases_root or cfg.research.cases_root)
     ticker = request.ticker or "RESEARCH"
-    case_id, target_case_dir = allocate_case(root, ticker)
+    case_date = None
+    if request.as_of_date:
+        try:
+            case_date = date.fromisoformat(request.as_of_date[:10])
+        except Exception:
+            case_date = None
+    case_id, target_case_dir = allocate_case(root, ticker, case_date=case_date)
     started_at = datetime.now(timezone.utc).isoformat()
     manifest = {
         "case_id": case_id,

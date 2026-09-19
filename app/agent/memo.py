@@ -563,6 +563,21 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
 """
 
 
+def _to_json_safe(val: Any) -> Any:
+    """Recursively convert dataclasses and Pydantic models to JSON-safe dictionaries."""
+    if val is None:
+        return None
+    if hasattr(val, "to_dict"):
+        return val.to_dict()
+    if hasattr(val, "model_dump"):
+        return val.model_dump()
+    if isinstance(val, dict):
+        return {k: _to_json_safe(v) for k, v in val.items()}
+    if isinstance(val, (list, tuple)):
+        return [_to_json_safe(v) for v in val]
+    return val
+
+
 def serialize_investigation_json(state: InvestigationState, memo_md: str) -> dict[str, Any]:
     """Serialize the full investigation into an atomic audit artifact."""
     now_utc = datetime.now(timezone.utc).isoformat()
@@ -580,7 +595,7 @@ def serialize_investigation_json(state: InvestigationState, memo_md: str) -> dic
         "status": state.get("status", "completed"),
         "confidence": state.get("confidence"),
         "created_at": now_utc,
-        "candidates": state.get("candidates", {}),
+        "candidates": _to_json_safe(state.get("candidates", {})),
         "candidate_leads": state.get("candidate_leads", []),
         "comparisons": state.get("comparisons", []),
         "tool_calls": state.get("tool_calls", 0),
@@ -596,18 +611,18 @@ def serialize_investigation_json(state: InvestigationState, memo_md: str) -> dic
         "consensus_snapshot": state.get("consensus_snapshot"),
         "expectation_gap": state.get("expectation_gap"),
         "thesis_breakers": state.get("thesis_breakers", []),
-        "bull_report": state.get("bull_report"),
-        "adversarial_report": state.get("adversarial_report"),
-        "ic_verdict": state.get("ic_verdict"),
+        "bull_report": _to_json_safe(state.get("bull_report")),
+        "adversarial_report": _to_json_safe(state.get("adversarial_report")),
+        "ic_verdict": _to_json_safe(state.get("ic_verdict")),
         "budget_state": state.get("budget_state", {}),
         "evidence_gate": state.get("evidence_gate", {}),
         "accounting_gate": state.get("accounting_gate", {}),
         "valuation_gate": state.get("valuation_gate", {}),
         "asymmetry_gate": state.get("asymmetry_gate", {}),
-        "forensic_report": state.get("forensic_report"),
-        "thematic_report": state.get("thematic_report"),
-        "sector_report": state.get("sector_report"),
-        "moat_report": state.get("moat_report"),
-        "quant_report": state.get("quant_report"),
+        "forensic_report": _to_json_safe(state.get("forensic_report")),
+        "thematic_report": _to_json_safe(state.get("thematic_report")),
+        "sector_report": _to_json_safe(state.get("sector_report")),
+        "moat_report": _to_json_safe(state.get("moat_report")),
+        "quant_report": _to_json_safe(state.get("quant_report")),
         "memo_markdown": memo_md,
     }
