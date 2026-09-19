@@ -41,12 +41,23 @@ flowchart TD
             t_soc["search_social: Retail sentiment & momentum"]
         end
 
-        subgraph T_SEC["2. SEC Hard Evidence & Analyst Sub-Agent"]
-            t_sec_inv["<b>investigate_sec</b>: High-leverage SEC Filing Analyst Sub-Agent<br/>(Auto-discovery, hybrid FAISS+BM25 RAG, and cited synthesis in 1 turn)"]
-            t_sec_ver["verify_sec_claim: Ground claims in SEC filings with auto-resolving ticker"]
+        subgraph T_SEC["2. Unified SEC Specialist Sub-Agent (LangGraph)"]
+            direction TB
             t_sec_fin["get_sec_financials: Deterministic XBRL accounting<br/>• Form 10-Q YTD Cash Flow De-cumulation<br/>• True TTM Free Cash Flow Base<br/>• 8 Forensic Concepts (Assets, Receivables, PP&E, SG&A)"]
-            t_sec_list["list_sec_filings: Official EDGAR catalog & 8-K item codes browsing"]
-            t_sec_plumb["pull_sec_filings / search_sec_evidence / read_sec_evidence: Low-level plumbing"]
+            
+            subgraph SEC_SUBAGENT["investigate_sec(ticker, task) Sub-Agent"]
+                direction TB
+                sec_sub_desc["<b>Autonomous SEC Analyst Loop (StateGraph)</b><br/>Multi-turn filing exploration, claim verification, and synthesis"]
+                sec_list["list_filings: Browse EDGAR 10-K/10-Q/8-K catalog"]
+                sec_pull["pull_filing: Auto-index on pull into local corpus"]
+                sec_search["search_corpus: Hybrid dense FAISS + sparse BM25 + RRF"]
+                sec_chunk["read_chunk: Verbatim footnote & schedule inspection"]
+                sec_claim["verify_claim: Ground factual claims vs filings"]
+                sec_insider["get_ownership_and_insider_activity: Audit Form 4 trades"]
+
+                sec_sub_desc --> sec_list --> sec_pull --> sec_search --> sec_chunk --> sec_claim
+                sec_sub_desc --> sec_insider
+            end
         end
 
         subgraph T_MKT["3. Market & Context Data"]
@@ -136,8 +147,8 @@ flowchart TD
 
     %% Class assignments
     class S1,S2,S3,S4,S5 stage;
-    class t_web,t_art,t_doc,t_soc,t_sec_inv,t_sec_list,t_sec_plumb,t_sec_ver,t_sec_fin,t_mkt,t_co,t_own,t_macro,t_reg,t_cmp,t_val tool;
-    class ENG_EXP,ENG_FOR,ENG_QNT,ENG_BULL,ENG_BEAR engine;
+    class t_web,t_art,t_doc,t_soc,t_sec_fin,sec_list,sec_pull,sec_search,sec_chunk,sec_claim,sec_insider,t_mkt,t_co,t_own,t_macro,t_reg,t_cmp,t_val tool;
+    class ENG_EXP,ENG_FOR,ENG_QNT,ENG_BULL,ENG_BEAR,sec_sub_desc engine;
     class G_EV,G_ACC,G_VAL,G_ASYM,COMM,GATES gate;
     class PROMO read;
 ```
