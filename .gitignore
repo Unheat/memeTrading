@@ -20,5 +20,6 @@ node_modules/
 # Local coding-agent caches and session artifacts
 .codebase-memory/
 .zcode/
+.zcodeignore
 cases/
 temp_plan/
