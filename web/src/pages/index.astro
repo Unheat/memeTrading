@@ -1,0 +1,169 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Header from '../components/Header.astro';
+import SearchModal from '../components/SearchModal.astro';
+import { getCollection } from 'astro:content';
+
+const articles = await getCollection('articles');
+// Sort newest first
+articles.sort((a, b) => new Date(b.data.publishedAt).getTime() - new Date(a.data.publishedAt).getTime());
+
+const totalCitations = articles.reduce((acc, curr) => acc + (curr.data.citations?.length || 0), 0);
+---
+
+<Layout title="Forensic Financial Research & Faceless Video Reels">
+  <Header slot="header" activeNav="articles" />
+  <SearchModal />
+
+  <!-- Hero Section -->
+  <section class="py-12 sm:py-16 text-center max-w-4xl mx-auto">
+    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-audit/10 border border-emerald-audit/30 text-emerald-audit text-xs font-mono mb-6">
+      <span class="w-2 h-2 rounded-full bg-emerald-audit animate-pulse"></span>
+      <span>Live SEC XBRL Audits & Faceless Video Reels</span>
+    </div>
+
+    <h1 class="text-4xl sm:text-6xl font-extrabold font-display tracking-tight text-text-primary leading-[1.1] mb-6">
+      Forensic Financial Research Backed by <span class="bg-gradient-to-r from-emerald-audit via-cyan-consensus to-emerald-300 bg-clip-text text-transparent">SEC Receipts</span>
+    </h1>
+
+    <p class="text-base sm:text-lg text-text-secondary max-w-2xl mx-auto leading-relaxed mb-8">
+      Deep equity tear-downs, Reverse DCF expectation modeling, and viral vertical video reels where every single number is bound to an immutable regulatory filing.
+    </p>
+
+    <!-- Platform Stats Highlights -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-3xl mx-auto p-3 rounded-2xl bg-obsidian-card border border-obsidian-border text-left">
+      <div class="p-3 bg-obsidian/40 rounded-xl border border-obsidian-border/50">
+        <div class="text-[10px] font-mono text-text-muted uppercase">Investigations</div>
+        <div class="text-xl font-bold font-mono text-text-primary mt-1">{articles.length}</div>
+        <div class="text-[10px] font-mono text-emerald-audit">Live & Audited</div>
+      </div>
+      <div class="p-3 bg-obsidian/40 rounded-xl border border-obsidian-border/50">
+        <div class="text-[10px] font-mono text-text-muted uppercase">Audited Receipts</div>
+        <div class="text-xl font-bold font-mono text-emerald-audit mt-1">{totalCitations}</div>
+        <div class="text-[10px] font-mono text-text-muted">SEC EDGAR Links</div>
+      </div>
+      <div class="p-3 bg-obsidian/40 rounded-xl border border-obsidian-border/50">
+        <div class="text-[10px] font-mono text-text-muted uppercase">Edge Latency</div>
+        <div class="text-xl font-bold font-mono text-cyan-consensus mt-1">&lt;20ms</div>
+        <div class="text-[10px] font-mono text-text-muted">Cloudflare Global</div>
+      </div>
+      <div class="p-3 bg-obsidian/40 rounded-xl border border-obsidian-border/50">
+        <div class="text-[10px] font-mono text-text-muted uppercase">Lookahead Bias</div>
+        <div class="text-xl font-bold font-mono text-emerald-audit mt-1">0%</div>
+        <div class="text-[10px] font-mono text-text-muted">Point-in-Time Safe</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Filter & Search Bar -->
+  <section class="mb-10">
+    <div class="flex flex-col sm:flex-row items-center justify-between gap-4 pb-4 border-b border-obsidian-border">
+      <div class="flex items-center gap-2 overflow-x-auto w-full sm:w-auto">
+        <span class="text-xs font-mono text-text-muted uppercase">Filter:</span>
+        <a href="/" class="px-3 py-1 rounded-lg bg-emerald-audit/20 text-emerald-audit border border-emerald-audit/40 text-xs font-mono font-semibold">
+          All Cases
+        </a>
+        <button type="button" class="search-chip px-3 py-1 rounded-lg bg-obsidian-card hover:bg-obsidian-subtle text-text-secondary text-xs font-mono border border-obsidian-border transition-colors">
+          $MU
+        </button>
+        <button type="button" class="search-chip px-3 py-1 rounded-lg bg-obsidian-card hover:bg-obsidian-subtle text-text-secondary text-xs font-mono border border-obsidian-border transition-colors">
+          $NVDA
+        </button>
+        <button type="button" class="search-chip px-3 py-1 rounded-lg bg-obsidian-card hover:bg-obsidian-subtle text-text-secondary text-xs font-mono border border-obsidian-border transition-colors">
+          Forensic Warning
+        </button>
+      </div>
+
+      <div class="text-xs font-mono text-text-muted self-end sm:self-auto">
+        Showing {articles.length} published investigations
+      </div>
+    </div>
+  </section>
+
+  <!-- Articles Grid -->
+  <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-pagefind-body>
+    {articles.map((article) => {
+      const isWarning = article.data.verdict === 'Forensic Warning';
+      const hasVideo = Boolean(article.data.video?.id || article.data.video?.url);
+
+      return (
+        <article class="bg-obsidian-card rounded-2xl border border-obsidian-border hover:border-emerald-audit/50 transition-all duration-300 overflow-hidden flex flex-col group hover:shadow-glowEmerald">
+          <!-- Card Header -->
+          <div class="p-6 flex-1 flex flex-col">
+            <div class="flex items-center justify-between gap-2 mb-3">
+              <div class="flex items-center gap-2">
+                <span class="px-2.5 py-0.5 rounded bg-obsidian border border-obsidian-border font-mono text-xs font-bold text-text-primary">
+                  ${article.data.ticker}
+                </span>
+                <span class={`text-[10px] font-mono px-2 py-0.5 rounded border uppercase tracking-wider font-semibold ${isWarning ? 'bg-amber-warning/10 text-amber-warning border-amber-warning/30' : 'bg-emerald-audit/10 text-emerald-audit border-emerald-audit/30'}`}>
+                  {article.data.verdict}
+                </span>
+              </div>
+              <time class="text-[11px] font-mono text-text-muted">{article.data.publishedAt}</time>
+            </div>
+
+            <h2 class="text-lg font-bold text-text-primary font-display group-hover:text-emerald-audit transition-colors mb-2 leading-snug">
+              <a href={`/articles/${article.id}`} class="hover:underline">
+                {article.data.title}
+              </a>
+            </h2>
+
+            <p class="text-xs text-text-secondary line-clamp-3 mb-4 flex-1">
+              {article.data.thesis}
+            </p>
+
+            <!-- Metrics Highlight Badges -->
+            <div class="grid grid-cols-2 gap-2 my-3 p-2.5 bg-obsidian/60 rounded-xl border border-obsidian-border/60 text-xs font-mono">
+              <div>
+                <span class="text-[10px] text-text-muted block">Reverse DCF Implied:</span>
+                <span class="text-cyan-consensus font-semibold">{article.data.reverseDcfImpliedGrowth || 'N/A'}</span>
+              </div>
+              <div>
+                <span class="text-[10px] text-text-muted block">Fair Value Model:</span>
+                <span class="text-emerald-audit font-semibold">{article.data.targetValuation || 'N/A'}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card Footer -->
+          <div class="px-6 py-3 bg-obsidian/40 border-t border-obsidian-border/60 flex items-center justify-between text-xs font-mono">
+            <div class="flex items-center gap-3 text-text-muted">
+              {hasVideo && (
+                <span class="flex items-center gap-1 text-emerald-audit">
+                  <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
+                  </svg>
+                  <span>Reel Attached</span>
+                </span>
+              )}
+              <span>{article.data.citations?.length || 0} Receipts</span>
+            </div>
+
+            <a href={`/articles/${article.id}`} class="text-emerald-audit group-hover:translate-x-0.5 transition-transform flex items-center gap-1 font-semibold">
+              <span>Read Audit</span>
+              <span>→</span>
+            </a>
+          </div>
+        </article>
+      );
+    })}
+  </section>
+</Layout>
+
+<script>
+  // Wire up filter chips to search modal
+  document.querySelectorAll('.search-chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const text = btn.textContent?.trim().replace('$', '') || '';
+      const trigger = document.getElementById('search-trigger');
+      trigger?.click();
+      setTimeout(() => {
+        const input = document.getElementById('search-input') as HTMLInputElement;
+        if (input) {
+          input.value = text;
+          input.dispatchEvent(new Event('input'));
+        }
+      }, 100);
+    });
+  });
+</script>

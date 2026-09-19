@@ -1,0 +1,183 @@
+---
+---
+
+<div
+  id="search-modal"
+  class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-md flex items-start justify-center p-4 sm:pt-20"
+  role="dialog"
+  aria-modal="true"
+>
+  <div class="w-full max-w-2xl bg-obsidian-card border border-obsidian-border rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-150">
+    <!-- Search Bar Input Header -->
+    <div class="p-4 border-b border-obsidian-border flex items-center gap-3 bg-obsidian/50">
+      <svg class="w-5 h-5 text-emerald-audit" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+      </svg>
+      <input
+        id="search-input"
+        type="text"
+        placeholder="Search filings, tickers ($MU, $NVDA), SEC metrics, or forensic warnings..."
+        class="w-full bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none font-sans"
+        autocomplete="off"
+      />
+      <button id="search-close-btn" class="p-1 text-text-muted hover:text-text-primary text-xs font-mono px-2 py-1 rounded bg-obsidian border border-obsidian-border">
+        ESC
+      </button>
+    </div>
+
+    <!-- Quick Filter Ticker Chips -->
+    <div class="px-4 py-2.5 bg-obsidian-subtle/50 border-b border-obsidian-border flex items-center gap-2 overflow-x-auto text-xs font-mono">
+      <span class="text-text-muted text-[11px]">Quick Filters:</span>
+      <button class="filter-chip px-2 py-0.5 rounded bg-obsidian border border-obsidian-border hover:border-emerald-audit text-text-secondary hover:text-emerald-audit transition-all" data-filter="MU">
+        $MU
+      </button>
+      <button class="filter-chip px-2 py-0.5 rounded bg-obsidian border border-obsidian-border hover:border-emerald-audit text-text-secondary hover:text-emerald-audit transition-all" data-filter="NVDA">
+        $NVDA
+      </button>
+      <button class="filter-chip px-2 py-0.5 rounded bg-obsidian border border-obsidian-border hover:border-emerald-audit text-text-secondary hover:text-emerald-audit transition-all" data-filter="Forensic Warning">
+        Forensic Warnings
+      </button>
+      <button class="filter-chip px-2 py-0.5 rounded bg-obsidian border border-obsidian-border hover:border-emerald-audit text-text-secondary hover:text-emerald-audit transition-all" data-filter="Reverse DCF">
+        Reverse DCF
+      </button>
+    </div>
+
+    <!-- Results Container -->
+    <div id="search-results" class="p-4 overflow-y-auto flex-1 space-y-3">
+      <div id="search-initial-state" class="text-center py-10 text-text-muted text-xs font-mono">
+        Type to search across forensic research memos, audited SEC filings, and video reels.
+      </div>
+    </div>
+
+    <!-- Footer Shortcuts -->
+    <div class="px-4 py-2 border-t border-obsidian-border bg-obsidian/30 text-[11px] font-mono text-text-muted flex items-center justify-between">
+      <span>Powered by Pagefind In-Browser Search</span>
+      <span>↑↓ Navigate • ↵ Select • ESC Close</span>
+    </div>
+  </div>
+</div>
+
+<script>
+  let pagefind: any = null;
+
+  async function loadPagefind() {
+    if (!pagefind) {
+      try {
+        // Dynamically import Pagefind from generated dist location at runtime
+        const dynamicImport = new Function('p', 'return import(p)');
+        pagefind = await dynamicImport('/pagefind/pagefind.js');
+        await pagefind.init();
+      } catch (err) {
+        console.warn('Pagefind is available in production build after `pagefind --site dist`. Falling back to client filter.', err);
+      }
+    }
+  }
+
+  const modal = document.getElementById('search-modal');
+  const input = document.getElementById('search-input') as HTMLInputElement;
+  const resultsContainer = document.getElementById('search-results');
+  const triggerBtn = document.getElementById('search-trigger');
+  const closeBtn = document.getElementById('search-close-btn');
+
+  function openSearch() {
+    modal?.classList.remove('hidden');
+    input?.focus();
+    loadPagefind();
+  }
+
+  function closeSearch() {
+    modal?.classList.add('hidden');
+    if (input) input.value = '';
+  }
+
+  triggerBtn?.addEventListener('click', openSearch);
+  closeBtn?.addEventListener('click', closeSearch);
+
+  // Close on backdrop click
+  modal?.addEventListener('click', (e) => {
+    if (e.target === modal) closeSearch();
+  });
+
+  // Shortcut Cmd+K
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      modal?.classList.contains('hidden') ? openSearch() : closeSearch();
+    }
+    if (e.key === 'Escape' && !modal?.classList.contains('hidden')) {
+      closeSearch();
+    }
+  });
+
+  // Filter chips click
+  document.querySelectorAll('.filter-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const val = chip.getAttribute('data-filter') || '';
+      if (input) {
+        input.value = val;
+        handleSearch(val);
+      }
+    });
+  });
+
+  let debounceTimer: number;
+  input?.addEventListener('input', (e) => {
+    clearTimeout(debounceTimer);
+    debounceTimer = window.setTimeout(() => {
+      handleSearch((e.target as HTMLInputElement).value);
+    }, 150);
+  });
+
+  async function handleSearch(query: string) {
+    if (!resultsContainer) return;
+    const cleanQuery = query.trim();
+
+    if (!cleanQuery) {
+      resultsContainer.innerHTML = `
+        <div class="text-center py-10 text-text-muted text-xs font-mono">
+          Type to search across forensic research memos, audited SEC filings, and video reels.
+        </div>
+      `;
+      return;
+    }
+
+    if (pagefind) {
+      try {
+        const search = await pagefind.search(cleanQuery);
+        if (!search.results.length) {
+          resultsContainer.innerHTML = `
+            <div class="text-center py-10 text-text-muted text-xs font-mono">
+              No investigations matched "${cleanQuery}". Try another ticker or thesis query.
+            </div>
+          `;
+          return;
+        }
+
+        const dataPromises = search.results.slice(0, 6).map((r: any) => r.data());
+        const items = await Promise.all(dataPromises);
+
+        resultsContainer.innerHTML = items.map((item: any) => `
+          <a href="${item.url}" class="block p-3 rounded-xl bg-obsidian-subtle/70 hover:bg-obsidian-subtle border border-obsidian-border hover:border-emerald-audit/50 transition-all group">
+            <div class="flex items-center justify-between mb-1">
+              <h4 class="text-sm font-semibold text-text-primary group-hover:text-emerald-audit transition-colors font-display">
+                ${item.meta.title || item.url}
+              </h4>
+              <span class="text-[11px] font-mono text-emerald-audit">Read →</span>
+            </div>
+            <p class="text-xs text-text-secondary line-clamp-2">${item.excerpt}</p>
+          </a>
+        `).join('');
+      } catch (err) {
+        console.error('Pagefind search error', err);
+      }
+    } else {
+      // In dev mode before pagefind build, simulate search against page links
+      resultsContainer.innerHTML = `
+        <div class="p-3 text-xs font-mono text-text-muted bg-obsidian-subtle/50 rounded-lg">
+          Pagefind search index is generated at build time (<code>npm run build</code>).
+          <div class="mt-2 text-text-secondary">Direct match query: <span class="text-emerald-audit font-semibold">${cleanQuery}</span></div>
+        </div>
+      `;
+    }
+  }
+</script>

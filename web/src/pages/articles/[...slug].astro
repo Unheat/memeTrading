@@ -1,0 +1,118 @@
+---
+import { getCollection, render } from 'astro:content';
+import Layout from '../../layouts/Layout.astro';
+import Header from '../../components/Header.astro';
+import VideoPlayer from '../../components/VideoPlayer.astro';
+import CitationPopover from '../../components/CitationPopover.astro';
+import FinancialReceipts from '../../components/FinancialReceipts.astro';
+import SearchModal from '../../components/SearchModal.astro';
+
+export async function getStaticPaths() {
+  const articles = await getCollection('articles');
+  return articles.map((article) => ({
+    params: { slug: article.id },
+    props: { article },
+  }));
+}
+
+const { article } = Astro.props;
+const { Content } = await render(article);
+
+const isWarning = article.data.verdict === 'Forensic Warning';
+---
+
+<Layout
+  title={article.data.title}
+  ticker={article.data.ticker}
+  description={article.data.thesis}
+>
+  <Header slot="header" activeNav="articles" />
+  <SearchModal />
+
+  <div class="max-w-4xl mx-auto" data-pagefind-body>
+    <!-- Back to archive -->
+    <div class="mb-6">
+      <a href="/" class="text-xs font-mono text-text-muted hover:text-emerald-audit flex items-center gap-1.5 transition-colors">
+        <span>←</span>
+        <span>Back to all investigations</span>
+      </a>
+    </div>
+
+    <!-- Article Header -->
+    <header class="mb-8 pb-6 border-b border-obsidian-border">
+      <div class="flex flex-wrap items-center gap-2.5 mb-3">
+        <span class="px-2.5 py-0.5 rounded bg-obsidian border border-obsidian-border font-mono text-xs font-bold text-text-primary">
+          ${article.data.ticker}
+        </span>
+        {article.data.company && (
+          <span class="text-xs font-mono text-text-secondary">
+            {article.data.company}
+          </span>
+        )}
+        <span class={`text-[10px] font-mono px-2 py-0.5 rounded border uppercase tracking-wider font-semibold ${isWarning ? 'bg-amber-warning/10 text-amber-warning border-amber-warning/30' : 'bg-emerald-audit/10 text-emerald-audit border-emerald-audit/30'}`}>
+          {article.data.verdict}
+        </span>
+        <time class="text-xs font-mono text-text-muted ml-auto">
+          {article.data.publishedAt}
+        </time>
+      </div>
+
+      <h1 class="text-3xl sm:text-5xl font-extrabold font-display tracking-tight text-text-primary mb-4 leading-tight">
+        {article.data.title}
+      </h1>
+
+      <p class="text-base text-text-secondary leading-relaxed mb-6 font-sans">
+        {article.data.thesis}
+      </p>
+
+      <!-- Quantitative Valuation Bar -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 rounded-xl bg-obsidian-card border border-obsidian-border font-mono text-xs">
+        <div class="p-2 bg-obsidian/40 rounded-lg">
+          <span class="text-[10px] text-text-muted block uppercase">Reverse DCF Implied:</span>
+          <span class="text-cyan-consensus font-semibold text-sm">{article.data.reverseDcfImpliedGrowth || 'N/A'}</span>
+        </div>
+        <div class="p-2 bg-obsidian/40 rounded-lg">
+          <span class="text-[10px] text-text-muted block uppercase">Fair Value Normal:</span>
+          <span class="text-emerald-audit font-semibold text-sm">{article.data.targetValuation || 'N/A'}</span>
+        </div>
+        <div class="p-2 bg-obsidian/40 rounded-lg">
+          <span class="text-[10px] text-text-muted block uppercase">M-Score Risk:</span>
+          <span class="text-amber-warning font-semibold text-sm">{article.data.beneishMScore || 'Normal'}</span>
+        </div>
+        <div class="p-2 bg-obsidian/40 rounded-lg">
+          <span class="text-[10px] text-text-muted block uppercase">SEC Receipts:</span>
+          <span class="text-text-primary font-semibold text-sm">{article.data.citations?.length || 0} Audited</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Top: Faceless Video Player -->
+    <VideoPlayer
+      video={article.data.video}
+      ticker={article.data.ticker}
+      caseId={article.data.caseId}
+    />
+
+    <!-- Article Prose Body with Interactive Citations -->
+    <div
+      id="article-content"
+      class="prose prose-invert prose-emerald max-w-none text-text-secondary leading-relaxed font-sans text-base
+        prose-headings:font-display prose-headings:text-text-primary prose-headings:font-bold prose-headings:tracking-tight
+        prose-h2:text-2xl prose-h2:mt-12 prose-h2:mb-4 prose-h2:border-b prose-h2:border-obsidian-border prose-h2:pb-2
+        prose-h3:text-xl prose-h3:mt-8 prose-h3:mb-3
+        prose-p:mb-5 prose-p:leading-relaxed
+        prose-ul:my-4 prose-li:my-1
+        prose-strong:text-text-primary prose-strong:font-semibold
+        prose-hr:border-obsidian-border prose-hr:my-8
+        prose-blockquote:border-l-2 prose-blockquote:border-emerald-audit/70 prose-blockquote:bg-obsidian-card/40 prose-blockquote:p-4 prose-blockquote:rounded-r-xl"
+    >
+      <Content />
+    </div>
+
+    <!-- Authoritative Regulatory Receipts Bibliography -->
+    <FinancialReceipts citations={article.data.citations || []} />
+
+    <!-- Interactive Popover & Mobile Drawer Engine -->
+    <CitationPopover citations={article.data.citations || []} />
+  </div>
+</Layout>

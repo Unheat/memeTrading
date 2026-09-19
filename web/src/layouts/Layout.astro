@@ -1,0 +1,91 @@
+---
+interface Props {
+  title: string;
+  description?: string;
+  ticker?: string;
+  ogImage?: string;
+}
+
+const {
+  title,
+  description = "Institutional forensic research, reverse DCF valuation models, and faceless video reels backed by audited SEC EDGAR receipts.",
+  ticker,
+  ogImage = "/og-banner.png",
+} = Astro.props;
+
+const pageTitle = ticker ? `${ticker} Forensic Teardown: ${title} | MemeTrading` : `${title} | MemeTrading Forensic Labs`;
+---
+
+<!doctype html>
+<html lang="en" class="dark scroll-smooth">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="generator" content={Astro.generator} />
+
+    <!-- SEO -->
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#0A0D12" />
+
+    <!-- OpenGraph / Social -->
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={ogImage} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={description} />
+
+    <!-- Google Fonts: Plus Jakarta Sans, Inter, JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Pagefind assets (built dynamically into dist) -->
+    <link href="/pagefind/pagefind-ui.css" rel="stylesheet" />
+  </head>
+  <body class="bg-obsidian text-text-primary min-h-screen antialiased selection:bg-emerald-audit/30 selection:text-emerald-300 flex flex-col font-sans">
+    <slot name="header" />
+
+    <main class="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <slot />
+    </main>
+
+    <footer class="border-t border-obsidian-border bg-obsidian-card/60 backdrop-blur-md py-8 text-center text-xs text-text-muted mt-20">
+      <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="flex items-center gap-2">
+          <div class="w-2 h-2 rounded-full bg-emerald-audit animate-pulse"></div>
+          <span class="font-mono uppercase tracking-wider text-text-secondary">Point-In-Time Strict Provenance Enabled</span>
+        </div>
+        <p>© 2026 MemeTrading Forensic Labs. All financial claims backed by SEC Accession numbers.</p>
+        <div class="flex items-center gap-4 text-text-secondary">
+          <a href="/" class="hover:text-emerald-audit transition-colors">Archive</a>
+          <a href="https://github.com" target="_blank" rel="noreferrer" class="hover:text-emerald-audit transition-colors">Engine</a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
+
+<style is:global>
+  /* Custom scrollbars */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0a0d12;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #1e2638;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #2a3650;
+  }
+</style>

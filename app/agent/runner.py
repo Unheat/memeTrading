@@ -205,11 +205,14 @@ def run_investigation(
                 # Stage C: Video rendering via Faceless bridge (subprocess to external Node.js)
                 if effective_render:
                     clean_ticker = (ticker or "").strip().lower()
-                    if not clean_ticker or clean_ticker in {"research", "unknown"}:
-                        clean_query = re.sub(r"[^a-z0-9]+", "-", request.query.lower())[:30].strip("-")
-                        topic_slug = clean_query or "deep-research"
+                    if clean_ticker and clean_ticker not in {"research", "unknown"}:
+                        slug_cand = re.sub(r"[^a-z0-9]+", "-", clean_ticker).strip("-")
+                        parts = [p for p in slug_cand.split("-") if p][:3]
+                        topic_slug = "-".join(parts) if parts else "deep-research"
                     else:
-                        topic_slug = clean_ticker.replace(" ", "-")
+                        clean_query = re.sub(r"[^a-z0-9]+", "-", request.query.lower()).strip("-")
+                        parts = [p for p in clean_query.split("-") if p][:3]
+                        topic_slug = "-".join(parts) if parts else "deep-research"
 
                     bridge = FacelessBridge()
                     final_video = bridge.compose_reel(
@@ -219,7 +222,11 @@ def run_investigation(
                         fish_model=cfg.media.fish_model,
                     )
                     if final_video:
-                        artifacts_list.append("faceless/final-faceless-reel.mp4")
+                        try:
+                            video_rel = str(final_video.relative_to(target_case_dir))
+                        except ValueError:
+                            video_rel = f"faceless/video/{topic_slug}/final-faceless-reel.mp4"
+                        artifacts_list.append(video_rel)
                         logger.info("pipeline.video_rendered case_id=%s path=%s", case_id, final_video)
                     else:
                         logger.warning("Video rendering skipped or failed for %s", case_id)

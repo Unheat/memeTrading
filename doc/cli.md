@@ -22,6 +22,8 @@ Complete command-line documentation for the **MemeForensics** deep research agen
   - [JSON Model Schema](#json-model-schema)
 - [4. Pipeline E2E Audit (`run_e2e_audit.py`)](#4-pipeline-e2e-audit-run_e2e_auditpy)
 - [5. Faceless Media Diagnostics (`faceless/`)](#5-faceless-media-diagnostics-faceless)
+- [6. Web Publishing & Cloudflare Edge Deployment (`app/cli/publish.py`)](#6-web-publishing--cloudflare-edge-deployment-appclipublishpy)
+- [7. Local Studio GUI (`app/studio/`)](#7-local-studio-gui-appstudio)
 
 ---
 
@@ -310,3 +312,51 @@ MemeForensics uses the local `faceless/` sub-system for synthesizing character v
 # Run environment diagnostics (FFmpeg, Fish Audio API key, font checks)
 node faceless/skills/faceless/scripts/doctor.mjs
 ```
+
+---
+
+## 6. Web Publishing & Cloudflare Edge Deployment (`app/cli/publish.py`)
+
+Synchronize local research case artifacts into the Astro Cloudflare website (`web/src/content/articles/`) with automated YouTube video embedding, interactive citation cards, and edge deployment:
+
+```bash
+# Publish the latest investigation to the Astro website
+python -m app.cli.publish --latest
+
+# Publish and immediately deploy to Cloudflare Edge CDN (<20ms TTFB)
+python -m app.cli.publish --latest --deploy
+
+# Publish a specific case with an existing YouTube Video ID
+python -m app.cli.publish MU-2026-09-15-007 --youtube-id dQw4w9WgXcQ --deploy
+
+# Or run directly via main.py
+python main.py --publish-case MU-2026-09-15-007 --deploy
+```
+
+### Staged Independent Video Generation (`app/media/cli.py`)
+If you chose the Step-by-Step workflow (run research & article first, review prose, then render video):
+```bash
+# Step 1: Run research + cited article
+python main.py --ticker MU --query "DRAM cycle pricing power" --article
+
+# Step 2: Render video reel for that reviewed case
+python -m app.media.cli video --case-id MU-2026-09-18-001 --character-pair rick_morty
+
+# Step 3: Publish to Cloudflare website
+python -m app.cli.publish MU-2026-09-18-001 --deploy
+```
+
+---
+
+## 7. Local Studio GUI (`app/studio/`)
+
+A browser-based operator dashboard for running investigations, reviewing formatted articles with interactive citations, watching rendered vertical reels in-browser, and 1-click publishing to Cloudflare:
+
+```bash
+# Launch the Local Studio on http://127.0.0.1:3000
+python -m app.studio
+
+# Or via main.py
+python main.py --studio
+```
+

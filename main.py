@@ -110,6 +110,39 @@ def parse_args() -> argparse.Namespace:
         help="Character duo for viral video reel dialogue",
     )
 
+    # --- Publishing and Studio flags ---
+    publish_group = parser.add_argument_group("Web Publishing & Studio")
+    publish_group.add_argument(
+        "--publish",
+        action="store_true",
+        default=False,
+        help="Auto-publish generated research case to Cloudflare website after run",
+    )
+    publish_group.add_argument(
+        "--publish-case",
+        type=str,
+        default=None,
+        help="Publish a specific existing case ID (or 'latest') to the Cloudflare website",
+    )
+    publish_group.add_argument(
+        "--video-for-case",
+        type=str,
+        default=None,
+        help="Render faceless video reel for a specific existing case ID (or 'latest')",
+    )
+    publish_group.add_argument(
+        "--deploy",
+        action="store_true",
+        default=False,
+        help="Deploy to Cloudflare Edge immediately when publishing",
+    )
+    publish_group.add_argument(
+        "--studio",
+        action="store_true",
+        default=False,
+        help="Launch the local browser-based Operator Studio GUI (http://127.0.0.1:3000)",
+    )
+
     parser.add_argument(
         "--verbose",
         "-v",
@@ -164,6 +197,48 @@ def main() -> int:
     """Execute main CLI workflow."""
     args = parse_args()
     setup_logging(args.verbose)
+
+    # Fast path 1: Studio GUI launcher
+    if args.studio:
+        from app.studio.server import run_studio
+        run_studio()
+        return 0
+
+    # Fast path 2: Direct video rendering for an existing case
+    if args.video_for_case:
+        from app.media.cli import generate_video_for_case
+        from app.cli.publish import find_case_dir
+        try:
+            target_case = find_case_dir(args.video_for_case)
+            rendered = generate_video_for_case(
+                target_case,
+                character_pair=args.character_pair or "rick_morty",
+            )
+            if rendered:
+                print(f"\n✅ Video reel rendered successfully: {rendered}")
+            return 0
+        except Exception as exc:
+            print(f"\n❌ Error rendering video: {exc}", file=sys.stderr)
+            return 1
+
+    # Fast path 3: Direct case publication
+    if args.publish_case:
+        from app.cli.publish import find_case_dir, publish_case
+        try:
+            target_case = find_case_dir(args.publish_case)
+            pub_res = publish_case(
+                case_dir=target_case,
+                deploy=args.deploy,
+            )
+            print(f"\n✅ Published case '{pub_res.case_id}' -> {pub_res.target_mdx_path}")
+            if pub_res.youtube_id:
+                print(f"🎬 YouTube Video: https://www.youtube.com/watch?v={pub_res.youtube_id}")
+            if pub_res.is_deployed:
+                print(f"🚀 Deployed to Cloudflare: {pub_res.deployment_url or 'OK'}")
+            return 0
+        except Exception as exc:
+            print(f"\n❌ Error publishing case: {exc}", file=sys.stderr)
+            return 1
 
     config = load_config()
 
@@ -264,6 +339,18 @@ def main() -> int:
         for mp4 in (case_dir / "faceless").rglob("*.mp4"):
             print(f"  🎥 Video:     {mp4}")
     print("=" * 70)
+
+    # Optional auto-publish
+    if args.publish:
+        from app.cli.publish import publish_case
+        print("\n[Publishing] Syncing to Cloudflare website...")
+        try:
+            pub_res = publish_case(case_dir, deploy=args.deploy)
+            print(f"✅ Published: {pub_res.target_mdx_path}")
+            if pub_res.is_deployed:
+                print(f"🚀 Live at Cloudflare: {pub_res.deployment_url or 'Active'}")
+        except Exception as exc:
+            print(f"⚠️ Auto-publish failed: {exc}", file=sys.stderr)
 
     return 0
 

@@ -50,6 +50,8 @@ grassroots demand signal (Reddit, forums, news)
 - 🏛️ **Deterministic Committee Boardroom:** Enforces a 4-tier decision gate (Evidence, Accounting, Valuation, and Asymmetry $\ge 3.0\times$) paired with single-pass Chief Investment Officer (CIO) deliberation and **Fractional Kelly Criterion** position sizing.
 - ⏱️ **Point-in-Time (PIT) Integrity:** Supports historical cutoff dates (`--as-of YYYY-MM-DD`) that strictly discard future filings and drop undated web content to eliminate lookahead bias during backtests.
 - 🎬 **Dual Deliverables Engine:** Emits both exhaustive institutional investment memos (`memo.md`) and viral video reel packages (`faceless/dialogue.json`) featuring animated character duos like Peter & Stewie or Rick & Morty.
+- 🌐 **Edge-Deployed Forensic Portal (`web/`):** Zero-cost Cloudflare Pages / Workers static website with interactive citation popovers (`[1]`, `[2]`), embedded 9:16 vertical video player (YouTube/R2), and client-side Pagefind search.
+- 🎛️ **Local Operator Studio (`python main.py --studio`):** Visual browser dashboard to run investigations, review articles, render reels, and 1-click publish without memorizing CLI arguments.
 
 ---
 
@@ -232,6 +234,9 @@ python main.py --ticker TSLA --query "Robotaxi regulatory path and auto gross ma
 | `python main.py -q "<THEME>" --depth deep` | Thematic discovery & automatic candidate registration. |
 | `python main.py -t <TICKER> --article` | Generates cited Substack forensic article (`article.md`). |
 | `python main.py -t <TICKER> --video` | Generates cited article, character script based on the article, and renders MP4 video. |
+| `python main.py --studio` | Launch browser-based Operator Studio GUI (`http://127.0.0.1:3000`). |
+| `python -m app.cli.publish <CASE>` | Syncs article, citations, and video to Cloudflare Astro website (`web/`). |
+| `python -m app.media.cli video --case-id <CASE>` | Standalone video reel rendering for an existing reviewed case. |
 | `python scripts/run_backtest.py` | Historical backtest sweep evaluating verdicts against `SPY` alpha. |
 | `node app/valuation/calculator.mjs` | Standalone deterministic Reverse DCF & scenario calculator. |
 
