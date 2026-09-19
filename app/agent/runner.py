@@ -16,12 +16,13 @@ from pathlib import Path
 from typing import Any
 
 from app.agent.graph import create_research_graph
-from app.agent.media import generate_media_package
+from app.agent.media import generate_article_markdown, generate_reel_script
 from app.agent.model_runtime import ModelRuntime, create_default_model_runtime
 from app.agent.memo import render_forensic_memo, render_research_report, serialize_investigation_json
 from app.agent.state import BudgetLimits, ResearchRequest, create_initial_state
 from app.agent.tools import ToolCallGuard, create_agent_tools
 from app.config import AppConfig, load_config
+from app.media.faceless_bridge import FacelessBridge
 from app.storage.cases import allocate_case, write_run_manifest
 
 logger = logging.getLogger(__name__)
@@ -56,9 +57,13 @@ def run_investigation(
     request: ResearchRequest,
     model: Any | None = None,
     cases_root: Path | str | None = None,
-    generate_media: bool | None = None,
+    generate_article: bool | None = None,
+    generate_video: bool | None = None,
+    render_video: bool | None = None,
     character_pair: str | None = None,
     config: AppConfig | None = None,
+    # Legacy parameter preserved for backward compatibility
+    generate_media: bool | None = None,
 ) -> InvestigationResult:
     """Run an autonomous forensic market investigation.
 
@@ -66,9 +71,12 @@ def run_investigation(
         request: Validated research direction.
         model: Optional model or deterministic test double.
         cases_root: Case storage root, defaulting to configured location.
-        generate_media: Whether optional media artifacts are requested.
+        generate_article: Whether to generate the cited Substack article.
+        generate_video: Whether to generate dialogue script (and optionally render video).
+        render_video: Whether to invoke the Faceless Node.js pipeline for .mp4 rendering.
         character_pair: Optional media character pair.
         config: Optional preloaded configuration.
+        generate_media: Legacy flag. True enables article + video script.
 
     Returns:
         Investigation outcome and persisted case artifacts.
@@ -93,8 +101,16 @@ def run_investigation(
     write_run_manifest(target_case_dir, manifest)
 
     try:
-        effective_media = generate_media if generate_media is not None else cfg.media.generate_media
+        # Resolve media flags: explicit param > legacy generate_media > config defaults
+        if generate_media is not None:
+            effective_article = generate_article if generate_article is not None else generate_media
+            effective_video = generate_video if generate_video is not None else generate_media
+        else:
+            effective_article = generate_article if generate_article is not None else cfg.media.generate_article
+            effective_video = generate_video if generate_video is not None else cfg.media.generate_video
+        effective_render = render_video if render_video is not None else cfg.media.render_video
         effective_pair = character_pair or cfg.media.character_pair
+
         configured_budget = BudgetLimits(cfg.research.max_tool_calls, cfg.research.max_identical_calls)
         budget = configured_budget if request.budget == BudgetLimits() else request.budget
         effective_request = ResearchRequest(
@@ -142,29 +158,57 @@ def run_investigation(
         (target_case_dir / "memo.md").write_text(memo_md, encoding="utf-8")
         logger.info("pipeline.artifacts_written case_id=%s memo_kind=%s", case_id, "forensic" if explicit_position_request else "research")
 
+        # --- Post-Graph Media Stages (opt-in) ---
         article_md: str | None = None
-        if (
-            bool((final_state.get("research_intent") or {}).get("requested_position_decision"))
-            and effective_media
-            and final_state["status"] not in ("insufficient_evidence", "research_incomplete", "validation_required")
-        ):
+        artifacts_list = ["memo.md", "investigation.json"]
+
+        # Stage A: Article generation
+        if effective_article:
             try:
-                package = generate_media_package(
-                    final_state,
+                article_md = generate_article_markdown(memo_md, final_state, model=runtime.model)
+                (target_case_dir / "article.md").write_text(article_md, encoding="utf-8")
+                artifacts_list.append("article.md")
+                logger.info("pipeline.article_written case_id=%s", case_id)
+            except Exception as exc:
+                logger.warning("Article generation failed for %s: %s", case_id, exc)
+
+        # Stage B: Video script generation
+        if effective_video:
+            try:
+                source_text = article_md or memo_md
+                dialogue_json, reel_script_text, caption_text = generate_reel_script(
+                    source_text,
                     model=runtime.model,
                     character_pair=effective_pair,
                     reel_temperature=cfg.media.reel_temperature,
                 )
-                article_md = package.article_markdown
-                (target_case_dir / "article.md").write_text(article_md, encoding="utf-8")
                 faceless_dir = target_case_dir / "faceless"
                 faceless_dir.mkdir(parents=True, exist_ok=True)
-                (faceless_dir / "dialogue.json").write_text(json.dumps(package.dialogue_json, indent=2), encoding="utf-8")
-                (faceless_dir / "source-script.txt").write_text(package.reel_script_text, encoding="utf-8")
-                (faceless_dir / "reel_script.txt").write_text(package.reel_script_text, encoding="utf-8")
-                (faceless_dir / "caption.txt").write_text(package.caption_text, encoding="utf-8")
+                dialogue_path = faceless_dir / "dialogue.json"
+                dialogue_path.write_text(json.dumps(dialogue_json, indent=2), encoding="utf-8")
+                (faceless_dir / "source-script.txt").write_text(reel_script_text, encoding="utf-8")
+                (faceless_dir / "reel_script.txt").write_text(reel_script_text, encoding="utf-8")
+                (faceless_dir / "caption.txt").write_text(caption_text, encoding="utf-8")
+                artifacts_list.append("faceless/dialogue.json")
+                logger.info("pipeline.reel_script_written case_id=%s", case_id)
+
+                # Stage C: Video rendering via Faceless bridge (subprocess to external Node.js)
+                if effective_render:
+                    topic_slug = ticker.lower().replace(" ", "-")
+                    bridge = FacelessBridge()
+                    final_video = bridge.compose_reel(
+                        dialogue_path=dialogue_path,
+                        topic_slug=topic_slug,
+                        output_dir=faceless_dir,
+                        fish_model=cfg.media.fish_model,
+                    )
+                    if final_video:
+                        artifacts_list.append("faceless/final-faceless-reel.mp4")
+                        logger.info("pipeline.video_rendered case_id=%s path=%s", case_id, final_video)
+                    else:
+                        logger.warning("Video rendering skipped or failed for %s", case_id)
             except Exception as exc:
-                logger.warning("Media generation failed for %s: %s", case_id, exc)
+                logger.warning("Video script generation failed for %s: %s", case_id, exc)
 
         candidates_map = final_state.get("candidates") or {}
         total_sources = len(final_state.get("source_records", []))
@@ -180,7 +224,7 @@ def run_investigation(
         manifest.update({
             "status": "completed", "finished_at": datetime.now(timezone.utc).isoformat(),
             "last_stage": "rendered", "research_status": final_state["status"],
-            "artifacts": ["memo.md", "investigation.json"] + (["article.md"] if article_md else []),
+            "artifacts": artifacts_list,
             "receipt_summary": final_state.get("searches_performed", []),
             "source_count": total_sources,
             "evidence_count": total_evidence,

@@ -34,3 +34,79 @@ def test_faceless_bridge_graceful_when_unconfigured(tmp_path):
 
     video_path = bridge.generate_video(tmp_path / "dummy.mp3", topic_slug="mu-ram", output_dir=out_dir)
     assert video_path is None
+
+
+def test_add_characters_graceful_when_unconfigured(tmp_path):
+    bridge = FacelessBridge(faceless_root=tmp_path)
+    result = bridge.add_characters(
+        video_path=tmp_path / "dummy.mp4",
+        audio_dir=tmp_path / "audio",
+        topic_slug="test",
+        output_dir=tmp_path / "output",
+    )
+    assert result is None
+
+
+def test_add_captions_graceful_when_unconfigured(tmp_path):
+    bridge = FacelessBridge(faceless_root=tmp_path)
+    result = bridge.add_captions(
+        video_path=tmp_path / "dummy.mp4",
+        dialogue_path=tmp_path / "dialogue.json",
+        audio_dir=tmp_path / "audio",
+        topic_slug="test",
+        output_dir=tmp_path / "output",
+    )
+    assert result is None
+
+
+def test_compose_reel_aborts_when_unavailable(tmp_path):
+    """compose_reel should return None when faceless scripts are not available."""
+    bridge = FacelessBridge(faceless_root=tmp_path)
+    dialogue_file = tmp_path / "dialogue.json"
+    dialogue_file.write_text("[]")
+    result = bridge.compose_reel(
+        dialogue_path=dialogue_file,
+        topic_slug="test",
+        output_dir=tmp_path / "output",
+    )
+    assert result is None
+
+
+def test_compose_reel_aborts_when_ffmpeg_missing(tmp_path):
+    """compose_reel should return None when FFmpeg is not detected by doctor."""
+    bridge = FacelessBridge(faceless_root=tmp_path)
+    dialogue_file = tmp_path / "dialogue.json"
+    dialogue_file.write_text("[]")
+
+    with patch.object(bridge, "check_doctor", return_value={
+        "available": True,
+        "node_ready": True,
+        "ffmpeg_ready": False,
+        "fish_ready": True,
+    }):
+        result = bridge.compose_reel(
+            dialogue_path=dialogue_file,
+            topic_slug="test",
+            output_dir=tmp_path / "output",
+        )
+    assert result is None
+
+
+def test_compose_reel_aborts_when_fish_missing(tmp_path):
+    """compose_reel should return None when Fish Audio is not configured."""
+    bridge = FacelessBridge(faceless_root=tmp_path)
+    dialogue_file = tmp_path / "dialogue.json"
+    dialogue_file.write_text("[]")
+
+    with patch.object(bridge, "check_doctor", return_value={
+        "available": True,
+        "node_ready": True,
+        "ffmpeg_ready": True,
+        "fish_ready": False,
+    }):
+        result = bridge.compose_reel(
+            dialogue_path=dialogue_file,
+            topic_slug="test",
+            output_dir=tmp_path / "output",
+        )
+    assert result is None

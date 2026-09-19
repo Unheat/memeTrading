@@ -17,10 +17,13 @@ def test_default_config_instantiation():
     assert cfg.llm.model == "gpt-5.3-codex"
     assert cfg.llm.base_url is None
     assert cfg.llm.temperature == pytest.approx(0.2)
-    assert cfg.media.generate_media is True
+    assert cfg.media.generate_article is False
+    assert cfg.media.generate_video is False
+    assert cfg.media.render_video is False
+    assert cfg.media.generate_media is False
     assert cfg.media.character_pair == "peter_stewie"
     assert cfg.media.reel_temperature == pytest.approx(0.4)
-    assert cfg.media.fish_model == "s2"
+    assert cfg.media.fish_model == "s2-free"
     assert cfg.research.max_tool_calls == 35
     assert cfg.research.benchmark_ticker == "SPY"
 
@@ -45,6 +48,7 @@ llm:
 
 media:
   generate_media: false
+  generate_article: false
   character_pair: "rick_morty"
 
 research:
@@ -59,6 +63,7 @@ research:
     assert cfg.llm.base_url == "https://openrouter.ai/api/v1"
     assert cfg.llm.temperature == pytest.approx(0.2)
     assert cfg.media.generate_media is False
+    assert cfg.media.generate_article is False
     assert cfg.media.character_pair == "rick_morty"
     assert cfg.research.max_tool_calls == 20
     assert cfg.research.benchmark_ticker == "QQQ"
@@ -69,7 +74,7 @@ def test_load_config_ignores_non_secret_environment_settings(tmp_path, monkeypat
     yaml_file = tmp_path / "test_config.yaml"
     yaml_file.write_text(
         "llm:\n  model: 'gpt-4o'\n  base_url: 'https://provider.example/v1'\n"
-        "media:\n  character_pair: 'peter_stewie'\n  reel_temperature: 0.4\n  fish_model: 's2-free'",
+        "media:\n  character_pair: 'peter_stewie'\n  reel_temperature: 0.4\n  fish_model: 's2-free'\n  generate_article: true",
         encoding="utf-8",
     )
 

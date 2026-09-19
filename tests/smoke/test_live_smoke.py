@@ -211,10 +211,6 @@ def test_complete_end_to_end_pipeline_smoke(tmp_path: Path):
     assert case_dir.exists()
     assert (case_dir / "memo.md").exists()
     assert (case_dir / "investigation.json").exists()
-    # No verified SEC claim was returned, so citation safety blocks publication artifacts.
-    assert not (case_dir / "article.md").exists()
-    assert not (case_dir / "faceless" / "dialogue.json").exists()
-    assert not (case_dir / "faceless" / "caption.txt").exists()
 
     # Verify memo contents
     memo_text = (case_dir / "memo.md").read_text(encoding="utf-8")

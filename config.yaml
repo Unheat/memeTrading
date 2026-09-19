@@ -48,8 +48,12 @@ llm:
     #   api_key_env: "OPENAI_API_KEY"
 
 media:
-  # Whether to generate cited article.md and faceless reel dialogue.json
-  generate_media: true
+  # Media artifacts are opt-in (leave false for lean, fast core research runs).
+  # You can trigger them from CLI using --article, --video, or --article-video.
+  generate_article: false
+  generate_video: false
+  render_video: false
+  generate_media: false
 
   # Character duo for video reel script: "peter_stewie" or "rick_morty"
   character_pair: "peter_stewie"

@@ -52,9 +52,14 @@ llm:
 # 2. MEDIA & VIDEO REEL SCRIPT GENERATION
 # ------------------------------------------------------------------------------
 media:
-  # Whether to generate the cited Substack-style article (article.md)
-  # and the viral video dialogue script (faceless/dialogue.json).
-  generate_media: true
+  # Media artifacts are opt-in via CLI flags (--article, --video, --article-video).
+  # Set to true here to make them default-on when no CLI flag is provided.
+  generate_article: false
+  generate_video: false
+  render_video: false   # Whether to invoke Node.js / FFmpeg / Fish Audio to render .mp4
+
+  # Legacy alias: setting generate_media: true acts like generate_article + generate_video
+  generate_media: false
 
   # Character duo for the viral video dialogue reel script.
   # RESTRICTED INPUT — MUST BE EXACTLY ONE OF THE FOLLOWING TWO CHOICES:
@@ -73,7 +78,7 @@ media:
   # Options:
   #   - "s2": Flagship Fish Audio model (highest audio quality & emotion inflection)
   #   - "s2-free": Free tier Fish Audio model
-  fish_model: "s2"
+  fish_model: "s2-free"
 
 # ------------------------------------------------------------------------------
 # 3. RESEARCH PARAMETERS & EXECUTION LIMITS

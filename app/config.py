@@ -60,10 +60,13 @@ class LLMConfig:
 class MediaConfig:
     """User-configurable settings for video reel and cited article generation."""
 
-    generate_media: bool = True
+    generate_article: bool = False
+    generate_video: bool = False
+    render_video: bool = False
+    generate_media: bool = False  # Legacy alias: True enables article + video script
     character_pair: str = "peter_stewie"  # Allowed: "peter_stewie" or "rick_morty"
     reel_temperature: float = 0.4  # Higher temperature (0.4) specifically for witty dialogue & comedic banter
-    fish_model: str = "s2"  # Fish Audio TTS model: "s2" (flagship) or "s2-free" (free tier)
+    fish_model: str = "s2-free"  # Fish Audio TTS model: "s2" (flagship) or "s2-free" (free tier)
 
     def __post_init__(self) -> None:
         """Validate character pair against supported cast options."""
@@ -164,12 +167,18 @@ def load_config(
 
     # Parse non-secret media settings from config.yaml only.
     raw_media = data.get("media", {}) or {}
-    gen_media = raw_media.get("generate_media", True) if "generate_media" in raw_media else True
+    legacy_media = bool(raw_media.get("generate_media", False))
+    gen_article = bool(raw_media.get("generate_article", legacy_media))
+    gen_video = bool(raw_media.get("generate_video", legacy_media))
+    rend_video = bool(raw_media.get("render_video", False))
     char_pair = raw_media.get("character_pair") or "peter_stewie"
     raw_reel_temp = raw_media.get("reel_temperature", 0.4)
-    raw_fish_model = raw_media.get("fish_model", "s2")
+    raw_fish_model = raw_media.get("fish_model", "s2-free")
     media_cfg = MediaConfig(
-        generate_media=bool(gen_media),
+        generate_article=gen_article,
+        generate_video=gen_video,
+        render_video=rend_video,
+        generate_media=legacy_media or (gen_article and gen_video),
         character_pair=str(char_pair),
         reel_temperature=float(raw_reel_temp),
         fish_model=str(raw_fish_model),

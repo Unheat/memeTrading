@@ -7,6 +7,8 @@ cited Substack articles, and viral character reels (Peter & Stewie / Rick & Mort
 Usage:
     python main.py --ticker MU --query "Investigate DDR5 memory shortages and gross margin expansion"
     python main.py --query "Is there a cloud GPU wait time bottleneck for NVDA?"
+    python main.py --query "find best 2 tech stocks" --article
+    python main.py -t MU -q "Should I invest?" --article-video
     python main.py  # Interactive mode
 """
 from __future__ import annotations
@@ -67,17 +69,41 @@ def parse_args() -> argparse.Namespace:
         default="deep",
         help="Research breadth policy",
     )
-    parser.add_argument(
-        "--no-media",
+
+    # --- Media generation flags ---
+    media_group = parser.add_argument_group("Media Generation (opt-in)")
+    media_group.add_argument(
+        "--article",
         action="store_true",
-        help="Disable generating Substack article and viral reel scripts",
+        default=False,
+        help="Generate cited Substack-style forensic article (article.md)",
     )
-    parser.add_argument(
+    media_group.add_argument(
+        "--video",
+        action="store_true",
+        default=False,
+        help="Generate article + dialogue script + render video reel (.mp4) via Faceless",
+    )
+    media_group.add_argument(
+        "--video-script-only",
+        action="store_true",
+        default=False,
+        help="Generate article + dialogue script without rendering .mp4 video",
+    )
+    media_group.add_argument(
+        "--article-video",
+        "--media",
+        action="store_true",
+        default=False,
+        help="Generate both the cited article and the rendered video reel",
+    )
+    media_group.add_argument(
         "--character-pair",
         choices=["peter_stewie", "rick_morty"],
         default=None,
         help="Character duo for viral video reel dialogue",
     )
+
     parser.add_argument(
         "--verbose",
         "-v",
@@ -85,6 +111,37 @@ def parse_args() -> argparse.Namespace:
         help="Enable detailed debug logging",
     )
     return parser.parse_args()
+
+
+def _resolve_media_flags(args: argparse.Namespace) -> tuple[bool, bool, bool]:
+    """Resolve CLI media flags into (generate_article, generate_video, render_video).
+
+    Args:
+        args: Parsed CLI arguments.
+
+    Returns:
+        Tuple of (generate_article, generate_video, render_video) booleans.
+    """
+    gen_article = False
+    gen_video = False
+    render = False
+
+    if args.article_video:
+        gen_article = True
+        gen_video = True
+        render = True
+    if args.video:
+        gen_article = True
+        gen_video = True
+        render = True
+    if args.video_script_only:
+        gen_article = True
+        gen_video = True
+        render = False
+    if args.article:
+        gen_article = True
+
+    return gen_article, gen_video, render
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -125,6 +182,8 @@ def main() -> int:
             print("\nAborted.")
             return 1
 
+    gen_article, gen_video, render = _resolve_media_flags(args)
+
     print("\n[1/3] Initializing Deep Research Engine...")
     print(f"  • Prompt:  {query}")
     if ticker:
@@ -136,6 +195,14 @@ def main() -> int:
     print(f"  • Model:   {config.llm.model}")
     print("  • Engine:  Multi-Stage Deep Research (Plan -> Execute -> Reflect -> Synthesize)")
     print(f"  • Depth:   {args.depth.capitalize()}")
+    media_modes = []
+    if gen_article:
+        media_modes.append("Article")
+    if gen_video and render:
+        media_modes.append("Video Reel")
+    elif gen_video:
+        media_modes.append("Video Script Only")
+    print(f"  • Media:   {', '.join(media_modes) if media_modes else 'None (memo only)'}")
     print("-" * 70)
 
     request = ResearchRequest(
@@ -147,14 +214,15 @@ def main() -> int:
         depth=args.depth,
     )
 
-    generate_media = False if args.no_media else config.media.generate_media
     character_pair = args.character_pair or config.media.character_pair
 
     print("[2/3] Planning, researching, and validating cited evidence...")
     try:
         result = run_investigation(
             request=request,
-            generate_media=generate_media,
+            generate_article=gen_article,
+            generate_video=gen_video,
+            render_video=render,
             character_pair=character_pair,
             config=config,
         )
@@ -178,10 +246,14 @@ def main() -> int:
     print(f"Artifacts Dir:  {case_dir.resolve()}")
     print(f"  📄 Memo:      {case_dir / 'memo.md'}")
     print(f"  📊 JSON:      {case_dir / 'investigation.json'}")
-    if generate_media and (case_dir / "article.md").exists():
+    if (case_dir / "article.md").exists():
         print(f"  📰 Article:   {case_dir / 'article.md'}")
+    if (case_dir / "faceless" / "dialogue.json").exists():
         print(f"  🎬 Reel Script: {case_dir / 'faceless' / 'dialogue.json'}")
         print(f"  📱 Caption:   {case_dir / 'faceless' / 'caption.txt'}")
+    if (case_dir / "faceless" / "video" ).exists():
+        for mp4 in (case_dir / "faceless").rglob("*.mp4"):
+            print(f"  🎥 Video:     {mp4}")
     print("=" * 70)
 
     return 0

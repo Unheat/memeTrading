@@ -32,6 +32,7 @@ def test_run_investigation_generates_case_artifacts(tmp_path):
     assert (case_dir / "memo.md").exists()
     assert (case_dir / "investigation.json").exists()
     assert (case_dir / "run-manifest.json").exists()
+    # Default: no article or video generated
     assert not (case_dir / "article.md").exists()
     assert not (case_dir / "faceless").exists()
 
@@ -39,9 +40,42 @@ def test_run_investigation_generates_case_artifacts(tmp_path):
     assert "# Research Incomplete: $TEST" in memo_content
 
 
+def test_run_investigation_default_no_media(tmp_path):
+    """Default run produces only core artifacts (no article, no video)."""
+    req = ResearchRequest(query="Investigate LEAN", ticker="LEAN")
+    result = run_investigation(request=req, model=FakeRunnerModel(), cases_root=tmp_path)
+
+    case_dir = tmp_path / result.case_id
+    assert (case_dir / "memo.md").exists()
+    assert not (case_dir / "article.md").exists()
+    assert not (case_dir / "faceless" / "dialogue.json").exists()
+
+
+def test_run_investigation_with_article_flag(tmp_path):
+    """Passing generate_article=True writes article.md using decoupled generator."""
+    class ArticleModel:
+        def bind_tools(self, tools):
+            return self
+        def invoke(self, messages):
+            content = str(getattr(messages[-1], "content", "")) if messages else ""
+            if "Write an institutional" in content:
+                return AIMessage(content="# Cited Article\nFacts with [1] citations.")
+            return AIMessage(content="Final forensic conclusion.")
+
+    req = ResearchRequest(query="Investigate ART", ticker="ART")
+    result = run_investigation(
+        request=req, model=ArticleModel(), cases_root=tmp_path, generate_article=True,
+    )
+
+    case_dir = tmp_path / result.case_id
+    assert (case_dir / "article.md").exists()
+    article_content = (case_dir / "article.md").read_text(encoding="utf-8")
+    assert "[1]" in article_content
+    assert result.article_markdown is not None
+
+
 def test_run_investigation_with_rick_morty_character_pair(tmp_path):
-    """Verify run_investigation cleanly passes rick_morty character pair to media generator."""
-    import json
+    """Verify run_investigation cleanly passes rick_morty character pair."""
     req = ResearchRequest(query="Give an investment recommendation for RICK", ticker="RICK")
     result = run_investigation(
         request=req,
@@ -67,9 +101,19 @@ def test_run_investigation_applies_configured_research_budget(tmp_path):
     result = run_investigation(
         request=ResearchRequest(query="Investigate configured budget", ticker="CFG"),
         model=FakeRunnerModel(),
-        generate_media=False,
         config=config,
     )
 
     assert result.final_state["budget_state"]["max_tool_calls"] == 42
     assert result.final_state["budget_state"]["max_identical_calls"] == 4
+
+
+def test_run_investigation_legacy_generate_media_false(tmp_path):
+    """Legacy generate_media=False suppresses all media."""
+    req = ResearchRequest(query="Legacy test", ticker="LEG")
+    result = run_investigation(
+        request=req, model=FakeRunnerModel(), cases_root=tmp_path, generate_media=False,
+    )
+    case_dir = tmp_path / result.case_id
+    assert not (case_dir / "article.md").exists()
+    assert not (case_dir / "faceless").exists()
