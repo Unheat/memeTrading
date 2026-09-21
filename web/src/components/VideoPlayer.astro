@@ -17,28 +17,26 @@ const { video, ticker = "SEC", caseId = "" } = Astro.props;
 const isVertical = video?.aspectRatio !== '16:9';
 ---
 
-<div class="w-full my-6 flex flex-col items-center">
+<figure class="w-full my-8 flex flex-col items-center">
   {video && (video.id || video.url) ? (
-    <div class={`w-full ${isVertical ? 'max-w-sm sm:max-w-md' : 'max-w-4xl'} bg-obsidian-card rounded-2xl border border-obsidian-border p-2 sm:p-3 shadow-2xl relative overflow-hidden group`}>
-      <!-- Top Video Pill Bar -->
-      <div class="flex items-center justify-between px-2 py-1.5 mb-2 text-xs font-mono">
-        <div class="flex items-center gap-2">
-          <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-audit/10 text-emerald-audit border border-emerald-audit/30 text-[11px] font-bold">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-audit animate-pulse"></span>
-            ${ticker}
-          </span>
-          <span class="text-text-muted text-[11px]">Faceless Forensic Reel</span>
-        </div>
-        <span class="text-[11px] text-text-muted">9:16 HD</span>
+    <div class={`w-full ${isVertical ? 'max-w-xs sm:max-w-sm' : 'max-w-3xl'} bg-journal-card dark:bg-night-card rounded-xl border border-journal-border dark:border-night-border p-2 sm:p-2.5 shadow-md overflow-hidden transition-colors`}>
+      <!-- Editorial Eyebrow -->
+      <div class="flex items-center justify-between px-2 py-1.5 mb-1.5 border-b border-journal-border/50 dark:border-night-border/50 text-xs font-sans text-journal-muted dark:text-night-muted">
+        <span class="font-serif font-semibold text-journal-lead dark:text-night-lead">
+          Executive Video Briefing
+        </span>
+        <span class="font-mono text-[10px] tracking-wider uppercase px-1.5 py-0.5 rounded bg-journal-bg dark:bg-night-bg border border-journal-border dark:border-night-border">
+          ${ticker}
+        </span>
       </div>
 
       <!-- Video Container -->
-      <div class={`relative w-full ${isVertical ? 'aspect-[9/16]' : 'aspect-video'} bg-black rounded-xl overflow-hidden shadow-inner border border-obsidian-border/50`}>
+      <div class={`relative w-full ${isVertical ? 'aspect-[9/16]' : 'aspect-video'} bg-black rounded-lg overflow-hidden shadow-inner`}>
         {video.provider === 'youtube' && video.id ? (
           <iframe
             class="w-full h-full"
             src={`https://www.youtube.com/embed/${video.id}?rel=0&modestbranding=1&playsinline=1`}
-            title={video.title || `${ticker} Forensic Video Reel`}
+            title={video.title || `${ticker} Executive Video Briefing`}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowfullscreen
             loading="lazy"
@@ -56,24 +54,10 @@ const isVertical = video?.aspectRatio !== '16:9';
         ) : null}
       </div>
 
-      <div class="px-2 pt-2 text-center">
-        <p class="text-[11px] text-text-muted font-mono">Audio generated via Fish Audio • Characters: Rick & Morty / Peter & Stewie</p>
-      </div>
+      <!-- Caption -->
+      <figcaption class="px-2 pt-2 text-center text-[11px] font-sans text-journal-muted dark:text-night-muted">
+        Companion character dialogue synthesizing audited filing anomalies and consensus disconnects.
+      </figcaption>
     </div>
-  ) : (
-    <div class="w-full max-w-md bg-obsidian-card/60 rounded-2xl border border-dashed border-obsidian-border p-6 text-center text-text-muted">
-      <div class="w-12 h-12 mx-auto mb-3 rounded-full bg-obsidian-subtle flex items-center justify-center text-text-secondary">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-        </svg>
-      </div>
-      <h4 class="text-sm font-semibold text-text-secondary font-display mb-1">Video Reel Pending</h4>
-      <p class="text-xs text-text-muted mb-3">This forensic investigation is currently article-only. A video reel can be rendered at any time.</p>
-      {caseId && (
-        <code class="text-[10px] font-mono px-2 py-1 rounded bg-obsidian border border-obsidian-border text-emerald-audit block max-w-xs mx-auto overflow-x-auto">
-          python -m app.media.cli video --case-id {caseId}
-        </code>
-      )}
-    </div>
-  )}
-</div>
+  ) : null}
+</figure>

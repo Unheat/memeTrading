@@ -20,78 +20,78 @@ const { citations } = Astro.props;
 <!-- Citation Data Bag (Serialized for Client-Side Hydration) -->
 <div id="citation-data-store" data-citations={JSON.stringify(citations)} class="hidden"></div>
 
-<!-- Desktop Popover Floating Card -->
+<!-- Wikipedia-Style Floating Preview Tooltip -->
 <div
   id="citation-floating-popover"
-  class="fixed hidden z-50 max-w-sm w-96 bg-obsidian-card/95 backdrop-blur-xl border border-obsidian-border rounded-xl p-4 shadow-2xl transition-all duration-200 pointer-events-auto"
+  class="fixed hidden z-50 max-w-sm w-80 sm:w-96 bg-journal-card dark:bg-night-card border border-journal-border dark:border-night-border rounded-lg p-4 shadow-xl transition-all duration-150 pointer-events-auto text-left"
   role="tooltip"
 >
-  <div class="flex items-center justify-between gap-2 mb-2">
-    <span id="popover-source-type" class="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-audit/15 text-emerald-audit border border-emerald-audit/30">
+  <div class="flex items-center justify-between gap-2 mb-2 pb-1.5 border-b border-journal-border/50 dark:border-night-border/50">
+    <span id="popover-source-type" class="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-journal-bg dark:bg-night-bg text-editorial-blue dark:text-editorial-blueDark border border-journal-border dark:border-night-border">
       SEC Filing
     </span>
-    <span id="popover-date" class="text-[11px] font-mono text-text-muted"></span>
+    <span id="popover-date" class="text-[11px] font-sans text-journal-muted dark:text-night-muted"></span>
   </div>
 
-  <h5 id="popover-title" class="text-xs font-semibold text-text-primary font-display mb-2 leading-snug"></h5>
+  <h5 id="popover-title" class="text-xs font-semibold text-journal-ink dark:text-night-ink font-serif mb-2 leading-snug"></h5>
 
   <!-- Accession Receipt -->
-  <div id="popover-accession-wrap" class="mb-2.5 flex items-center justify-between text-[11px] font-mono bg-obsidian/80 px-2.5 py-1 rounded border border-obsidian-border/80">
-    <span class="text-text-muted">Accession:</span>
-    <a id="popover-accession-link" href="#" target="_blank" rel="noreferrer" class="text-emerald-audit hover:underline truncate max-w-[180px]"></a>
+  <div id="popover-accession-wrap" class="mb-2 flex items-center justify-between text-[11px] font-mono bg-journal-bg dark:bg-night-bg px-2.5 py-1 rounded border border-journal-border/70 dark:border-night-border/70">
+    <span class="text-journal-muted dark:text-night-muted">Accession:</span>
+    <a id="popover-accession-link" href="#" target="_blank" rel="noreferrer" class="text-editorial-blue dark:text-editorial-blueDark hover:underline truncate max-w-[180px]"></a>
   </div>
 
   <!-- Verbatim Excerpt -->
-  <div id="popover-quote-wrap" class="mb-2.5 text-xs text-text-secondary italic border-l-2 border-emerald-audit/60 pl-2.5 py-0.5 bg-obsidian-subtle/40 rounded-r">
+  <div id="popover-quote-wrap" class="mb-2 text-xs text-journal-secondary dark:text-night-secondary font-serif italic border-l-2 border-editorial-blue/60 dark:border-editorial-blueDark/60 pl-2.5 py-0.5 bg-journal-bg/50 dark:bg-night-bg/50 rounded-r">
     "<span id="popover-quote"></span>"
   </div>
 
   <!-- Audited Facts -->
   <div id="popover-facts-wrap" class="mb-3">
-    <div class="text-[10px] font-mono uppercase text-text-muted mb-1">Audited Facts:</div>
-    <ul id="popover-facts-list" class="space-y-0.5 text-xs font-mono text-text-secondary"></ul>
+    <div class="text-[10px] font-sans uppercase text-journal-muted dark:text-night-muted mb-1 font-semibold tracking-wider">Audited Data Points:</div>
+    <ul id="popover-facts-list" class="space-y-0.5 text-xs font-mono text-journal-secondary dark:text-night-secondary"></ul>
   </div>
 
   <!-- Footer Actions -->
-  <div class="flex items-center justify-between pt-2 border-t border-obsidian-border/60 text-xs">
-    <a id="popover-primary-link" href="#" target="_blank" rel="noreferrer" class="text-emerald-audit hover:text-emerald-300 font-medium flex items-center gap-1">
-      <span>Open SEC.gov</span>
+  <div class="flex items-center justify-between pt-2 border-t border-journal-border/50 dark:border-night-border/50 text-xs font-sans">
+    <a id="popover-primary-link" href="#" target="_blank" rel="noreferrer" class="text-editorial-blue dark:text-editorial-blueDark hover:underline font-medium flex items-center gap-1">
+      <span>View on SEC.gov</span>
       <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
       </svg>
     </a>
-    <button id="popover-jump-btn" type="button" class="text-text-muted hover:text-text-primary transition-colors text-[11px] font-mono">
-      Scroll to receipt ↓
+    <button id="popover-jump-btn" type="button" class="text-journal-muted dark:text-night-muted hover:text-journal-ink dark:hover:text-night-ink transition-colors text-[11px]">
+      Jump to footnote ↓
     </button>
   </div>
 </div>
 
 <!-- Mobile Drawer Modal -->
-<div id="citation-mobile-drawer" class="fixed inset-0 z-50 hidden bg-black/70 backdrop-blur-sm flex flex-col justify-end sm:hidden">
-  <div class="w-full bg-obsidian-card border-t border-obsidian-border rounded-t-2xl p-5 max-h-[80vh] overflow-y-auto">
-    <div class="w-12 h-1 bg-obsidian-border rounded-full mx-auto mb-4"></div>
+<div id="citation-mobile-drawer" class="fixed inset-0 z-50 hidden bg-black/60 backdrop-blur-sm flex flex-col justify-end sm:hidden">
+  <div class="w-full bg-journal-card dark:bg-night-card border-t border-journal-border dark:border-night-border rounded-t-2xl p-5 max-h-[80vh] overflow-y-auto">
+    <div class="w-12 h-1 bg-journal-border dark:bg-night-border rounded-full mx-auto mb-4"></div>
     <div class="flex items-center justify-between mb-3">
-      <span id="mobile-source-type" class="text-xs font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded bg-emerald-audit/15 text-emerald-audit border border-emerald-audit/30"></span>
-      <button id="mobile-close-btn" class="p-1 text-text-muted hover:text-text-primary">
+      <span id="mobile-source-type" class="text-xs font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded bg-journal-bg dark:bg-night-bg text-editorial-blue dark:text-editorial-blueDark border border-journal-border dark:border-night-border"></span>
+      <button id="mobile-close-btn" class="p-1 text-journal-muted hover:text-journal-ink dark:hover:text-night-ink">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
         </svg>
       </button>
     </div>
-    <h4 id="mobile-title" class="text-sm font-semibold text-text-primary font-display mb-2"></h4>
-    <p id="mobile-quote" class="text-xs text-text-secondary italic border-l-2 border-emerald-audit/60 pl-3 py-1 mb-3 bg-obsidian-subtle/40 rounded-r"></p>
+    <h4 id="mobile-title" class="text-sm font-semibold text-journal-ink dark:text-night-ink font-serif mb-2"></h4>
+    <p id="mobile-quote" class="text-xs text-journal-secondary dark:text-night-secondary font-serif italic border-l-2 border-editorial-blue/60 pl-3 py-1 mb-3 bg-journal-bg/50 dark:bg-night-bg/50 rounded-r"></p>
     <div class="mb-4">
-      <div class="text-[11px] font-mono uppercase text-text-muted mb-1">Audited Facts:</div>
-      <ul id="mobile-facts-list" class="space-y-1 text-xs font-mono text-text-secondary"></ul>
+      <div class="text-[11px] font-sans uppercase text-journal-muted dark:text-night-muted mb-1 font-semibold">Audited Facts:</div>
+      <ul id="mobile-facts-list" class="space-y-1 text-xs font-mono text-journal-secondary dark:text-night-secondary"></ul>
     </div>
-    <a id="mobile-primary-link" href="#" target="_blank" rel="noreferrer" class="w-full py-2.5 rounded-lg bg-emerald-audit text-black font-semibold text-center block text-xs">
-      Open Primary Regulatory Filing
+    <a id="mobile-primary-link" href="#" target="_blank" rel="noreferrer" class="w-full py-2.5 rounded-lg bg-editorial-blue dark:bg-editorial-blueDark text-white dark:text-black font-medium text-center block text-xs">
+      Open Official SEC.gov Filing
     </a>
   </div>
 </div>
 
 <script>
-  // Client-side citation enhancement
+  // Wikipedia-style citation enhancement
   document.addEventListener('DOMContentLoaded', () => {
     const dataStore = document.getElementById('citation-data-store');
     if (!dataStore) return;
@@ -127,7 +127,7 @@ const { citations } = Astro.props;
 
       if (typeEl) typeEl.textContent = citation.sourceType || 'SEC Filing';
       if (dateEl) dateEl.textContent = citation.filingDate || '';
-      if (titleEl) titleEl.textContent = citation.title || 'Regulatory Receipt';
+      if (titleEl) titleEl.textContent = citation.title || 'Regulatory Filing Reference';
       if (accLink) {
         accLink.textContent = citation.accession || 'View Filing';
         accLink.href = citation.url || '#';
@@ -145,7 +145,7 @@ const { citations } = Astro.props;
         (citation.facts || []).forEach((fact: string) => {
           const li = document.createElement('li');
           li.className = 'flex items-center gap-1.5';
-          li.innerHTML = `<span class="text-emerald-audit text-[10px]">●</span> <span>${fact}</span>`;
+          li.innerHTML = `<span class="text-editorial-blue dark:text-editorial-blueDark text-[10px]">●</span> <span>${fact}</span>`;
           factsList.appendChild(li);
         });
       }
@@ -156,9 +156,9 @@ const { citations } = Astro.props;
           if (target) {
             popover?.classList.add('hidden');
             target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            target.classList.add('ring-2', 'ring-emerald-audit', 'bg-emerald-audit/10');
+            target.classList.add('bg-amber-100/60', 'dark:bg-amber-900/30');
             setTimeout(() => {
-              target.classList.remove('ring-2', 'ring-emerald-audit', 'bg-emerald-audit/10');
+              target.classList.remove('bg-amber-100/60', 'dark:bg-amber-900/30');
             }, 2500);
           }
         };
@@ -173,17 +173,17 @@ const { citations } = Astro.props;
 
       popover.classList.remove('hidden');
       const rect = el.getBoundingClientRect();
-      const popoverWidth = 384; // 24rem
-      const popoverHeight = popover.offsetHeight || 260;
+      const popoverWidth = 340;
+      const popoverHeight = popover.offsetHeight || 220;
 
-      let top = rect.bottom + 8;
+      let top = rect.bottom + 6;
       let left = rect.left + rect.width / 2 - popoverWidth / 2;
 
-      // Flip above if too close to bottom
-      if (top + popoverHeight > window.innerHeight - 20) {
-        top = rect.top - popoverHeight - 8;
+      // Flip above if near bottom
+      if (top + popoverHeight > window.innerHeight - 16) {
+        top = rect.top - popoverHeight - 6;
       }
-      // Bound left/right
+      // Keep within viewport horizontally
       if (left < 16) left = 16;
       if (left + popoverWidth > window.innerWidth - 16) {
         left = window.innerWidth - popoverWidth - 16;
@@ -202,7 +202,7 @@ const { citations } = Astro.props;
       const primaryLink = document.getElementById('mobile-primary-link') as HTMLAnchorElement;
 
       if (typeEl) typeEl.textContent = citation.sourceType || 'SEC Filing';
-      if (titleEl) titleEl.textContent = citation.title || 'Regulatory Receipt';
+      if (titleEl) titleEl.textContent = citation.title || 'Regulatory Filing Reference';
       if (quoteEl) quoteEl.textContent = citation.quotes || 'No excerpt available';
       if (factsList) {
         factsList.innerHTML = '';
@@ -217,10 +217,9 @@ const { citations } = Astro.props;
       drawer.classList.remove('hidden');
     }
 
-    // Scan article content for citation markers [1], [2], etc.
+    // Scan article text nodes and transform [1] into Wikipedia-style <sup>[1]</sup> links
     const articleContainer = document.getElementById('article-content');
     if (articleContainer) {
-      // Find text nodes with bracketed numbers
       const walker = document.createTreeWalker(articleContainer, NodeFilter.SHOW_TEXT);
       const nodesToReplace: Text[] = [];
 
@@ -239,7 +238,6 @@ const { citations } = Astro.props;
         let match: RegExpExecArray | null;
 
         while ((match = regex.exec(text)) !== null) {
-          // Preceding text
           if (match.index > lastIndex) {
             fragment.appendChild(document.createTextNode(text.substring(lastIndex, match.index)));
           }
@@ -247,19 +245,23 @@ const { citations } = Astro.props;
           const citeIdx = parseInt(match[1], 10);
           const citation = citationMap.get(citeIdx);
 
-          const pill = document.createElement('button');
-          pill.type = 'button';
-          pill.className = 'citation-pill inline-flex items-center justify-center font-mono text-[11px] font-semibold px-1.5 py-0.5 mx-0.5 rounded bg-emerald-audit/10 text-emerald-audit border border-emerald-audit/30 hover:bg-emerald-audit/25 hover:border-emerald-audit transition-all cursor-pointer select-none';
-          pill.setAttribute('data-cite-index', String(citeIdx));
-          pill.textContent = `[${citeIdx}]`;
+          // Wikipedia-style superscript citation reference: <sup><a href="#cite-X">[X]</a></sup>
+          const sup = document.createElement('sup');
+          sup.className = 'citation-ref inline-block align-super font-sans text-[11px] font-semibold leading-none mx-0.5 select-none';
 
-          pill.addEventListener('mouseenter', () => {
+          const link = document.createElement('a');
+          link.href = `#cite-${citeIdx}`;
+          link.className = 'text-editorial-blue dark:text-editorial-blueDark hover:underline cursor-pointer';
+          link.setAttribute('data-cite-index', String(citeIdx));
+          link.textContent = `[${citeIdx}]`;
+
+          link.addEventListener('mouseenter', () => {
             if (!isMobile() && citation) {
-              showPopoverAtElement(pill, citation);
+              showPopoverAtElement(link, citation);
             }
           });
 
-          pill.addEventListener('mouseleave', () => {
+          link.addEventListener('mouseleave', () => {
             if (!isMobile()) {
               hideTimeout = window.setTimeout(() => {
                 popover?.classList.add('hidden');
@@ -267,18 +269,19 @@ const { citations } = Astro.props;
             }
           });
 
-          pill.addEventListener('click', (e) => {
+          link.addEventListener('click', (e) => {
             e.preventDefault();
             if (citation) {
               if (isMobile()) {
                 openMobileDrawer(citation);
               } else {
-                showPopoverAtElement(pill, citation);
+                showPopoverAtElement(link, citation);
               }
             }
           });
 
-          fragment.appendChild(pill);
+          sup.appendChild(link);
+          fragment.appendChild(sup);
           lastIndex = regex.lastIndex;
         }
 
@@ -290,7 +293,7 @@ const { citations } = Astro.props;
       });
     }
 
-    // Keep popover alive while hovering over it
+    // Keep popover visible while hovering inside it
     popover?.addEventListener('mouseenter', () => {
       if (hideTimeout) clearTimeout(hideTimeout);
     });
@@ -300,7 +303,7 @@ const { citations } = Astro.props;
       }, 300);
     });
 
-    // Close mobile drawer
+    // Mobile drawer close
     document.getElementById('mobile-close-btn')?.addEventListener('click', () => {
       drawer?.classList.add('hidden');
     });
@@ -308,7 +311,6 @@ const { citations } = Astro.props;
       if (e.target === drawer) drawer.classList.add('hidden');
     });
 
-    // Global escape to close
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         popover?.classList.add('hidden');

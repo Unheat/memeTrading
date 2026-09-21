@@ -17,36 +17,37 @@ interface Props {
 const { citations = [] } = Astro.props;
 ---
 
-<section class="mt-16 pt-10 border-t border-obsidian-border" id="primary-sources">
-  <div class="flex items-center justify-between mb-6">
-    <div class="flex items-center gap-3">
-      <div class="w-2.5 h-2.5 rounded-full bg-emerald-audit animate-pulse"></div>
-      <h3 class="font-display text-lg font-bold text-text-primary tracking-tight">Primary Sources & Regulatory Receipts</h3>
-    </div>
-    <span class="text-xs font-mono text-text-muted">{citations.length} Receipts Audited</span>
+<section class="mt-16 pt-10 border-t border-journal-border dark:border-night-border" id="primary-sources">
+  <div class="flex items-baseline justify-between mb-4">
+    <h3 class="font-serif text-xl font-bold text-journal-ink dark:text-night-ink tracking-tight">
+      References & Regulatory Filings
+    </h3>
+    <span class="text-xs font-sans text-journal-muted dark:text-night-muted">
+      {citations.length} primary source{citations.length === 1 ? '' : 's'} audited
+    </span>
   </div>
 
-  <p class="text-xs text-text-secondary mb-6 font-mono">
-    Every claim in this investigation is bound to an immutable regulatory accession number, consensus dataset, or market feed. Click any receipt to open the filing on SEC EDGAR.
+  <p class="text-xs text-journal-secondary dark:text-night-secondary mb-8 font-sans max-w-2xl leading-relaxed">
+    Every assertion in this report is anchored to verifiable regulatory filings on SEC EDGAR, consensus databases, or market execution venues.
   </p>
 
-  <div class="space-y-4">
+  <ol class="space-y-4 font-sans text-xs">
     {citations.map((cite) => (
-      <div
+      <li
         id={`cite-${cite.index}`}
-        class="p-4 rounded-xl bg-obsidian-card border border-obsidian-border hover:border-emerald-audit/40 transition-all duration-300 scroll-mt-24 group"
+        class="p-4 rounded-lg bg-journal-card dark:bg-night-card border border-journal-border dark:border-night-border hover:border-journal-borderHover dark:hover:border-night-borderHover transition-colors scroll-mt-24 text-left"
       >
-        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-          <div class="flex items-center gap-2">
-            <span class="font-mono text-xs font-bold text-emerald-audit bg-emerald-audit/10 px-2 py-0.5 rounded border border-emerald-audit/30">
+        <div class="flex flex-wrap items-baseline justify-between gap-2 mb-1.5">
+          <div class="flex items-baseline gap-2">
+            <span class="font-mono text-xs font-bold text-editorial-blue dark:text-editorial-blueDark">
               [{cite.index}]
             </span>
-            <span class="text-xs font-semibold text-text-primary font-display">
+            <span class="font-serif font-semibold text-journal-ink dark:text-night-ink text-sm">
               {cite.title}
             </span>
           </div>
-          <div class="flex items-center gap-2 text-[11px] font-mono text-text-muted">
-            <span class="px-2 py-0.5 rounded bg-obsidian-subtle border border-obsidian-border">
+          <div class="flex items-center gap-2 text-[11px] text-journal-muted dark:text-night-muted font-mono">
+            <span class="px-1.5 py-0.5 rounded bg-journal-bg dark:bg-night-bg border border-journal-border dark:border-night-border">
               {cite.sourceType}
             </span>
             {cite.filingDate && <span>{cite.filingDate}</span>}
@@ -54,25 +55,25 @@ const { citations = [] } = Astro.props;
         </div>
 
         {cite.accession && (
-          <div class="mb-2 text-xs font-mono flex items-center gap-2">
-            <span class="text-text-muted">SEC Accession:</span>
-            <span class="text-emerald-audit font-semibold">{cite.accession}</span>
+          <div class="mb-2 text-xs font-mono text-journal-muted dark:text-night-muted flex items-center gap-2">
+            <span>SEC Accession:</span>
+            <span class="font-semibold text-journal-secondary dark:text-night-secondary">{cite.accession}</span>
           </div>
         )}
 
         {cite.quotes && (
-          <div class="my-2.5 text-xs text-text-secondary italic border-l-2 border-emerald-audit/50 pl-3 py-1 bg-obsidian/40 rounded-r">
+          <blockquote class="my-2.5 text-xs text-journal-secondary dark:text-night-secondary font-serif italic border-l-2 border-editorial-blue/60 dark:border-editorial-blueDark/60 pl-3 py-1 bg-journal-bg/50 dark:bg-night-bg/50 rounded-r">
             "{cite.quotes}"
-          </div>
+          </blockquote>
         )}
 
         {cite.facts && cite.facts.length > 0 && (
-          <div class="mt-2 text-xs font-mono text-text-muted">
-            <span class="text-[10px] uppercase tracking-wider block mb-1">Audited Facts:</span>
-            <ul class="grid grid-cols-1 sm:grid-cols-2 gap-1 text-text-secondary">
+          <div class="mt-2 text-xs text-journal-muted dark:text-night-muted">
+            <span class="text-[10px] font-semibold uppercase tracking-wider block mb-1">Audited Data Points:</span>
+            <ul class="grid grid-cols-1 sm:grid-cols-2 gap-1 font-mono text-journal-secondary dark:text-night-secondary">
               {cite.facts.map((fact) => (
                 <li class="flex items-center gap-1.5">
-                  <span class="text-emerald-audit">✓</span>
+                  <span class="text-editorial-emerald dark:text-editorial-emeraldDark">✓</span>
                   <span>{fact}</span>
                 </li>
               ))}
@@ -80,20 +81,20 @@ const { citations = [] } = Astro.props;
           </div>
         )}
 
-        <div class="mt-3 pt-2 border-t border-obsidian-border/50 flex justify-end">
+        <div class="mt-3 pt-2 border-t border-journal-border/40 dark:border-night-border/40 flex justify-end">
           <a
             href={cite.url}
             target="_blank"
             rel="noreferrer"
-            class="text-xs font-mono text-emerald-audit hover:underline flex items-center gap-1.5"
+            class="text-xs text-editorial-blue dark:text-editorial-blueDark hover:underline flex items-center gap-1 font-medium"
           >
-            <span>Verify on Regulatory Authority</span>
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <span>Open SEC EDGAR Filing</span>
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
             </svg>
           </a>
         </div>
-      </div>
+      </li>
     ))}
-  </div>
+  </ol>
 </section>

@@ -8,26 +8,39 @@ interface Props {
 
 const {
   title,
-  description = "Institutional forensic research, reverse DCF valuation models, and faceless video reels backed by audited SEC EDGAR receipts.",
+  description = "Independent institutional forensic equity research, Reverse DCF valuation models, and video briefings backed by audited SEC regulatory filings.",
   ticker,
   ogImage = "/og-banner.png",
 } = Astro.props;
 
-const pageTitle = ticker ? `${ticker} Forensic Teardown: ${title} | MemeTrading` : `${title} | MemeTrading Forensic Labs`;
+const pageTitle = ticker ? `${ticker}: ${title} — The Meme Forensic Journal` : `${title} — The Meme Forensic Journal`;
 ---
 
 <!doctype html>
-<html lang="en" class="dark scroll-smooth">
+<html lang="en" class="scroll-smooth">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="generator" content={Astro.generator} />
 
-    <!-- SEO -->
+    <!-- Theme Initialization Script: Defaults to Light Mode, supports Dark toggle -->
+    <script is:inline>
+      (function() {
+        const storedTheme = typeof localStorage !== 'undefined' ? localStorage.getItem('journal-theme') : null;
+        if (storedTheme === 'dark') {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      })();
+    </script>
+
+    <!-- SEO & Metadata -->
     <title>{pageTitle}</title>
     <meta name="description" content={description} />
-    <meta name="theme-color" content="#0A0D12" />
+    <meta name="theme-color" content="#FAF9F5" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0E1015" media="(prefers-color-scheme: dark)" />
 
     <!-- OpenGraph / Social -->
     <meta property="og:type" content="article" />
@@ -38,54 +51,60 @@ const pageTitle = ticker ? `${ticker} Forensic Teardown: ${title} | MemeTrading`
     <meta name="twitter:title" content={pageTitle} />
     <meta name="twitter:description" content={description} />
 
-    <!-- Google Fonts: Plus Jakarta Sans, Inter, JetBrains Mono -->
+    <!-- Premier Editorial Google Fonts: Newsreader (Editorial Serif), Inter (Clean Sans), JetBrains Mono (Tabular Data) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400;1,6..72,500&display=swap"
       rel="stylesheet"
     />
 
-    <!-- Pagefind assets (built dynamically into dist) -->
+    <!-- Pagefind assets -->
     <link href="/pagefind/pagefind-ui.css" rel="stylesheet" />
   </head>
-  <body class="bg-obsidian text-text-primary min-h-screen antialiased selection:bg-emerald-audit/30 selection:text-emerald-300 flex flex-col font-sans">
+  <body class="bg-journal-bg text-journal-ink dark:bg-night-bg dark:text-night-ink min-h-screen antialiased flex flex-col font-sans transition-colors duration-200 selection:bg-amber-100 selection:text-amber-950 dark:selection:bg-amber-900/40 dark:selection:text-amber-200">
     <slot name="header" />
 
-    <main class="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <main class="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
       <slot />
     </main>
 
-    <footer class="border-t border-obsidian-border bg-obsidian-card/60 backdrop-blur-md py-8 text-center text-xs text-text-muted mt-20">
-      <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div class="flex items-center gap-2">
-          <div class="w-2 h-2 rounded-full bg-emerald-audit animate-pulse"></div>
-          <span class="font-mono uppercase tracking-wider text-text-secondary">Point-In-Time Strict Provenance Enabled</span>
+    <!-- Clean Editorial Footer -->
+    <footer class="border-t border-journal-border dark:border-night-border bg-journal-card/80 dark:bg-night-card/80 backdrop-blur-sm py-10 text-xs text-journal-muted dark:text-night-muted mt-20">
+      <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-6 text-center sm:text-left">
+        <div class="space-y-1">
+          <p class="font-serif font-semibold text-journal-ink dark:text-night-ink text-sm tracking-tight">The Meme Forensic Journal</p>
+          <p class="font-sans text-[11px] text-journal-muted dark:text-night-muted max-w-md">
+            Independent quantitative equity research and forensic accounting audits. All figures audited directly from SEC EDGAR regulatory filings.
+          </p>
         </div>
-        <p>© 2026 MemeTrading Forensic Labs. All financial claims backed by SEC Accession numbers.</p>
-        <div class="flex items-center gap-4 text-text-secondary">
-          <a href="/" class="hover:text-emerald-audit transition-colors">Archive</a>
-          <a href="https://github.com" target="_blank" rel="noreferrer" class="hover:text-emerald-audit transition-colors">Engine</a>
+        <div class="flex items-center gap-6 font-sans text-xs text-journal-secondary dark:text-night-secondary">
+          <a href="/" class="hover:text-editorial-blue dark:hover:text-editorial-blueDark transition-colors">Archive</a>
+          <a href="/#primary-sources" class="hover:text-editorial-blue dark:hover:text-editorial-blueDark transition-colors">Filings Database</a>
+          <a href="https://github.com/UnHeat/memeTrading" target="_blank" rel="noreferrer" class="hover:text-editorial-blue dark:hover:text-editorial-blueDark transition-colors">Engine Source</a>
         </div>
+      </div>
+      <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 mt-6 pt-6 border-t border-journal-border/50 dark:border-night-border/50 text-center text-[11px]">
+        © 2026 MemeForensics Research Labs. Educational & analytical research only. Not an offer or solicitation to trade securities.
       </div>
     </footer>
   </body>
 </html>
 
 <style is:global>
-  /* Custom scrollbars */
+  /* Subtle, clean scrollbars */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
   ::-webkit-scrollbar-track {
-    background: #0a0d12;
+    background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #1e2638;
+    background: #d4d0c5;
     border-radius: 3px;
   }
-  ::-webkit-scrollbar-thumb:hover {
-    background: #2a3650;
+  .dark ::-webkit-scrollbar-thumb {
+    background: #242936;
   }
 </style>

@@ -8,139 +8,155 @@ const articles = await getCollection('articles');
 // Sort newest first
 articles.sort((a, b) => new Date(b.data.publishedAt).getTime() - new Date(a.data.publishedAt).getTime());
 
+const featuredArticle = articles[0];
+const remainingArticles = articles.slice(1);
 const totalCitations = articles.reduce((acc, curr) => acc + (curr.data.citations?.length || 0), 0);
 ---
 
-<Layout title="Forensic Financial Research & Faceless Video Reels">
+<Layout title="The Meme Forensic Journal — Institutional Equity Diligence">
   <Header slot="header" activeNav="articles" />
   <SearchModal />
 
-  <!-- Hero Section -->
-  <section class="py-12 sm:py-16 text-center max-w-4xl mx-auto">
-    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-audit/10 border border-emerald-audit/30 text-emerald-audit text-xs font-mono mb-6">
-      <span class="w-2 h-2 rounded-full bg-emerald-audit animate-pulse"></span>
-      <span>Live SEC XBRL Audits & Faceless Video Reels</span>
-    </div>
-
-    <h1 class="text-4xl sm:text-6xl font-extrabold font-display tracking-tight text-text-primary leading-[1.1] mb-6">
-      Forensic Financial Research Backed by <span class="bg-gradient-to-r from-emerald-audit via-cyan-consensus to-emerald-300 bg-clip-text text-transparent">SEC Receipts</span>
-    </h1>
-
-    <p class="text-base sm:text-lg text-text-secondary max-w-2xl mx-auto leading-relaxed mb-8">
-      Deep equity tear-downs, Reverse DCF expectation modeling, and viral vertical video reels where every single number is bound to an immutable regulatory filing.
-    </p>
-
-    <!-- Platform Stats Highlights -->
-    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-3xl mx-auto p-3 rounded-2xl bg-obsidian-card border border-obsidian-border text-left">
-      <div class="p-3 bg-obsidian/40 rounded-xl border border-obsidian-border/50">
-        <div class="text-[10px] font-mono text-text-muted uppercase">Investigations</div>
-        <div class="text-xl font-bold font-mono text-text-primary mt-1">{articles.length}</div>
-        <div class="text-[10px] font-mono text-emerald-audit">Live & Audited</div>
-      </div>
-      <div class="p-3 bg-obsidian/40 rounded-xl border border-obsidian-border/50">
-        <div class="text-[10px] font-mono text-text-muted uppercase">Audited Receipts</div>
-        <div class="text-xl font-bold font-mono text-emerald-audit mt-1">{totalCitations}</div>
-        <div class="text-[10px] font-mono text-text-muted">SEC EDGAR Links</div>
-      </div>
-      <div class="p-3 bg-obsidian/40 rounded-xl border border-obsidian-border/50">
-        <div class="text-[10px] font-mono text-text-muted uppercase">Edge Latency</div>
-        <div class="text-xl font-bold font-mono text-cyan-consensus mt-1">&lt;20ms</div>
-        <div class="text-[10px] font-mono text-text-muted">Cloudflare Global</div>
-      </div>
-      <div class="p-3 bg-obsidian/40 rounded-xl border border-obsidian-border/50">
-        <div class="text-[10px] font-mono text-text-muted uppercase">Lookahead Bias</div>
-        <div class="text-xl font-bold font-mono text-emerald-audit mt-1">0%</div>
-        <div class="text-[10px] font-mono text-text-muted">Point-in-Time Safe</div>
-      </div>
+  <!-- Journal Header Introduction -->
+  <section class="mb-10 pb-8 border-b border-journal-border dark:border-night-border text-center sm:text-left">
+    <div class="max-w-3xl">
+      <h1 class="text-2xl sm:text-3xl font-serif font-bold text-journal-ink dark:text-night-ink tracking-tight mb-2">
+        Forensic Intelligence & Valuation Expectation Audits
+      </h1>
+      <p class="text-sm sm:text-base font-serif italic text-journal-secondary dark:text-night-secondary leading-relaxed">
+        We investigate grassroots market hype against audited balance sheet forensics, Reverse DCF implied growth rates, and primary SEC EDGAR regulatory receipts.
+      </p>
     </div>
   </section>
 
-  <!-- Filter & Search Bar -->
-  <section class="mb-10">
-    <div class="flex flex-col sm:flex-row items-center justify-between gap-4 pb-4 border-b border-obsidian-border">
-      <div class="flex items-center gap-2 overflow-x-auto w-full sm:w-auto">
-        <span class="text-xs font-mono text-text-muted uppercase">Filter:</span>
-        <a href="/" class="px-3 py-1 rounded-lg bg-emerald-audit/20 text-emerald-audit border border-emerald-audit/40 text-xs font-mono font-semibold">
-          All Cases
+  <!-- Featured Lead Investigation -->
+  {featuredArticle && (
+    <section class="mb-12">
+      <div class="p-6 sm:p-8 rounded-xl bg-journal-card dark:bg-night-card border border-journal-border dark:border-night-border shadow-sm hover:border-journal-borderHover dark:hover:border-night-borderHover transition-colors">
+        <div class="flex flex-wrap items-center gap-2.5 mb-3 text-xs font-sans text-journal-secondary dark:text-night-secondary">
+          <span class="font-mono font-bold text-journal-ink dark:text-night-ink px-2 py-0.5 rounded bg-journal-bg dark:bg-night-bg border border-journal-border dark:border-night-border">
+            ${featuredArticle.data.ticker}
+          </span>
+          <span class="text-journal-muted dark:text-night-muted">•</span>
+          <span class="font-sans uppercase text-[10px] tracking-wider px-2 py-0.5 rounded border font-semibold bg-amber-50 dark:bg-amber-950/40 text-editorial-crimson dark:text-editorial-crimsonDark border-amber-200 dark:border-amber-900/50">
+            {featuredArticle.data.verdict}
+          </span>
+          <span class="text-journal-muted dark:text-night-muted ml-auto font-mono text-[11px]">
+            {featuredArticle.data.publishedAt}
+          </span>
+        </div>
+
+        <h2 class="text-2xl sm:text-3xl lg:text-4xl font-serif font-bold tracking-tight text-journal-ink dark:text-night-ink mb-4 leading-snug">
+          <a href={`/articles/${featuredArticle.id}`} class="hover:text-editorial-blue dark:hover:text-editorial-blueDark transition-colors">
+            {featuredArticle.data.title}
+          </a>
+        </h2>
+
+        <p class="text-base font-serif italic text-journal-lead dark:text-night-lead leading-relaxed mb-6 max-w-4xl">
+          {featuredArticle.data.thesis}
+        </p>
+
+        <!-- Metric Callout Strip -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3 rounded-lg bg-journal-bg/60 dark:bg-night-bg/60 border border-journal-border/50 dark:border-night-border/50 text-xs mb-6 max-w-3xl">
+          <div>
+            <span class="text-[10px] font-sans uppercase tracking-wider text-journal-muted dark:text-night-muted block">Implied Growth:</span>
+            <span class="font-mono font-bold text-journal-ink dark:text-night-ink text-sm mt-0.5 block">{featuredArticle.data.reverseDcfImpliedGrowth || 'N/A'}</span>
+          </div>
+          <div>
+            <span class="text-[10px] font-sans uppercase tracking-wider text-journal-muted dark:text-night-muted block">Fair Value Model:</span>
+            <span class="font-mono font-bold text-editorial-emerald dark:text-editorial-emeraldDark text-sm mt-0.5 block">{featuredArticle.data.targetValuation || 'N/A'}</span>
+          </div>
+          <div>
+            <span class="text-[10px] font-sans uppercase tracking-wider text-journal-muted dark:text-night-muted block">M-Score Risk:</span>
+            <span class="font-mono font-bold text-journal-lead dark:text-night-lead text-sm mt-0.5 block">{featuredArticle.data.beneishMScore || 'Normal'}</span>
+          </div>
+          <div>
+            <span class="text-[10px] font-sans uppercase tracking-wider text-journal-muted dark:text-night-muted block">Regulatory Receipts:</span>
+            <span class="font-mono font-bold text-editorial-blue dark:text-editorial-blueDark text-sm mt-0.5 block">{featuredArticle.data.citations?.length || 0} Audited</span>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between pt-2 border-t border-journal-border/40 dark:border-night-border/40 text-xs font-sans">
+          <div class="flex items-center gap-2 text-journal-muted dark:text-night-muted font-mono text-[11px]">
+            {featuredArticle.data.video?.id && (
+              <span class="text-editorial-emerald dark:text-editorial-emeraldDark">● Video Briefing Included</span>
+            )}
+          </div>
+          <a
+            href={`/articles/${featuredArticle.id}`}
+            class="text-editorial-blue dark:text-editorial-blueDark hover:underline font-medium flex items-center gap-1.5"
+          >
+            <span>Read Complete Forensic Audit</span>
+            <span>→</span>
+          </a>
+        </div>
+      </div>
+    </section>
+  )}
+
+  <!-- Filter Strip -->
+  <section class="mb-8">
+    <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-journal-border dark:border-night-border text-xs font-sans">
+      <div class="flex items-center gap-2 overflow-x-auto">
+        <span class="text-journal-muted dark:text-night-muted text-[11px] uppercase tracking-wider font-semibold">Filter:</span>
+        <a href="/" class="px-2.5 py-1 rounded bg-journal-card dark:bg-night-card border border-journal-borderHover dark:border-night-borderHover text-journal-ink dark:text-night-ink font-semibold">
+          All Case Files
         </a>
-        <button type="button" class="search-chip px-3 py-1 rounded-lg bg-obsidian-card hover:bg-obsidian-subtle text-text-secondary text-xs font-mono border border-obsidian-border transition-colors">
+        <button type="button" class="search-chip px-2.5 py-1 rounded bg-journal-bg dark:bg-night-bg hover:bg-journal-card dark:hover:bg-night-card text-journal-secondary dark:text-night-secondary border border-journal-border dark:border-night-border transition-colors font-mono">
           $MU
         </button>
-        <button type="button" class="search-chip px-3 py-1 rounded-lg bg-obsidian-card hover:bg-obsidian-subtle text-text-secondary text-xs font-mono border border-obsidian-border transition-colors">
+        <button type="button" class="search-chip px-2.5 py-1 rounded bg-journal-bg dark:bg-night-bg hover:bg-journal-card dark:hover:bg-night-card text-journal-secondary dark:text-night-secondary border border-journal-border dark:border-night-border transition-colors font-mono">
           $NVDA
         </button>
-        <button type="button" class="search-chip px-3 py-1 rounded-lg bg-obsidian-card hover:bg-obsidian-subtle text-text-secondary text-xs font-mono border border-obsidian-border transition-colors">
-          Forensic Warning
+        <button type="button" class="search-chip px-2.5 py-1 rounded bg-journal-bg dark:bg-night-bg hover:bg-journal-card dark:hover:bg-night-card text-journal-secondary dark:text-night-secondary border border-journal-border dark:border-night-border transition-colors">
+          Forensic Warnings
         </button>
       </div>
 
-      <div class="text-xs font-mono text-text-muted self-end sm:self-auto">
-        Showing {articles.length} published investigations
-      </div>
+      <span class="text-journal-muted dark:text-night-muted text-[11px]">
+        {articles.length} total investigations on record
+      </span>
     </div>
   </section>
 
-  <!-- Articles Grid -->
-  <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-pagefind-body>
-    {articles.map((article) => {
+  <!-- Secondary Articles Grid -->
+  <section class="grid grid-cols-1 md:grid-cols-2 gap-6" data-pagefind-body>
+    {remainingArticles.map((article) => {
       const isWarning = article.data.verdict === 'Forensic Warning';
       const hasVideo = Boolean(article.data.video?.id || article.data.video?.url);
 
       return (
-        <article class="bg-obsidian-card rounded-2xl border border-obsidian-border hover:border-emerald-audit/50 transition-all duration-300 overflow-hidden flex flex-col group hover:shadow-glowEmerald">
-          <!-- Card Header -->
-          <div class="p-6 flex-1 flex flex-col">
-            <div class="flex items-center justify-between gap-2 mb-3">
-              <div class="flex items-center gap-2">
-                <span class="px-2.5 py-0.5 rounded bg-obsidian border border-obsidian-border font-mono text-xs font-bold text-text-primary">
-                  ${article.data.ticker}
-                </span>
-                <span class={`text-[10px] font-mono px-2 py-0.5 rounded border uppercase tracking-wider font-semibold ${isWarning ? 'bg-amber-warning/10 text-amber-warning border-amber-warning/30' : 'bg-emerald-audit/10 text-emerald-audit border-emerald-audit/30'}`}>
-                  {article.data.verdict}
-                </span>
-              </div>
-              <time class="text-[11px] font-mono text-text-muted">{article.data.publishedAt}</time>
+        <article class="bg-journal-card dark:bg-night-card rounded-xl border border-journal-border dark:border-night-border hover:border-journal-borderHover dark:hover:border-night-borderHover transition-colors p-6 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between gap-2 mb-2.5 text-xs font-sans text-journal-secondary dark:text-night-secondary">
+              <span class="font-mono font-bold text-journal-ink dark:text-night-ink px-2 py-0.5 rounded bg-journal-bg dark:bg-night-bg border border-journal-border dark:border-night-border">
+                ${article.data.ticker}
+              </span>
+              <span class={`font-mono uppercase text-[10px] tracking-wider px-2 py-0.5 rounded border font-semibold ${isWarning ? 'bg-amber-50 dark:bg-amber-950/40 text-editorial-crimson dark:text-editorial-crimsonDark border-amber-200 dark:border-amber-900/50' : 'bg-emerald-50 dark:bg-emerald-950/40 text-editorial-emerald dark:text-editorial-emeraldDark border-emerald-200 dark:border-emerald-900/50'}`}>
+                {article.data.verdict}
+              </span>
+              <time class="ml-auto text-journal-muted dark:text-night-muted text-[11px] font-mono">{article.data.publishedAt}</time>
             </div>
 
-            <h2 class="text-lg font-bold text-text-primary font-display group-hover:text-emerald-audit transition-colors mb-2 leading-snug">
-              <a href={`/articles/${article.id}`} class="hover:underline">
+            <h3 class="text-xl font-serif font-bold text-journal-ink dark:text-night-ink hover:text-editorial-blue dark:hover:text-editorial-blueDark transition-colors mb-2.5 leading-snug">
+              <a href={`/articles/${article.id}`}>
                 {article.data.title}
               </a>
-            </h2>
+            </h3>
 
-            <p class="text-xs text-text-secondary line-clamp-3 mb-4 flex-1">
+            <p class="text-xs font-serif text-journal-secondary dark:text-night-secondary line-clamp-3 leading-relaxed mb-4">
               {article.data.thesis}
             </p>
-
-            <!-- Metrics Highlight Badges -->
-            <div class="grid grid-cols-2 gap-2 my-3 p-2.5 bg-obsidian/60 rounded-xl border border-obsidian-border/60 text-xs font-mono">
-              <div>
-                <span class="text-[10px] text-text-muted block">Reverse DCF Implied:</span>
-                <span class="text-cyan-consensus font-semibold">{article.data.reverseDcfImpliedGrowth || 'N/A'}</span>
-              </div>
-              <div>
-                <span class="text-[10px] text-text-muted block">Fair Value Model:</span>
-                <span class="text-emerald-audit font-semibold">{article.data.targetValuation || 'N/A'}</span>
-              </div>
-            </div>
           </div>
 
-          <!-- Card Footer -->
-          <div class="px-6 py-3 bg-obsidian/40 border-t border-obsidian-border/60 flex items-center justify-between text-xs font-mono">
-            <div class="flex items-center gap-3 text-text-muted">
-              {hasVideo && (
-                <span class="flex items-center gap-1 text-emerald-audit">
-                  <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
-                  </svg>
-                  <span>Reel Attached</span>
-                </span>
-              )}
+          <div class="pt-3 border-t border-journal-border/50 dark:border-night-border/50 flex items-center justify-between text-xs font-sans">
+            <div class="flex items-center gap-3 text-journal-muted dark:text-night-muted font-mono text-[11px]">
+              {hasVideo && <span class="text-editorial-emerald dark:text-editorial-emeraldDark">● Video</span>}
               <span>{article.data.citations?.length || 0} Receipts</span>
             </div>
 
-            <a href={`/articles/${article.id}`} class="text-emerald-audit group-hover:translate-x-0.5 transition-transform flex items-center gap-1 font-semibold">
-              <span>Read Audit</span>
+            <a href={`/articles/${article.id}`} class="text-editorial-blue dark:text-editorial-blueDark hover:underline font-medium flex items-center gap-1">
+              <span>Read Report</span>
               <span>→</span>
             </a>
           </div>
@@ -151,7 +167,7 @@ const totalCitations = articles.reduce((acc, curr) => acc + (curr.data.citations
 </Layout>
 
 <script>
-  // Wire up filter chips to search modal
+  // Filter chips click handling
   document.querySelectorAll('.search-chip').forEach((btn) => {
     btn.addEventListener('click', () => {
       const text = btn.textContent?.trim().replace('$', '') || '';

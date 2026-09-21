@@ -3,56 +3,56 @@
 
 <div
   id="search-modal"
-  class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-md flex items-start justify-center p-4 sm:pt-20"
+  class="fixed inset-0 z-50 hidden bg-black/50 backdrop-blur-sm flex items-start justify-center p-4 sm:pt-20"
   role="dialog"
   aria-modal="true"
 >
-  <div class="w-full max-w-2xl bg-obsidian-card border border-obsidian-border rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-150">
+  <div class="w-full max-w-2xl bg-journal-card dark:bg-night-card border border-journal-border dark:border-night-border rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-150">
     <!-- Search Bar Input Header -->
-    <div class="p-4 border-b border-obsidian-border flex items-center gap-3 bg-obsidian/50">
-      <svg class="w-5 h-5 text-emerald-audit" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div class="p-4 border-b border-journal-border/70 dark:border-night-border/70 flex items-center gap-3 bg-journal-bg/60 dark:bg-night-bg/60">
+      <svg class="w-4 h-4 text-editorial-blue dark:text-editorial-blueDark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
       </svg>
       <input
         id="search-input"
         type="text"
-        placeholder="Search filings, tickers ($MU, $NVDA), SEC metrics, or forensic warnings..."
-        class="w-full bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none font-sans"
+        placeholder="Search regulatory filings, tickers ($MU, $NVDA), or forensic accounting anomalies..."
+        class="w-full bg-transparent text-sm text-journal-ink dark:text-night-ink placeholder:text-journal-muted dark:placeholder:text-night-muted focus:outline-none font-sans"
         autocomplete="off"
       />
-      <button id="search-close-btn" class="p-1 text-text-muted hover:text-text-primary text-xs font-mono px-2 py-1 rounded bg-obsidian border border-obsidian-border">
+      <button id="search-close-btn" class="p-1 text-journal-muted dark:text-night-muted hover:text-journal-ink dark:hover:text-night-ink text-xs font-mono px-2 py-0.5 rounded bg-journal-card dark:bg-night-card border border-journal-border dark:border-night-border">
         ESC
       </button>
     </div>
 
     <!-- Quick Filter Ticker Chips -->
-    <div class="px-4 py-2.5 bg-obsidian-subtle/50 border-b border-obsidian-border flex items-center gap-2 overflow-x-auto text-xs font-mono">
-      <span class="text-text-muted text-[11px]">Quick Filters:</span>
-      <button class="filter-chip px-2 py-0.5 rounded bg-obsidian border border-obsidian-border hover:border-emerald-audit text-text-secondary hover:text-emerald-audit transition-all" data-filter="MU">
+    <div class="px-4 py-2 bg-journal-bg/40 dark:bg-night-bg/40 border-b border-journal-border/50 dark:border-night-border/50 flex items-center gap-2 overflow-x-auto text-xs font-sans">
+      <span class="text-journal-muted dark:text-night-muted text-[11px]">Quick Filters:</span>
+      <button class="filter-chip px-2.5 py-0.5 rounded bg-journal-card dark:bg-night-card border border-journal-border dark:border-night-border hover:border-editorial-blue text-journal-secondary dark:text-night-secondary hover:text-journal-ink dark:hover:text-night-ink transition-colors font-mono text-xs" data-filter="MU">
         $MU
       </button>
-      <button class="filter-chip px-2 py-0.5 rounded bg-obsidian border border-obsidian-border hover:border-emerald-audit text-text-secondary hover:text-emerald-audit transition-all" data-filter="NVDA">
+      <button class="filter-chip px-2.5 py-0.5 rounded bg-journal-card dark:bg-night-card border border-journal-border dark:border-night-border hover:border-editorial-blue text-journal-secondary dark:text-night-secondary hover:text-journal-ink dark:hover:text-night-ink transition-colors font-mono text-xs" data-filter="NVDA">
         $NVDA
       </button>
-      <button class="filter-chip px-2 py-0.5 rounded bg-obsidian border border-obsidian-border hover:border-emerald-audit text-text-secondary hover:text-emerald-audit transition-all" data-filter="Forensic Warning">
+      <button class="filter-chip px-2.5 py-0.5 rounded bg-journal-card dark:bg-night-card border border-journal-border dark:border-night-border hover:border-editorial-blue text-journal-secondary dark:text-night-secondary hover:text-journal-ink dark:hover:text-night-ink transition-colors" data-filter="Forensic Warning">
         Forensic Warnings
       </button>
-      <button class="filter-chip px-2 py-0.5 rounded bg-obsidian border border-obsidian-border hover:border-emerald-audit text-text-secondary hover:text-emerald-audit transition-all" data-filter="Reverse DCF">
+      <button class="filter-chip px-2.5 py-0.5 rounded bg-journal-card dark:bg-night-card border border-journal-border dark:border-night-border hover:border-editorial-blue text-journal-secondary dark:text-night-secondary hover:text-journal-ink dark:hover:text-night-ink transition-colors" data-filter="Reverse DCF">
         Reverse DCF
       </button>
     </div>
 
     <!-- Results Container -->
     <div id="search-results" class="p-4 overflow-y-auto flex-1 space-y-3">
-      <div id="search-initial-state" class="text-center py-10 text-text-muted text-xs font-mono">
-        Type to search across forensic research memos, audited SEC filings, and video reels.
+      <div id="search-initial-state" class="text-center py-10 text-journal-muted dark:text-night-muted text-xs font-sans">
+        Type to search across forensic research dispatches, audited SEC filings, and video reels.
       </div>
     </div>
 
     <!-- Footer Shortcuts -->
-    <div class="px-4 py-2 border-t border-obsidian-border bg-obsidian/30 text-[11px] font-mono text-text-muted flex items-center justify-between">
-      <span>Powered by Pagefind In-Browser Search</span>
-      <span>↑↓ Navigate • ↵ Select • ESC Close</span>
+    <div class="px-4 py-2 border-t border-journal-border/50 dark:border-night-border/50 bg-journal-bg/30 dark:bg-night-bg/30 text-[11px] font-sans text-journal-muted dark:text-night-muted flex items-center justify-between">
+      <span>Pagefind In-Browser Search Engine</span>
+      <span class="font-mono text-[10px]">↑↓ Navigate • ↵ Select • ESC Close</span>
     </div>
   </div>
 </div>
@@ -63,12 +63,11 @@
   async function loadPagefind() {
     if (!pagefind) {
       try {
-        // Dynamically import Pagefind from generated dist location at runtime
         const dynamicImport = new Function('p', 'return import(p)');
         pagefind = await dynamicImport('/pagefind/pagefind.js');
         await pagefind.init();
       } catch (err) {
-        console.warn('Pagefind is available in production build after `pagefind --site dist`. Falling back to client filter.', err);
+        console.warn('Pagefind is available in production build after `pagefind --site dist`.', err);
       }
     }
   }
@@ -93,12 +92,10 @@
   triggerBtn?.addEventListener('click', openSearch);
   closeBtn?.addEventListener('click', closeSearch);
 
-  // Close on backdrop click
   modal?.addEventListener('click', (e) => {
     if (e.target === modal) closeSearch();
   });
 
-  // Shortcut Cmd+K
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
       e.preventDefault();
@@ -109,7 +106,6 @@
     }
   });
 
-  // Filter chips click
   document.querySelectorAll('.filter-chip').forEach((chip) => {
     chip.addEventListener('click', () => {
       const val = chip.getAttribute('data-filter') || '';
@@ -134,8 +130,8 @@
 
     if (!cleanQuery) {
       resultsContainer.innerHTML = `
-        <div class="text-center py-10 text-text-muted text-xs font-mono">
-          Type to search across forensic research memos, audited SEC filings, and video reels.
+        <div class="text-center py-10 text-journal-muted dark:text-night-muted text-xs font-sans">
+          Type to search across forensic research dispatches, audited SEC filings, and video reels.
         </div>
       `;
       return;
@@ -146,7 +142,7 @@
         const search = await pagefind.search(cleanQuery);
         if (!search.results.length) {
           resultsContainer.innerHTML = `
-            <div class="text-center py-10 text-text-muted text-xs font-mono">
+            <div class="text-center py-10 text-journal-muted dark:text-night-muted text-xs font-sans">
               No investigations matched "${cleanQuery}". Try another ticker or thesis query.
             </div>
           `;
@@ -157,25 +153,24 @@
         const items = await Promise.all(dataPromises);
 
         resultsContainer.innerHTML = items.map((item: any) => `
-          <a href="${item.url}" class="block p-3 rounded-xl bg-obsidian-subtle/70 hover:bg-obsidian-subtle border border-obsidian-border hover:border-emerald-audit/50 transition-all group">
+          <a href="${item.url}" class="block p-3 rounded-lg bg-journal-card dark:bg-night-card hover:bg-journal-bg dark:hover:bg-night-bg border border-journal-border dark:border-night-border transition-colors group text-left">
             <div class="flex items-center justify-between mb-1">
-              <h4 class="text-sm font-semibold text-text-primary group-hover:text-emerald-audit transition-colors font-display">
+              <h4 class="text-sm font-serif font-bold text-journal-ink dark:text-night-ink group-hover:text-editorial-blue dark:group-hover:text-editorial-blueDark transition-colors">
                 ${item.meta.title || item.url}
               </h4>
-              <span class="text-[11px] font-mono text-emerald-audit">Read →</span>
+              <span class="text-[11px] font-sans text-editorial-blue dark:text-editorial-blueDark">Read →</span>
             </div>
-            <p class="text-xs text-text-secondary line-clamp-2">${item.excerpt}</p>
+            <p class="text-xs font-sans text-journal-secondary dark:text-night-secondary line-clamp-2">${item.excerpt}</p>
           </a>
         `).join('');
       } catch (err) {
         console.error('Pagefind search error', err);
       }
     } else {
-      // In dev mode before pagefind build, simulate search against page links
       resultsContainer.innerHTML = `
-        <div class="p-3 text-xs font-mono text-text-muted bg-obsidian-subtle/50 rounded-lg">
-          Pagefind search index is generated at build time (<code>npm run build</code>).
-          <div class="mt-2 text-text-secondary">Direct match query: <span class="text-emerald-audit font-semibold">${cleanQuery}</span></div>
+        <div class="p-3 text-xs font-sans text-journal-muted dark:text-night-muted bg-journal-bg/50 dark:bg-night-bg/50 rounded">
+          Search index available upon static compilation (<code>npm run build</code>).
+          <div class="mt-1">Direct query: <span class="font-semibold text-journal-ink dark:text-night-ink">${cleanQuery}</span></div>
         </div>
       `;
     }

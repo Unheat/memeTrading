@@ -4,54 +4,111 @@ interface Props {
 }
 
 const { activeNav = "articles" } = Astro.props;
+
+// Current date formatted in editorial style
+const today = new Date().toLocaleDateString('en-US', {
+  weekday: 'long',
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+});
 ---
 
-<header class="sticky top-0 z-40 w-full border-b border-obsidian-border bg-obsidian/85 backdrop-blur-xl transition-all">
-  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
-    <!-- Brand -->
-    <a href="/" class="flex items-center gap-3 group">
-      <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-audit/20 to-cyan-consensus/20 border border-emerald-audit/40 flex items-center justify-center shadow-glowEmerald group-hover:border-emerald-audit transition-all">
-        <span class="font-mono text-emerald-audit font-extrabold text-base">MT</span>
+<header class="w-full border-b border-journal-border dark:border-night-border bg-journal-card/90 dark:bg-night-card/90 backdrop-blur-md sticky top-0 z-40 transition-colors duration-200">
+  <!-- Top Masthead Bar -->
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-1.5 border-b border-journal-border/40 dark:border-night-border/40 flex items-center justify-between text-[11px] font-sans text-journal-muted dark:text-night-muted">
+    <div>
+      <span>{today}</span>
+      <span class="hidden sm:inline mx-2">•</span>
+      <span class="hidden sm:inline">Volume IV, Issue 38</span>
+    </div>
+    <div class="flex items-center gap-3">
+      <span>SEC EDGAR Point-in-Time Audited</span>
+      <span>•</span>
+      <a href="https://github.com/UnHeat/memeTrading" target="_blank" rel="noreferrer" class="hover:text-journal-ink dark:hover:text-night-ink transition-colors">
+        GitHub
+      </a>
+    </div>
+  </div>
+
+  <!-- Primary Header Bar -->
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-4">
+    <!-- Brand Publication Title -->
+    <a href="/" class="group flex flex-col">
+      <div class="flex items-baseline gap-2">
+        <span class="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-journal-ink dark:text-night-ink group-hover:text-editorial-blue dark:group-hover:text-editorial-blueDark transition-colors">
+          The Meme Forensic Journal
+        </span>
       </div>
-      <div>
-        <div class="flex items-center gap-2">
-          <span class="font-display font-bold text-base tracking-tight text-text-primary group-hover:text-emerald-audit transition-colors">MEMETRADING</span>
-          <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-audit/10 text-emerald-audit border border-emerald-audit/30 uppercase tracking-widest font-semibold">Forensic</span>
-        </div>
-        <p class="text-[11px] text-text-muted font-mono hidden sm:block">Institutional Fusion & Video Reels</p>
-      </div>
+      <span class="font-sans text-[11px] uppercase tracking-widest text-journal-muted dark:text-night-muted font-medium">
+        Institutional Equity Diligence & Forensic Accounting
+      </span>
     </a>
 
-    <!-- Navigation & Search Trigger -->
-    <div class="flex items-center gap-3 sm:gap-6">
-      <!-- Search Button -->
+    <!-- Navigation & Utility Controls -->
+    <div class="flex items-center gap-2 sm:gap-4">
+      <!-- Search Trigger -->
       <button
         id="search-trigger"
         type="button"
-        class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-obsidian-card border border-obsidian-border hover:border-emerald-audit/50 hover:bg-obsidian-subtle text-text-secondary text-xs transition-all shadow-sm group"
+        class="flex items-center gap-2 px-3 py-1.5 rounded-md border border-journal-border dark:border-night-border hover:border-journal-borderHover dark:hover:border-night-borderHover bg-journal-bg dark:bg-night-bg text-journal-secondary dark:text-night-secondary text-xs transition-colors"
         aria-label="Search articles"
       >
-        <svg class="w-4 h-4 text-text-muted group-hover:text-emerald-audit transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="w-3.5 h-3.5 text-journal-muted dark:text-night-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
         </svg>
-        <span class="hidden md:inline">Search filings, tickers...</span>
-        <span class="md:hidden">Search</span>
-        <kbd class="hidden sm:inline-flex items-center gap-0.5 text-[10px] font-mono bg-obsidian px-1.5 py-0.5 rounded border border-obsidian-border text-text-muted">
+        <span class="hidden sm:inline font-sans">Search filings, tickers...</span>
+        <span class="sm:hidden font-sans">Search</span>
+        <kbd class="hidden md:inline-block text-[10px] font-mono px-1 py-0.5 rounded bg-journal-card dark:bg-night-card border border-journal-border dark:border-night-border text-journal-muted dark:text-night-muted">
           ⌘K
         </kbd>
       </button>
 
-      <nav class="hidden sm:flex items-center gap-5 text-xs font-medium">
-        <a href="/" class={`hover:text-text-primary transition-colors ${activeNav === 'articles' ? 'text-emerald-audit font-semibold' : 'text-text-secondary'}`}>
-          Investigations
-        </a>
-        <a href="https://github.com/UnHeat/memeTrading" target="_blank" rel="noreferrer" class="text-text-secondary hover:text-text-primary transition-colors flex items-center gap-1.5">
-          <span>GitHub</span>
-          <svg class="w-3 h-3 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-          </svg>
-        </a>
-      </nav>
+      <!-- Theme Switcher (Light / Dark Mode Toggle) -->
+      <button
+        id="theme-toggle"
+        type="button"
+        class="p-2 rounded-md border border-journal-border dark:border-night-border hover:border-journal-borderHover dark:hover:border-night-borderHover bg-journal-bg dark:bg-night-bg text-journal-secondary dark:text-night-secondary transition-colors"
+        aria-label="Toggle dark mode"
+        title="Toggle Light / Dark mode"
+      >
+        <!-- Sun icon (shown in dark mode) -->
+        <svg id="theme-icon-sun" class="w-4 h-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+        </svg>
+        <!-- Moon icon (shown in light mode) -->
+        <svg id="theme-icon-moon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+        </svg>
+      </button>
     </div>
   </div>
 </header>
+
+<script>
+  // Theme toggle logic
+  document.addEventListener('DOMContentLoaded', () => {
+    const toggleBtn = document.getElementById('theme-toggle');
+    const sunIcon = document.getElementById('theme-icon-sun');
+    const moonIcon = document.getElementById('theme-icon-moon');
+
+    function updateIcons(isDark: boolean) {
+      if (isDark) {
+        sunIcon?.classList.remove('hidden');
+        moonIcon?.classList.add('hidden');
+      } else {
+        sunIcon?.classList.add('hidden');
+        moonIcon?.classList.remove('hidden');
+      }
+    }
+
+    const isCurrentDark = document.documentElement.classList.contains('dark');
+    updateIcons(isCurrentDark);
+
+    toggleBtn?.addEventListener('click', () => {
+      const isDark = document.documentElement.classList.toggle('dark');
+      localStorage.setItem('journal-theme', isDark ? 'dark' : 'light');
+      updateIcons(isDark);
+    });
+  });
+</script>

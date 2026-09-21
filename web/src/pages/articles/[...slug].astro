@@ -29,90 +29,99 @@ const isWarning = article.data.verdict === 'Forensic Warning';
   <Header slot="header" activeNav="articles" />
   <SearchModal />
 
-  <div class="max-w-4xl mx-auto" data-pagefind-body>
-    <!-- Back to archive -->
-    <div class="mb-6">
-      <a href="/" class="text-xs font-mono text-text-muted hover:text-emerald-audit flex items-center gap-1.5 transition-colors">
+  <article class="max-w-3xl mx-auto" data-pagefind-body>
+    <!-- Back to Archive Navigation -->
+    <nav class="mb-8">
+      <a href="/" class="text-xs font-sans text-journal-muted dark:text-night-muted hover:text-journal-ink dark:hover:text-night-ink flex items-center gap-1.5 transition-colors">
         <span>←</span>
-        <span>Back to all investigations</span>
+        <span>Back to Dispatch Archive</span>
       </a>
-    </div>
+    </nav>
 
-    <!-- Article Header -->
-    <header class="mb-8 pb-6 border-b border-obsidian-border">
-      <div class="flex flex-wrap items-center gap-2.5 mb-3">
-        <span class="px-2.5 py-0.5 rounded bg-obsidian border border-obsidian-border font-mono text-xs font-bold text-text-primary">
+    <!-- Article Header & Byline -->
+    <header class="mb-10 pb-8 border-b border-journal-border dark:border-night-border">
+      <!-- Eyebrow Metadata -->
+      <div class="flex flex-wrap items-center gap-2 mb-4 text-xs font-sans text-journal-secondary dark:text-night-secondary">
+        <span class="font-mono font-bold text-journal-ink dark:text-night-ink px-2 py-0.5 rounded bg-journal-card dark:bg-night-card border border-journal-border dark:border-night-border">
           ${article.data.ticker}
         </span>
         {article.data.company && (
-          <span class="text-xs font-mono text-text-secondary">
+          <span class="text-journal-muted dark:text-night-muted">
             {article.data.company}
           </span>
         )}
-        <span class={`text-[10px] font-mono px-2 py-0.5 rounded border uppercase tracking-wider font-semibold ${isWarning ? 'bg-amber-warning/10 text-amber-warning border-amber-warning/30' : 'bg-emerald-audit/10 text-emerald-audit border-emerald-audit/30'}`}>
+        <span class="text-journal-muted dark:text-night-muted">•</span>
+        <span class={`font-mono uppercase text-[10px] tracking-wider px-2 py-0.5 rounded border font-semibold ${isWarning ? 'bg-amber-50 dark:bg-amber-950/40 text-editorial-crimson dark:text-editorial-crimsonDark border-amber-200 dark:border-amber-900/50' : 'bg-emerald-50 dark:bg-emerald-950/40 text-editorial-emerald dark:text-editorial-emeraldDark border-emerald-200 dark:border-emerald-900/50'}`}>
           {article.data.verdict}
         </span>
-        <time class="text-xs font-mono text-text-muted ml-auto">
+        <time class="ml-auto text-journal-muted dark:text-night-muted">
           {article.data.publishedAt}
         </time>
       </div>
 
-      <h1 class="text-3xl sm:text-5xl font-extrabold font-display tracking-tight text-text-primary mb-4 leading-tight">
+      <!-- Headline -->
+      <h1 class="text-3xl sm:text-4xl lg:text-5xl font-serif font-bold tracking-tight text-journal-ink dark:text-night-ink mb-5 leading-[1.15]">
         {article.data.title}
       </h1>
 
-      <p class="text-base text-text-secondary leading-relaxed mb-6 font-sans">
-        {article.data.thesis}
-      </p>
+      <!-- Standfirst / Thesis Deck -->
+      {article.data.thesis && (
+        <p class="text-lg sm:text-xl font-serif italic text-journal-lead dark:text-night-lead leading-relaxed mb-6 font-normal">
+          {article.data.thesis}
+        </p>
+      )}
 
       <!-- Quantitative Valuation Bar -->
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 rounded-xl bg-obsidian-card border border-obsidian-border font-mono text-xs">
-        <div class="p-2 bg-obsidian/40 rounded-lg">
-          <span class="text-[10px] text-text-muted block uppercase">Reverse DCF Implied:</span>
-          <span class="text-cyan-consensus font-semibold text-sm">{article.data.reverseDcfImpliedGrowth || 'N/A'}</span>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3 rounded-lg bg-journal-card dark:bg-night-card border border-journal-border dark:border-night-border text-xs">
+        <div class="p-2.5 bg-journal-bg/60 dark:bg-night-bg/60 rounded border border-journal-border/50 dark:border-night-border/50">
+          <span class="text-[10px] font-sans uppercase tracking-wider text-journal-muted dark:text-night-muted block">Implied Growth:</span>
+          <span class="font-mono font-bold text-journal-ink dark:text-night-ink text-sm mt-0.5 block">{article.data.reverseDcfImpliedGrowth || 'N/A'}</span>
         </div>
-        <div class="p-2 bg-obsidian/40 rounded-lg">
-          <span class="text-[10px] text-text-muted block uppercase">Fair Value Normal:</span>
-          <span class="text-emerald-audit font-semibold text-sm">{article.data.targetValuation || 'N/A'}</span>
+        <div class="p-2.5 bg-journal-bg/60 dark:bg-night-bg/60 rounded border border-journal-border/50 dark:border-night-border/50">
+          <span class="text-[10px] font-sans uppercase tracking-wider text-journal-muted dark:text-night-muted block">Fair Value Model:</span>
+          <span class="font-mono font-bold text-editorial-emerald dark:text-editorial-emeraldDark text-sm mt-0.5 block">{article.data.targetValuation || 'N/A'}</span>
         </div>
-        <div class="p-2 bg-obsidian/40 rounded-lg">
-          <span class="text-[10px] text-text-muted block uppercase">M-Score Risk:</span>
-          <span class="text-amber-warning font-semibold text-sm">{article.data.beneishMScore || 'Normal'}</span>
+        <div class="p-2.5 bg-journal-bg/60 dark:bg-night-bg/60 rounded border border-journal-border/50 dark:border-night-border/50">
+          <span class="text-[10px] font-sans uppercase tracking-wider text-journal-muted dark:text-night-muted block">M-Score Risk:</span>
+          <span class="font-mono font-bold text-journal-lead dark:text-night-lead text-sm mt-0.5 block">{article.data.beneishMScore || 'Normal'}</span>
         </div>
-        <div class="p-2 bg-obsidian/40 rounded-lg">
-          <span class="text-[10px] text-text-muted block uppercase">SEC Receipts:</span>
-          <span class="text-text-primary font-semibold text-sm">{article.data.citations?.length || 0} Audited</span>
+        <div class="p-2.5 bg-journal-bg/60 dark:bg-night-bg/60 rounded border border-journal-border/50 dark:border-night-border/50">
+          <span class="text-[10px] font-sans uppercase tracking-wider text-journal-muted dark:text-night-muted block">Audited Sources:</span>
+          <span class="font-mono font-bold text-editorial-blue dark:text-editorial-blueDark text-sm mt-0.5 block">{article.data.citations?.length || 0} Receipts</span>
         </div>
       </div>
     </header>
 
-    <!-- Top: Faceless Video Player -->
+    <!-- Top: Executive Video Briefing -->
     <VideoPlayer
       video={article.data.video}
       ticker={article.data.ticker}
       caseId={article.data.caseId}
     />
 
-    <!-- Article Prose Body with Interactive Citations -->
+    <!-- Article Narrative Body with Newsreader Serif Typography -->
     <div
       id="article-content"
-      class="prose prose-invert prose-emerald max-w-none text-text-secondary leading-relaxed font-sans text-base
-        prose-headings:font-display prose-headings:text-text-primary prose-headings:font-bold prose-headings:tracking-tight
-        prose-h2:text-2xl prose-h2:mt-12 prose-h2:mb-4 prose-h2:border-b prose-h2:border-obsidian-border prose-h2:pb-2
+      class="prose prose-journal max-w-none font-serif text-[18px] sm:text-[19px] leading-[1.85] text-journal-ink dark:text-night-ink
+        prose-headings:font-serif prose-headings:font-bold prose-headings:tracking-tight prose-headings:text-journal-ink dark:prose-headings:text-night-ink
+        prose-h2:text-2xl sm:prose-h2:text-3xl prose-h2:mt-12 prose-h2:mb-4 prose-h2:border-b prose-h2:border-journal-border dark:prose-h2:border-night-border prose-h2:pb-2
         prose-h3:text-xl prose-h3:mt-8 prose-h3:mb-3
-        prose-p:mb-5 prose-p:leading-relaxed
-        prose-ul:my-4 prose-li:my-1
-        prose-strong:text-text-primary prose-strong:font-semibold
-        prose-hr:border-obsidian-border prose-hr:my-8
-        prose-blockquote:border-l-2 prose-blockquote:border-emerald-audit/70 prose-blockquote:bg-obsidian-card/40 prose-blockquote:p-4 prose-blockquote:rounded-r-xl"
+        prose-p:mb-6 prose-p:leading-[1.85]
+        prose-strong:font-semibold prose-strong:text-journal-ink dark:prose-strong:text-night-ink
+        prose-ul:my-5 prose-li:my-1.5
+        prose-hr:border-journal-border dark:prose-hr:border-night-border prose-hr:my-10
+        prose-blockquote:font-serif prose-blockquote:italic prose-blockquote:border-l-2 prose-blockquote:border-editorial-blue dark:prose-blockquote:border-editorial-blueDark prose-blockquote:bg-journal-card dark:prose-blockquote:bg-night-card prose-blockquote:p-4 sm:prose-blockquote:p-5 prose-blockquote:rounded-r-lg prose-blockquote:shadow-sm
+        prose-table:w-full prose-table:text-xs prose-table:my-8 prose-table:border-collapse prose-table:font-sans
+        prose-th:font-sans prose-th:font-semibold prose-th:text-xs prose-th:text-journal-lead dark:prose-th:text-night-lead prose-th:uppercase prose-th:tracking-wider prose-th:py-2.5 prose-th:px-3 prose-th:border-b-2 prose-th:border-journal-border dark:prose-th:border-night-border prose-th:bg-journal-bg/70 dark:prose-th:bg-night-bg/70
+        prose-td:py-2.5 prose-td:px-3 prose-td:border-b prose-td:border-journal-border/60 dark:prose-td:border-night-border/60 prose-td:font-sans prose-td:text-xs prose-td:text-journal-secondary dark:prose-td:text-night-secondary"
     >
       <Content />
     </div>
 
-    <!-- Authoritative Regulatory Receipts Bibliography -->
+    <!-- Authoritative Regulatory References Section -->
     <FinancialReceipts citations={article.data.citations || []} />
 
-    <!-- Interactive Popover & Mobile Drawer Engine -->
+    <!-- Wikipedia-Style Hover Card Citation Popover -->
     <CitationPopover citations={article.data.citations || []} />
-  </div>
+  </article>
 </Layout>
