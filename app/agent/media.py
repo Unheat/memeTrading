@@ -515,10 +515,11 @@ Instructions:
 
 
 def generate_reel_script(
-    article_markdown: str,
-    model: Any,
+    article_markdown: str = "",
+    model: Any = None,
     character_pair: str = "peter_stewie",
     reel_temperature: float = 0.4,
+    source_text: str | None = None,
 ) -> tuple[list[dict[str, Any]], str, str]:
     """Generate a Faceless-compatible video reel dialogue script from the published article.
 
@@ -527,10 +528,12 @@ def generate_reel_script(
         model: LLM model instance.
         character_pair: Character duo ('peter_stewie' or 'rick_morty').
         reel_temperature: Temperature for creative dialogue generation.
+        source_text: Alias for article_markdown.
 
     Returns:
         Tuple of (dialogue_json, reel_script_text, caption_text).
     """
+    effective_text = source_text if source_text is not None else article_markdown
     if character_pair == "peter_stewie":
         first_voice, second_voice = PETER_VOICE_ID, STEWIE_VOICE_ID
         cast_name = "Family Guy's Peter Griffin and Stewie Griffin"
@@ -551,9 +554,9 @@ def generate_reel_script(
         .replace("{first_voice}", first_voice)
         .replace("{second_voice}", second_voice)
     )
-    reel_prompt = f"""Create the 60–75 second viral dialogue reel based on this published research article:
+    reel_prompt = f"""Create the 60-75 second viral dialogue reel based on this published research article:
 ```markdown
-{article_markdown}
+{effective_text}
 ```
 """
     reel_model = (

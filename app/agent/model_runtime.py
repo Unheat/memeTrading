@@ -17,6 +17,8 @@ from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 import litellm
 
+litellm.drop_params = True
+
 from app.agent.context import ModelContextPolicy, TokenCounter, conservative_token_counter
 from app.config import ModelEndpointConfig, load_config
 

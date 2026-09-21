@@ -16,11 +16,11 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # Subprocess timeout limits (seconds)
-DOCTOR_TIMEOUT_SECONDS = 15
-AUDIO_TIMEOUT_SECONDS = 180
-VIDEO_TIMEOUT_SECONDS = 300
-CHARACTER_TIMEOUT_SECONDS = 300
-CAPTION_TIMEOUT_SECONDS = 300
+DOCTOR_TIMEOUT_SECONDS = 30
+AUDIO_TIMEOUT_SECONDS = 300
+VIDEO_TIMEOUT_SECONDS = 600
+CHARACTER_TIMEOUT_SECONDS = 900
+CAPTION_TIMEOUT_SECONDS = 900
 
 
 class FacelessBridge:
@@ -134,6 +134,7 @@ class FacelessBridge:
         audio_path: Path,
         topic_slug: str,
         output_dir: Path,
+        template_name: str = "minecraft2.mp4",
     ) -> Path | None:
         """Invoke generate-video.mjs to combine audio with background template.
 
@@ -141,6 +142,7 @@ class FacelessBridge:
             audio_path: Path to the full-dialogue.mp3 audio file.
             topic_slug: Short topic identifier for directory naming.
             output_dir: Root output directory for faceless artifacts.
+            template_name: Specific template filename (defaults to minecraft2.mp4).
 
         Returns:
             Path to the generated base video, or None on failure.
@@ -162,6 +164,8 @@ class FacelessBridge:
             topic_slug,
             "--output",
             str(output_dir.resolve()),
+            "--template",
+            template_name,
         ]
 
         try:
@@ -310,6 +314,7 @@ class FacelessBridge:
         topic_slug: str,
         output_dir: Path,
         fish_model: str | None = None,
+        template_name: str = "minecraft2.mp4",
     ) -> Path | None:
         """Execute the full 4-stage Faceless pipeline to produce a finished video reel.
 
@@ -321,7 +326,8 @@ class FacelessBridge:
             dialogue_path: Path to the dialogue.json script file.
             topic_slug: Short topic identifier for directory naming.
             output_dir: Root output directory for faceless artifacts.
-            fish_model: Optional Fish Audio model override (e.g. "s2", "s2-free").
+            fish_model: Optional Fish Audio model override (e.g. "s2.1-pro-free").
+            template_name: Video template filename (defaults to minecraft2.mp4).
 
         Returns:
             Path to the final rendered video (.mp4), or None if any stage failed.
@@ -343,8 +349,8 @@ class FacelessBridge:
             logger.warning("compose_reel: Audio generation failed; aborting video pipeline.")
             return None
 
-        logger.info("compose_reel: Stage 2/4 — Muxing audio over background template...")
-        video_path = self.generate_video(audio_path, topic_slug, output_dir)
+        logger.info("compose_reel: Stage 2/4 — Muxing audio over background template (%s)...", template_name)
+        video_path = self.generate_video(audio_path, topic_slug, output_dir, template_name=template_name)
         if video_path is None:
             logger.warning("compose_reel: Video generation failed; aborting video pipeline.")
             return None
@@ -359,7 +365,7 @@ class FacelessBridge:
         logger.info("compose_reel: Stage 4/4 — Burning animated captions...")
         final_video = self.add_captions(video_path, dialogue_path, audio_dir, topic_slug, output_dir)
         if final_video is None:
-            logger.warning("compose_reel: Caption burn failed; video may be incomplete.")
+            logger.error("compose_reel: Caption burn failed; aborting video pipeline.")
             return None
 
         logger.info("compose_reel: Finished. Video reel: %s", final_video)

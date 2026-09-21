@@ -53,25 +53,30 @@ def generate_video_for_case(
         raise FileNotFoundError(f"Neither article.md nor memo.md found in {case_path}")
 
     cfg = load_config()
-    runtime = create_default_model_runtime()
-
-    logger.info("Synthesizing viral video dialogue using character pair '%s'...", character_pair)
-    dialogue_json, caption_text, reel_script_text = generate_reel_script(
-        source_text=source_text,
-        model=runtime.model,
-        character_pair=character_pair,
-        reel_temperature=cfg.media.reel_temperature,
-    )
 
     faceless_dir = case_path / "faceless"
     faceless_dir.mkdir(parents=True, exist_ok=True)
-
     dialogue_path = faceless_dir / "dialogue.json"
-    dialogue_path.write_text(json.dumps(dialogue_json, indent=2), encoding="utf-8")
-    (faceless_dir / "source-script.txt").write_text(reel_script_text, encoding="utf-8")
-    (faceless_dir / "reel_script.txt").write_text(reel_script_text, encoding="utf-8")
-    (faceless_dir / "caption.txt").write_text(caption_text, encoding="utf-8")
-    logger.info("Dialogue and caption written to %s", faceless_dir)
+
+    # Reuse existing dialogue if already synthesized
+    if not dialogue_path.exists() or dialogue_path.stat().st_size == 0:
+        runtime = create_default_model_runtime()
+
+        logger.info("Synthesizing viral video dialogue using character pair '%s'...", character_pair)
+        dialogue_json, caption_text, reel_script_text = generate_reel_script(
+            article_markdown=source_text,
+            model=runtime.model,
+            character_pair=character_pair,
+            reel_temperature=cfg.media.reel_temperature,
+        )
+
+        dialogue_path.write_text(json.dumps(dialogue_json, indent=2), encoding="utf-8")
+        (faceless_dir / "source-script.txt").write_text(reel_script_text, encoding="utf-8")
+        (faceless_dir / "reel_script.txt").write_text(reel_script_text, encoding="utf-8")
+        (faceless_dir / "caption.txt").write_text(caption_text, encoding="utf-8")
+        logger.info("Dialogue and caption written to %s", faceless_dir)
+    else:
+        logger.info("Found existing dialogue script at %s", dialogue_path)
 
     if script_only:
         return None

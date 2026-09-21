@@ -67,7 +67,7 @@ media:
   # Options:
   #   - "s2": Flagship Fish Audio model (highest audio quality & emotion inflection)
   #   - "s2-free": Free tier Fish Audio model
-  fish_model: "s2-free"
+  fish_model: "s2.1-pro-free"
 
 # ------------------------------------------------------------------------------
 # 3. RESEARCH PARAMETERS & EXECUTION LIMITS

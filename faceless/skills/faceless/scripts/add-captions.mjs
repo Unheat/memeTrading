@@ -178,7 +178,7 @@ try {
     '-map', '0:a:0',
     '-c:v', 'libx264',
     '-crf', '18',
-    '-preset', 'medium',
+    '-preset', 'fast',
     '-c:a', 'copy',
     '-movflags', '+faststart',
     temporaryVideo,

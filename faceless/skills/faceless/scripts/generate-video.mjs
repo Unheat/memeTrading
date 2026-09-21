@@ -56,14 +56,32 @@ const finalVideo = join(videoDirectory, 'final-faceless-reel.mp4');
 const temporaryVideo = `${finalVideo}.part.mp4`;
 
 await access(audioPath);
-const templates = (await readdir(templateDirectory, {withFileTypes: true}))
-  .filter((entry) => entry.isFile() && /\.(mp4|mov|mkv|webm)$/i.test(entry.name))
-  .map((entry) => join(templateDirectory, entry.name));
-if (templates.length === 0) {
-  throw new Error(`No video templates found in ${templateDirectory}.`);
-}
+  const templates = (await readdir(templateDirectory, {withFileTypes: true}))
+    .filter((entry) => entry.isFile() && /\.(mp4|mov|mkv|webm)$/i.test(entry.name))
+    .map((entry) => join(templateDirectory, entry.name));
+  if (templates.length === 0) {
+    throw new Error(`No video templates found in ${templateDirectory}.`);
+  }
 
-const template = templates[Math.floor(Math.random() * templates.length)];
+  let template;
+  if (options.template) {
+    const candidatePath = resolve(options.template);
+    try {
+      await access(candidatePath);
+      template = candidatePath;
+    } catch {
+      template = join(templateDirectory, options.template);
+      await access(template);
+    }
+  } else {
+    const preferredTemplate = join(templateDirectory, 'minecraft2.mp4');
+    try {
+      await access(preferredTemplate);
+      template = preferredTemplate;
+    } catch {
+      template = templates[Math.floor(Math.random() * templates.length)];
+    }
+  }
 await mkdir(videoDirectory, {recursive: true});
 await rm(temporaryVideo, {force: true});
 console.log(`Using template: ${template}`);

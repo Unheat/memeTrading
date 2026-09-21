@@ -6,7 +6,7 @@ import {ensureFfmpeg} from './ffmpeg.mjs';
 import {loadFishApiKey} from './fish-config.mjs';
 
 const FISH_TTS_URL = 'https://api.fish.audio/v1/tts';
-const FISH_MODEL = process.env.FISH_MODEL?.trim() || 's2';
+const FISH_MODEL = process.env.FISH_MODEL?.trim() || 's2.1-pro-free';
 const PETER_VOICE_ID = 'a84d19016bc34098b3c89d78f9299e33';
 const STEWIE_VOICE_ID = 'e91c4f5974f149478a35affe820d02ac';
 const RICK_VOICE_ID = 'd2e75a3e3fd6419893057c02a375a113';
@@ -86,7 +86,8 @@ async function generateLine({fishApiKey, line, filePath}) {
   });
 
   if (!response.ok) {
-    throw new Error(`Fish Audio could not generate line ${line.index} (HTTP ${response.status}).`);
+    const errorText = await response.text();
+    throw new Error(`Fish Audio failed for line ${line.index} (HTTP ${response.status}): ${errorText}`);
   }
 
   const bytes = Buffer.from(await response.arrayBuffer());
