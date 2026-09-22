@@ -16,7 +16,13 @@ import re
 import sys
 from pathlib import Path
 
-from app.agent.media import generate_reel_script
+from app.agent.media import (
+    PETER_VOICE_ID,
+    STEWIE_VOICE_ID,
+    RICK_VOICE_ID,
+    MORTY_VOICE_ID,
+    generate_reel_script,
+)
 from app.agent.model_runtime import create_default_model_runtime
 from app.cli.publish import find_case_dir
 from app.config import load_config
@@ -58,12 +64,28 @@ def generate_video_for_case(
     faceless_dir.mkdir(parents=True, exist_ok=True)
     dialogue_path = faceless_dir / "dialogue.json"
 
-    # Reuse existing dialogue if already synthesized
-    if not dialogue_path.exists() or dialogue_path.stat().st_size == 0:
-        runtime = create_default_model_runtime()
+    # Check if dialogue needs to be synthesized or re-synthesized for the requested character pair
+    should_synthesize = not dialogue_path.exists() or dialogue_path.stat().st_size == 0
+    if not should_synthesize:
+        try:
+            existing_lines = json.loads(dialogue_path.read_text(encoding="utf-8"))
+            target_ids = {PETER_VOICE_ID, STEWIE_VOICE_ID} if character_pair == "peter_stewie" else {RICK_VOICE_ID, MORTY_VOICE_ID}
+            if existing_lines and existing_lines[0].get("voiceId") not in target_ids:
+                logger.info("Existing dialogue used different voices; re-synthesizing for '%s'...", character_pair)
+                should_synthesize = True
+        except Exception:
+            should_synthesize = True
+
+    if should_synthesize:
+        runtime = create_default_model_runtime(
+            model=cfg.llm.model,
+            base_url=cfg.llm.base_url,
+            temperature=cfg.llm.temperature,
+            endpoints=cfg.llm.models,
+        )
 
         logger.info("Synthesizing viral video dialogue using character pair '%s'...", character_pair)
-        dialogue_json, caption_text, reel_script_text = generate_reel_script(
+        dialogue_json, reel_script_text, caption_text = generate_reel_script(
             article_markdown=source_text,
             model=runtime.model,
             character_pair=character_pair,
@@ -76,7 +98,7 @@ def generate_video_for_case(
         (faceless_dir / "caption.txt").write_text(caption_text, encoding="utf-8")
         logger.info("Dialogue and caption written to %s", faceless_dir)
     else:
-        logger.info("Found existing dialogue script at %s", dialogue_path)
+        logger.info("Found existing dialogue script matching '%s' at %s", character_pair, dialogue_path)
 
     if script_only:
         return None

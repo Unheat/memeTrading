@@ -187,15 +187,34 @@ def publish_case(
 
     published_at = inv_data.get("as_of") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     thesis = inv_data.get("thesis") or "Forensic Accounting Investigation & Reverse DCF Analysis"
-    verdict = "Forensic Warning" if "Warning" in thesis or "Bearish" in thesis else "Bullish Audit"
+
+    ic_verdict = inv_data.get("ic_verdict", {}) or {}
+    raw_verdict = str(ic_verdict.get("verdict") or "").upper()
+    if "BULL" in raw_verdict or "BUY" in raw_verdict:
+        verdict = "Bullish Audit"
+    elif "CAUTION" in raw_verdict or "WATCH" in raw_verdict:
+        verdict = "Validation Watch"
+    elif "NEUTRAL" in raw_verdict or "HOLD" in raw_verdict:
+        verdict = "Neutral"
+    else:
+        verdict = "Forensic Warning"
 
     # Reverse DCF and valuation metrics
-    valuation = inv_data.get("valuation") or {}
-    implied_growth = valuation.get("implied_growth_rate") or valuation.get("implied_fcf_growth")
-    fair_value = valuation.get("fair_value") or valuation.get("estimated_fair_value")
+    quant = inv_data.get("quant_report", {}) or {}
+    valuation = quant.get("valuation") or inv_data.get("valuation") or {}
+    rev_dcf = valuation.get("reverse_dcf") or {}
+    implied_growth = rev_dcf.get("implied_growth_pct") or rev_dcf.get("implied_fcf_growth_rate") or valuation.get("implied_growth_rate")
 
-    rev_dcf_str = f"{float(implied_growth) * 100:.1f}%" if implied_growth is not None else None
+    base_case = valuation.get("cases", {}).get("base", {})
+    fair_value = base_case.get("fair_value_per_share") or valuation.get("fair_value") or valuation.get("estimated_fair_value")
+
+    rev_dcf_str = str(implied_growth) if isinstance(implied_growth, str) else (f"{float(implied_growth) * 100:.1f}%" if implied_growth is not None else None)
     target_val_str = f"${float(fair_value):.2f}" if fair_value is not None else None
+
+    # M-Score risk
+    forensic = inv_data.get("forensic_report", {}) or {}
+    m_score_val = forensic.get("beneish_m_score") or forensic.get("verdict")
+    beneish_m_str = str(m_score_val).replace("_", " ").title() if m_score_val else None
 
     # Check for video reel
     faceless_video_dir = case_path / "faceless" / "video"
@@ -221,6 +240,8 @@ def publish_case(
         else:
             logger.info("YouTube API not configured. To upload automatically, provide client_secrets.json.")
 
+    clean_slug = re.sub(r"[^a-z0-9]+", "-", f"{ticker.lower()}-{case_id.lower()}").strip("-")
+
     if effective_yt_id:
         video_config = {
             "provider": "youtube",
@@ -228,20 +249,68 @@ def publish_case(
             "aspectRatio": "9:16",
             "title": f"{ticker} Faceless Video Reel",
         }
-    elif video_path:
-        # Fallback to local / static copy
+    elif video_path and video_path.exists():
+        # Copy or optimize video for Cloudflare Edge delivery (<25MB limit)
+        web_videos_dir = web_path / "public" / "videos"
+        web_videos_dir.mkdir(parents=True, exist_ok=True)
+        target_video = web_videos_dir / f"{clean_slug}.mp4"
+
+        source_size_mb = video_path.stat().st_size / (1024 * 1024)
+        if source_size_mb > 24:
+            logger.info("Optimizing video (%.1fMB) for Cloudflare Edge delivery (<24MB)...", source_size_mb)
+            ffmpeg_cand = Path(__file__).resolve().parents[2] / "faceless" / "skills" / "faceless" / ".runtime" / "node_modules" / "ffmpeg-static" / "ffmpeg"
+            ffmpeg_bin = str(ffmpeg_cand) if ffmpeg_cand.exists() else "ffmpeg"
+            opt_cmd = [
+                ffmpeg_bin, "-y", "-i", str(video_path),
+                "-vf", "scale=720:1280",
+                "-c:v", "libx264", "-preset", "fast",
+                "-b:v", "1400k", "-maxrate", "1600k", "-bufsize", "2500k",
+                "-c:a", "aac", "-b:a", "96k",
+                "-movflags", "+faststart",
+                str(target_video),
+            ]
+            try:
+                subprocess.run(opt_cmd, capture_output=True, check=True)
+                logger.info("Web video optimized: %s (%.1fMB)", target_video.name, target_video.stat().st_size / (1024 * 1024))
+            except Exception as e:
+                logger.warning("Video optimization failed, copying directly: %s", e)
+                shutil.copy2(video_path, target_video)
+        else:
+            shutil.copy2(video_path, target_video)
+
         video_config = {
-            "provider": "youtube",
-            "id": "dQw4w9WgXcQ",  # Demo fallback ID if un-uploaded
+            "provider": "local",
+            "url": f"/videos/{clean_slug}.mp4",
             "aspectRatio": "9:16",
             "title": f"{ticker} Faceless Video Reel",
         }
 
     # Extract Citations
     citations: list[dict[str, Any]] = []
-    if "citation_cards" in inv_data:
+    if "citation_cards" in inv_data and inv_data["citation_cards"]:
         citations = inv_data["citation_cards"]
-    elif "evidence" in inv_data:
+    else:
+        try:
+            from app.agent.media import build_source_registry
+            cards = build_source_registry(inv_data)
+            if cards:
+                citations = [
+                    {
+                        "index": c.index,
+                        "sourceType": c.source_type,
+                        "title": c.title,
+                        "url": c.url,
+                        "accession": c.accession,
+                        "filingDate": c.filing_date,
+                        "facts": list(c.facts),
+                        "quotes": list(c.quotes),
+                    }
+                    for c in cards
+                ]
+        except Exception as exc:
+            logger.debug("build_source_registry fallback failed: %s", exc)
+
+    if not citations and "evidence" in inv_data:
         for idx, ev in enumerate(inv_data["evidence"][:10], start=1):
             citations.append({
                 "index": idx,
@@ -256,8 +325,7 @@ def publish_case(
     if not citations:
         citations = parse_citations_from_article(raw_article)
 
-    # Format destination slug and MD path
-    clean_slug = re.sub(r"[^a-z0-9]+", "-", f"{ticker.lower()}-{case_id.lower()}").strip("-")
+    # Format destination MD path
     articles_dir = web_path / "src" / "content" / "articles"
     articles_dir.mkdir(parents=True, exist_ok=True)
     target_md = articles_dir / f"{clean_slug}.md"
@@ -281,9 +349,12 @@ def publish_case(
         frontmatter_dict["reverseDcfImpliedGrowth"] = rev_dcf_str
     if target_val_str:
         frontmatter_dict["targetValuation"] = target_val_str
+    if beneish_m_str:
+        frontmatter_dict["beneishMScore"] = beneish_m_str
     if video_config:
         frontmatter_dict["video"] = video_config
     if citations:
+        frontmatter_dict["citations"] = citations
         frontmatter_dict["citations"] = citations
 
     frontmatter_yaml = json.dumps(frontmatter_dict, indent=2)
@@ -303,11 +374,17 @@ def publish_case(
         build_cmd = ["npm", "run", "build"]
         deploy_cmd = ["npx", "wrangler", "deploy"]
 
+        # Ensure Node >= 22 is available for Wrangler
+        node_env = os.environ.copy()
+        nvm_node_dirs = sorted(Path.home().glob(".nvm/versions/node/v22*/bin"), reverse=True)
+        if nvm_node_dirs:
+            node_env["PATH"] = f"{nvm_node_dirs[0]}:{node_env.get('PATH', '')}"
+
         try:
-            b_res = subprocess.run(build_cmd, cwd=str(web_path), capture_output=True, text=True, check=True)
+            b_res = subprocess.run(build_cmd, cwd=str(web_path), capture_output=True, text=True, check=True, env=node_env)
             logger.info("Astro build succeeded:\n%s", b_res.stdout[-400:])
 
-            d_res = subprocess.run(deploy_cmd, cwd=str(web_path), capture_output=True, text=True, check=True)
+            d_res = subprocess.run(deploy_cmd, cwd=str(web_path), capture_output=True, text=True, check=True, env=node_env)
             logger.info("Wrangler deploy succeeded:\n%s", d_res.stdout)
             is_deployed = True
 

@@ -197,6 +197,7 @@ def main() -> int:
     """Execute main CLI workflow."""
     args = parse_args()
     setup_logging(args.verbose)
+    config = load_config()
 
     # Fast path 1: Studio GUI launcher
     if args.studio:
@@ -212,7 +213,7 @@ def main() -> int:
             target_case = find_case_dir(args.video_for_case)
             rendered = generate_video_for_case(
                 target_case,
-                character_pair=args.character_pair or "rick_morty",
+                character_pair=args.character_pair or config.media.character_pair,
             )
             if rendered:
                 print(f"\n✅ Video reel rendered successfully: {rendered}")
@@ -239,8 +240,6 @@ def main() -> int:
         except Exception as exc:
             print(f"\n❌ Error publishing case: {exc}", file=sys.stderr)
             return 1
-
-    config = load_config()
 
     print("=" * 70)
     print(" 🔎 PROMPT-FIRST DEEP RESEARCH AGENT")

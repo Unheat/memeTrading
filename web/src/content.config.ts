@@ -6,10 +6,10 @@ const citationSchema = z.object({
   sourceType: z.string().default('SEC Filing'),
   title: z.string(),
   url: z.string(),
-  accession: z.string().optional(),
-  filingDate: z.string().optional(),
+  accession: z.string().nullable().optional(),
+  filingDate: z.string().nullable().optional(),
   facts: z.array(z.string()).default([]),
-  quotes: z.string().optional(),
+  quotes: z.union([z.string(), z.array(z.string())]).optional(),
 });
 
 const videoSchema = z.object({
@@ -29,7 +29,7 @@ const articles = defineCollection({
     company: z.string().optional(),
     publishedAt: z.string(),
     thesis: z.string(),
-    verdict: z.enum(['Forensic Warning', 'Bullish Audit', 'Caution', 'Neutral']).default('Forensic Warning'),
+    verdict: z.enum(['Forensic Warning', 'Bullish Audit', 'Caution', 'Neutral', 'Validation Watch', 'Avoid']).default('Forensic Warning'),
     reverseDcfImpliedGrowth: z.string().optional(),
     targetValuation: z.string().optional(),
     beneishMScore: z.string().optional(),
