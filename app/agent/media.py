@@ -44,6 +44,11 @@ EDITORIAL FORMAT & STRUCTURE:
    - `## IV. Institutional Asymmetry & Quantitative Kill Criteria`
 5. FINANCIAL TABLES: Present financial data in clean, well-aligned Markdown tables with explicit units in headers, e.g. `| Metric ($ in Millions) | FY23 | FY24 | FY25E |`. Ensure numbers are cleanly formatted (e.g., `$8.12B`, `28.2%`).
 6. VALUATION CALLOUTS: Present valuation metrics, Reverse DCF implied growth, and Reward-to-Risk asymmetry in structured bullet points or callout cards. NEVER use raw LaTeX formula blocks (e.g. do NOT write `$$\\frac{...}{...}$$` with citation tags inside equations).
+7. DIAGRAMS & CHARTS (STRICT ZERO-ASCII POLICY):
+   - STRICTLY FORBIDDEN: NEVER draw raw ASCII art boxes (e.g. `+-----+`, `|`, `▼`), ASCII axis plots, or text-based line drawings. They look cheap and disrupt the publication's design.
+   - CAUSAL FLYWHEELS & VALUE CHAINS: For multi-step processes, supply-chain links, or feedback loops, author clean Mermaid.js vector diagrams inside ```mermaid code blocks (e.g. `flowchart TD\n  A["Step A"] --> B["Step B"]`).
+   - REVENUE ESCALATIONS & SCHEDULES: Present multi-year revenue projections, consensus estimates, and CapEx comparisons as clean Markdown tables with explicit columns for Horizon, Amount ($), and YoY/QoQ growth rates.
+   - ASYMMETRIC SCENARIOS: Present valuation ranges (Bear Floor, Base Fair Value, High Case, Current Price) in clean comparative tables.
 
 STRICT CITATION HYGIENE (WIKIPEDIA STYLE):
 1. Place citation tags immediately adjacent to the specific fact, statistic, or right after the punctuation mark (e.g., `...gross margin compressed to 28.2%.[1]` or `...free cash flow was -$140M.[3]`).

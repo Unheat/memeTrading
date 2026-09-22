@@ -113,7 +113,9 @@ const isWarning = article.data.verdict === 'Forensic Warning';
         prose-blockquote:font-serif prose-blockquote:italic prose-blockquote:border-l-2 prose-blockquote:border-editorial-blue dark:prose-blockquote:border-editorial-blueDark prose-blockquote:bg-journal-card dark:prose-blockquote:bg-night-card prose-blockquote:p-4 sm:prose-blockquote:p-5 prose-blockquote:rounded-r-lg prose-blockquote:shadow-sm
         prose-table:w-full prose-table:text-xs prose-table:my-8 prose-table:border-collapse prose-table:font-sans
         prose-th:font-sans prose-th:font-semibold prose-th:text-xs prose-th:text-journal-lead dark:prose-th:text-night-lead prose-th:uppercase prose-th:tracking-wider prose-th:py-2.5 prose-th:px-3 prose-th:border-b-2 prose-th:border-journal-border dark:prose-th:border-night-border prose-th:bg-journal-bg/70 dark:prose-th:bg-night-bg/70
-        prose-td:py-2.5 prose-td:px-3 prose-td:border-b prose-td:border-journal-border/60 dark:prose-td:border-night-border/60 prose-td:font-sans prose-td:text-xs prose-td:text-journal-secondary dark:prose-td:text-night-secondary"
+        prose-td:py-2.5 prose-td:px-3 prose-td:border-b prose-td:border-journal-border/60 dark:prose-td:border-night-border/60 prose-td:font-sans prose-td:text-xs prose-td:text-journal-secondary dark:prose-td:text-night-secondary
+        prose-pre:bg-journal-card dark:prose-pre:bg-night-card prose-pre:border prose-pre:border-journal-border dark:prose-pre:border-night-border prose-pre:text-journal-ink dark:prose-pre:text-night-ink prose-pre:font-mono prose-pre:text-xs prose-pre:p-4 sm:prose-pre:p-5 prose-pre:rounded-lg prose-pre:shadow-sm
+        prose-code:text-journal-ink dark:prose-code:text-night-ink prose-code:font-mono prose-code:text-xs"
     >
       <Content />
     </div>
@@ -125,3 +127,27 @@ const isWarning = article.data.verdict === 'Forensic Warning';
     <CitationPopover citations={article.data.citations || []} />
   </article>
 </Layout>
+
+<style is:global>
+  .mermaid {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 2.25rem 0;
+    padding: 1.5rem 1rem;
+    background-color: #ECE7DB;
+    border: 1px solid #DCD5C4;
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    overflow-x: auto;
+  }
+  .dark .mermaid {
+    background-color: #1A1E26;
+    border-color: #292F3D;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+  .mermaid svg {
+    max-width: 100%;
+    height: auto;
+  }
+</style>
