@@ -58,6 +58,12 @@ def test_get_sec_financials_success():
     assert result.stock_based_compensation["2026-Q2"] == pytest.approx(150_000_000)
     assert result.current_liabilities["2026-Q2"] == pytest.approx(3_500_000_000)
 
+    # Check Deterministic DIO and DSO
+    # COGS = 7500M - 2400M = 5100M. DIO = (3100 / 5100) * 91.25 = 55.5 days
+    assert result.dio["2026-Q2"] == pytest.approx(55.5, abs=0.1)
+    # DSO = (1500 / 7500) * 91.25 = 18.25 days
+    assert result.dso["2026-Q2"] == pytest.approx(18.25, abs=0.1)
+
     # Check FCF & TTM FCF: (2000-1200) + (1800-1100) + (1600-1000) + (1500-950) = 800 + 700 + 600 + 550 = 2650M
     assert result.fcf["2026-Q2"] == pytest.approx(800_000_000)
     assert result.ttm_fcf == pytest.approx(2_650_000_000)

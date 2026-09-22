@@ -13,7 +13,7 @@ def _is_finite(value: float | None) -> bool:
 SMA_STATUSES = ("above", "below", "unavailable")
 FIELD_STATUSES = ("ok", "unavailable")
 RETURN_KEYS = ("1d", "5d", "1m", "3m")
-FUNDAMENTAL_KEYS = ("market_cap", "shares_outstanding", "short_interest_pct")
+FUNDAMENTAL_KEYS = ("market_cap", "shares_outstanding", "short_interest_pct", "beta")
 
 
 @dataclass(frozen=True)

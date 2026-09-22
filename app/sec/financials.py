@@ -47,6 +47,8 @@ class SecFinancialsResult:
     current_liabilities: dict[str, float | None] = field(default_factory=dict)
     fcf: dict[str, float | None] = field(default_factory=dict)
     ttm_fcf: float | None = None
+    dio: dict[str, float | None] = field(default_factory=dict)
+    dso: dict[str, float | None] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to JSON-serializable dictionary."""
@@ -80,6 +82,8 @@ class SecFinancialsResult:
             "current_liabilities": dict(self.current_liabilities),
             "fcf": dict(self.fcf),
             "ttm_fcf": self.ttm_fcf,
+            "dio": dict(self.dio),
+            "dso": dict(self.dso),
         }
 
     @classmethod
@@ -115,6 +119,8 @@ class SecFinancialsResult:
             current_liabilities=dict(data.get("current_liabilities", {})),
             fcf=dict(data.get("fcf", {})),
             ttm_fcf=float(data["ttm_fcf"]) if data.get("ttm_fcf") is not None else None,
+            dio=dict(data.get("dio", {})),
+            dso=dict(data.get("dso", {})),
         )
 
 
@@ -552,6 +558,8 @@ def get_sec_financials(ticker: str, periods: int = 4, as_of_date: str | None = N
                 provider="sec_edgar_foreign",
                 as_of=as_of,
                 error_message="Foreign Private Issuer reports under IFRS via Form 20-F/6-K (no standard US-GAAP XBRL). Use search_sec_evidence, read_sec_evidence, or company research fundamentals for financial metrics.",
+                dio={},
+                dso={},
             )
 
         return SecFinancialsResult(
@@ -574,6 +582,8 @@ def get_sec_financials(ticker: str, periods: int = 4, as_of_date: str | None = N
             provider="sec_xbrl",
             as_of=as_of,
             error_message=str(exc),
+            dio={},
+            dso={},
         )
 
     period_list = list(raw.get("periods", []))
@@ -655,6 +665,30 @@ def get_sec_financials(ticker: str, periods: int = 4, as_of_date: str | None = N
     else:
         ttm_fcf = None
 
+    # Calculate deterministic DIO (Days Inventory Outstanding) and DSO (Days Sales Outstanding)
+    dio: dict[str, float | None] = {}
+    dso: dict[str, float | None] = {}
+    for p in period_list:
+        days = 365.0 if "FY" in str(p) else 91.25
+        r_val = rev.get(p)
+        gp_val = gp.get(p)
+        inv_val = inv.get(p)
+        ar_val = ar.get(p)
+
+        if r_val is not None and gp_val is not None:
+            cogs = r_val - gp_val
+            if cogs > 0 and inv_val is not None:
+                dio[p] = round((inv_val / cogs) * days, 1)
+            else:
+                dio[p] = None
+        else:
+            dio[p] = None
+
+        if r_val is not None and r_val > 0 and ar_val is not None:
+            dso[p] = round((ar_val / r_val) * days, 1)
+        else:
+            dso[p] = None
+
     return SecFinancialsResult(
         ticker=clean_ticker,
         status="ok",
@@ -685,4 +719,6 @@ def get_sec_financials(ticker: str, periods: int = 4, as_of_date: str | None = N
         current_liabilities=cl,
         fcf=fcf,
         ttm_fcf=ttm_fcf,
+        dio=dio,
+        dso=dso,
     )

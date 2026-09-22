@@ -143,10 +143,12 @@ def get_market_data(
         mkt_cap = _finite(info.get("market_cap"))
         shares = _finite(info.get("shares_outstanding"))
         short_interest = _finite(info.get("short_interest_pct"))
+        beta = _finite(info.get("beta"))
         fundamentals = {
             "market_cap": {"value": mkt_cap, "reliable": mkt_cap is not None},
             "shares_outstanding": {"value": shares, "reliable": shares is not None and shares > 0},
             "short_interest_pct": {"value": short_interest, "reliable": short_interest is not None},
+            "beta": {"value": beta, "reliable": beta is not None},
         }
     except MarketDataError:
         fundamentals = None

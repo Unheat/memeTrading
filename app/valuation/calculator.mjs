@@ -614,7 +614,17 @@ export function compute(model) {
   if (forwardEps || consensusTarget || bookValue || triSpec) {
     const dcfBase = dcfRange.base;
     const multipleVal = forwardEps && forwardEps > 0 ? round(forwardEps * peMultiple) : null;
-    const assetFloorVal = bookValue && bookValue > 0 ? round(bookValue * ptbvMultiple) : null;
+
+    const marketCap = inputs.current_price && inputs.shares_diluted ? inputs.current_price * inputs.shares_diluted : null;
+    const isAssetLight = Boolean(
+      bookValue !== null &&
+      (bookValue <= 0 || (marketCap && (bookValue * inputs.shares_diluted) / marketCap < 0.08))
+    );
+    const assetFloorVal = !isAssetLight && bookValue && bookValue > 0 ? round(bookValue * ptbvMultiple) : null;
+
+    const fcfYield = inputs.fcf_base && marketCap && marketCap > 0
+      ? round((inputs.fcf_base / marketCap) * 100, 2)
+      : null;
 
     let totalWeight = 0;
     let weightedSum = 0;
@@ -628,13 +638,13 @@ export function compute(model) {
       ((multipleVal && multipleVal > dcfBase * 1.5) || (consensusTarget && consensusTarget > dcfBase * 1.5))
     );
 
-    const dcfWeight = isDcfDivergent ? 0.25 : 0.40;
+    const dcfWeight = isDcfDivergent ? 0.25 : (isAssetLight ? 0.45 : 0.40);
     if (dcfBase && dcfBase > 0) {
       weightedSum += dcfBase * dcfWeight;
       totalWeight += dcfWeight;
     }
     if (multipleVal && multipleVal > 0) {
-      const multWeight = isDcfDivergent ? 0.45 : 0.35;
+      const multWeight = isDcfDivergent ? 0.45 : (isAssetLight ? 0.45 : 0.35);
       weightedSum += multipleVal * multWeight;
       totalWeight += multWeight;
     }
@@ -659,6 +669,8 @@ export function compute(model) {
       tangible_asset_floor: assetFloorVal,
       consensus_mean_target: consensusTarget,
       blended_fair_value: blendedBase,
+      fcf_yield_pct: fcfYield !== null ? `${fcfYield}%` : null,
+      is_asset_light: isAssetLight,
       dcf_divergence_flagged: isDcfDivergent,
     };
   }

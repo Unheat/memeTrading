@@ -452,12 +452,41 @@ def run_quant_analysis(state: InvestigationState) -> dict[str, Any]:
     gap_data = state.get("expectation_gap") or {}
     dyn_assumptions = gap_data.get("assumptions") or {}
 
+    # Dynamic WACC Calibration (FRED 10-Year Treasury Yield DGS10 + Blume CAPM)
+    raw_macro = state.get("macro_series") or state.get("capability_outputs", {}).get("macro_context", {}).get("macro_series", {})
+    dgs10_data = raw_macro.get("DGS10") if isinstance(raw_macro, dict) else None
+    rf_val = _number((dgs10_data.get("latest_value") if isinstance(dgs10_data, dict) else dgs10_data))
+    rf = (rf_val / 100.0) if rf_val and rf_val > 0 else 0.0430  # Default 4.30% institutional risk-free benchmark
+
+    # Stock Beta with Blume / Bloomberg terminal adjustment (0.67*beta + 0.33)
+    raw_beta = _number((market_inputs.get("fundamentals", {}).get("beta") or {}).get("value"))
+    if raw_beta is None:
+        raw_beta = _number((market.get("fundamentals", {}).get("beta") or {}).get("value")) or 1.0
+    beta_adj = min(max(round(0.67 * raw_beta + 0.33, 3), 0.60), 2.00)
+
+    # Cost of Equity via CAPM (Damodaran US Equity Risk Premium = 4.75%)
+    erp = 0.0475
+    cost_of_equity = rf + beta_adj * erp
+
+    # Cost of Debt and Capital Structure Weights
+    mkt_cap_val = price * shares if price and shares else 0.0
+    debt_val = debt if debt is not None else 0.0
+    ev_total = mkt_cap_val + debt_val
+    w_e = (mkt_cap_val / ev_total) if ev_total > 0 else 0.90
+    w_d = (debt_val / ev_total) if ev_total > 0 else 0.10
+    cost_of_debt_after_tax = (rf + 0.0150) * (1.0 - 0.21)
+
+    calculated_wacc = round(w_e * cost_of_equity + w_d * cost_of_debt_after_tax, 4)
+    bounded_wacc = min(max(calculated_wacc, 0.075), 0.130)
+
+    dyn_base_discount = _number(dyn_assumptions.get("base", {}).get("discount"))
+    base_discount = dyn_base_discount if dyn_base_discount else bounded_wacc
+    low_discount = _number(dyn_assumptions.get("low", {}).get("discount")) or round(base_discount + 0.02, 4)
+    high_discount = _number(dyn_assumptions.get("high", {}).get("discount")) or round(max(0.065, base_discount - 0.01), 4)
+
     low_growth = _number(dyn_assumptions.get("low", {}).get("growth")) or -0.05
-    low_discount = _number(dyn_assumptions.get("low", {}).get("discount")) or 0.12
     base_growth = _number(dyn_assumptions.get("base", {}).get("growth")) or 0.05
-    base_discount = _number(dyn_assumptions.get("base", {}).get("discount")) or 0.10
     high_growth = _number(dyn_assumptions.get("high", {}).get("growth")) or 0.15
-    high_discount = _number(dyn_assumptions.get("high", {}).get("discount")) or 0.09
     terminal_growth = min(0.03, max(0.0, _number(gap_data.get("terminal_growth_rate")) or 0.025))
     proj_years = int(gap_data.get("projection_years") or 5)
 
@@ -471,22 +500,29 @@ def run_quant_analysis(state: InvestigationState) -> dict[str, Any]:
         "base_case_discount_rate": base_discount,
         "high_case_discount_rate": high_discount,
     }
-    # CapEx Regime Detection (Distinguish Growth CapEx vs. Maintenance CapEx)
+
+    # CapEx & Hyper-Growth Regime Detection
     rev = _number(_mapping(sec.get("revenue")).get(period))
     capex_intensity = (capex / rev) if (capex is not None and rev is not None and rev > 0) else 0.0
     is_capex_spike = capex_intensity > 0.25
 
-    # If in peak CapEx expansion cycle, estimate maintenance capex (~15% of revenue) to derive normalized steady-state FCF
+    periods_all = list(sec.get("periods") or [])
+    valid_revs = [_number(_mapping(sec.get("revenue")).get(p)) for p in periods_all[:4]]
+    valid_revs = [r for r in valid_revs if r is not None and r > 0]
+    ttm_rev = sum(valid_revs) if len(valid_revs) >= 3 else None
+    is_hyper_growth = bool(rev and ttm_rev and (rev * 4.0 > 1.35 * ttm_rev))
+
+    # If in peak CapEx expansion cycle or hyper-growth inflection, estimate maintenance capex (~15% of revenue) to derive normalized steady-state FCF
     normalized_fcf = None
-    if is_capex_spike and cfo is not None and rev is not None:
+    if (is_capex_spike or is_hyper_growth) and cfo is not None and rev is not None:
         maint_capex = min(capex, rev * 0.15)
         normalized_fcf = cfo - maint_capex
 
     ttm_fcf = _number(sec.get("ttm_fcf"))
-    if is_capex_spike and normalized_fcf is not None and normalized_fcf > 0:
+    if (is_capex_spike or is_hyper_growth) and normalized_fcf is not None and normalized_fcf > 0:
         fcf_base = normalized_fcf * 4 if "Q" in str(period) else normalized_fcf
         fcf_mapping = f"sec_financials.cash_from_operations[{period}] - normalized_maintenance_capex(15% of rev)"
-    elif ttm_fcf is not None and ttm_fcf > 0:
+    elif ttm_fcf is not None and ttm_fcf > 0 and not is_hyper_growth:
         fcf_base = ttm_fcf
         fcf_mapping = "sec_financials.ttm_fcf"
     else:
@@ -535,6 +571,14 @@ def run_quant_analysis(state: InvestigationState) -> dict[str, Any]:
         "balance_sheet_period": bs_period,
         "market_price_provenance": market_inputs["provenance"],
         "capex_regime": "growth_capex_spike" if is_capex_spike else "normal",
+        "inflection_regime": "hyper_growth_inflection" if is_hyper_growth else "standard",
+        "wacc_derivation": {
+            "risk_free_rate": rf,
+            "raw_beta": raw_beta,
+            "adjusted_beta": beta_adj,
+            "erp": erp,
+            "wacc": bounded_wacc,
+        },
     }
 
     dcf_cases = [
@@ -542,7 +586,7 @@ def run_quant_analysis(state: InvestigationState) -> dict[str, Any]:
         {"case": "base", "fcf_growth_rate": base_growth, "discount_rate": base_discount},
         {"case": "high", "fcf_growth_rate": high_growth, "discount_rate": high_discount},
     ]
-    if is_capex_spike and fcf_trajectory:
+    if (is_capex_spike or is_hyper_growth) and fcf_trajectory:
         dcf_cases[0]["fcf_trajectory"] = [round(x * 0.75, 2) for x in fcf_trajectory]
         dcf_cases[1]["fcf_trajectory"] = [round(x * 1.00, 2) for x in fcf_trajectory]
         dcf_cases[2]["fcf_trajectory"] = [round(x * 1.25, 2) for x in fcf_trajectory]

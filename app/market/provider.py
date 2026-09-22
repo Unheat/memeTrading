@@ -118,6 +118,7 @@ def fetch_info(ticker: str) -> dict:
         "market_cap": _num("marketCap"),
         "shares_outstanding": _num("sharesOutstanding"),
         "short_interest_pct": _num("shortPercentOfFloat"),
+        "beta": _num("beta"),
         "currency": raw.get("currency"),
         "exchange": raw.get("exchange"),
     }
