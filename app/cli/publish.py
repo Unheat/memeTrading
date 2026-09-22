@@ -415,17 +415,148 @@ def publish_case(
     )
 
 
+def list_published_articles(web_root: Path | str = "web") -> list[dict[str, Any]]:
+    """List all published articles in the website content directory."""
+    articles_dir = Path(web_root) / "src" / "content" / "articles"
+    if not articles_dir.exists():
+        return []
+    res = []
+    for md_file in sorted(articles_dir.glob("*.md")):
+        text = md_file.read_text(encoding="utf-8")
+        title_m = re.search(r"^title:\s*(?:'|\")?(.*?)(?:'|\")?$", text, re.MULTILINE)
+        case_m = re.search(r"^caseId:\s*(?:'|\")?(.*?)(?:'|\")?$", text, re.MULTILINE)
+        video_m = re.search(r"url:\s*(/videos/[^\s]+)", text)
+        res.append({
+            "slug": md_file.stem,
+            "path": md_file,
+            "case_id": case_m.group(1) if case_m else "N/A",
+            "title": title_m.group(1) if title_m else md_file.stem,
+            "video_url": video_m.group(1) if video_m else None,
+        })
+    return res
+
+
+def delete_published_article(
+    identifier: str,
+    web_root: Path | str = "web",
+    deploy: bool = False,
+) -> bool:
+    """Delete an article and its companion video from the website and optionally redeploy.
+
+    Args:
+        identifier: Slug, filename, or caseId (e.g. 'mu-mu-2026-09-20-001' or 'MU-2026-09-20-001').
+        web_root: Path to the web project root.
+        deploy: If True, rebuild and redeploy to Cloudflare immediately.
+
+    Returns:
+        True if an article was deleted, False otherwise.
+    """
+    web_path = Path(web_root)
+    articles_dir = web_path / "src" / "content" / "articles"
+    if not articles_dir.exists():
+        logger.error("Articles directory not found: %s", articles_dir)
+        return False
+
+    clean_id = identifier.lower().strip()
+    matched_file: Path | None = None
+
+    for md_file in articles_dir.glob("*.md"):
+        if md_file.stem.lower() == clean_id:
+            matched_file = md_file
+            break
+        text = md_file.read_text(encoding="utf-8")
+        if f"caseId: {identifier}" in text or f"caseId: '{identifier}'" in text or f'caseId: "{identifier}"' in text:
+            matched_file = md_file
+            break
+        if clean_id in md_file.stem.lower():
+            matched_file = md_file
+            break
+
+    if not matched_file:
+        logger.error("No published article matched identifier '%s'", identifier)
+        return False
+
+    # Extract video path from frontmatter before deleting markdown
+    content = matched_file.read_text(encoding="utf-8")
+    video_m = re.search(r"url:\s*(/videos/[^\s]+)", content)
+    video_subpath = video_m.group(1).lstrip("/") if video_m else None
+
+    # Delete markdown
+    matched_file.unlink()
+    logger.info("Deleted article markdown: %s", matched_file)
+
+    # Delete companion video file if it exists in web/public/videos/
+    if video_subpath:
+        video_file = web_path / "public" / video_subpath
+        if video_file.exists():
+            video_file.unlink()
+            logger.info("Deleted companion video asset: %s", video_file)
+
+    if deploy:
+        logger.info("Rebuilding website and redeploying to Cloudflare...")
+        build_cmd = ["npm", "run", "build"]
+        deploy_cmd = ["npx", "wrangler", "deploy"]
+
+        node_env = os.environ.copy()
+        nvm_node_dirs = sorted(Path.home().glob(".nvm/versions/node/v22*/bin"), reverse=True)
+        if nvm_node_dirs:
+            node_env["PATH"] = f"{nvm_node_dirs[0]}:{node_env.get('PATH', '')}"
+
+        try:
+            subprocess.run(build_cmd, cwd=str(web_path), capture_output=True, text=True, check=True, env=node_env)
+            d_res = subprocess.run(deploy_cmd, cwd=str(web_path), capture_output=True, text=True, check=True, env=node_env)
+            logger.info("Cloudflare deployment updated successfully!")
+            url_match = re.search(r"https://[a-zA-Z0-9.-]+\.workers\.dev", d_res.stdout)
+            if url_match:
+                print(f"🚀 Updated live on Cloudflare: {url_match.group(0)}")
+        except subprocess.CalledProcessError as exc:
+            logger.error("Redeployment failed: %s", exc.stderr or exc.stdout)
+            return False
+
+    return True
+
+
 def main() -> None:
     """CLI runner for publish command."""
     parser = argparse.ArgumentParser(description="Publish forensic research cases to Cloudflare website.")
     parser.add_argument("case_id", nargs="?", default=None, help="Case directory name or path (defaults to latest)")
     parser.add_argument("--latest", action="store_true", help="Publish the most recently generated case")
+    parser.add_argument("--list", action="store_true", help="List all currently published articles")
+    parser.add_argument("--delete", type=str, default=None, help="Delete an article + companion video by slug or caseId")
     parser.add_argument("--web-root", default="web", help="Path to website directory")
     parser.add_argument("--youtube", action="store_true", default=True, help="Auto-upload video to YouTube if configured")
     parser.add_argument("--no-youtube", dest="youtube", action="store_false", help="Skip YouTube upload")
     parser.add_argument("--privacy", choices=["unlisted", "public", "private"], default="unlisted", help="YouTube video privacy status")
     parser.add_argument("--youtube-id", type=str, default=None, help="Link an existing YouTube video ID directly")
     parser.add_argument("--deploy", action="store_true", default=False, help="Build and deploy to Cloudflare Edge immediately")
+
+    args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+    if args.list:
+        articles = list_published_articles(args.web_root)
+        print("\n📰 Published Articles on Website:")
+        print("=" * 80)
+        if not articles:
+            print("  (No articles published yet)")
+        for a in articles:
+            print(f"• Slug:    {a['slug']}")
+            print(f"  Title:   {a['title']}")
+            print(f"  Case:    {a['case_id']}")
+            print(f"  Video:   {a['video_url'] or 'None'}")
+            print("-" * 80)
+        return
+
+    if args.delete:
+        ok = delete_published_article(args.delete, web_root=args.web_root, deploy=args.deploy)
+        if ok:
+            print(f"\n✅ Successfully deleted article and video matching '{args.delete}'.")
+            if not args.deploy:
+                print("💡 Tip: Run with --deploy to push the changes live to Cloudflare.")
+        else:
+            print(f"\n❌ Could not find article matching '{args.delete}'.", file=sys.stderr)
+            sys.exit(1)
+        return
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
