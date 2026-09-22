@@ -235,7 +235,9 @@ python main.py --ticker TSLA --query "Robotaxi regulatory path and auto gross ma
 | `python main.py -t <TICKER> --article` | Generates cited Substack forensic article (`article.md`). |
 | `python main.py -t <TICKER> --video` | Generates cited article, character script based on the article, and renders MP4 video. |
 | `python main.py --studio` | Launch browser-based Operator Studio GUI (`http://127.0.0.1:3000`). |
-| `python -m app.cli.publish <CASE>` | Syncs article, citations, and video to Cloudflare Astro website (`web/`). |
+| `python -m app.cli.publish <CASE> --deploy` | Syncs article, citations, and video to Cloudflare Astro website (`web/`) and deploys to edge. |
+| `python -m app.cli.publish --list` | Lists all published articles, case IDs, and video URLs on the website. |
+| `python -m app.cli.publish --delete <SLUG> --deploy` | Deletes article and companion video asset, then redeploys live to Cloudflare. |
 | `python -m app.media.cli video --case-id <CASE>` | Standalone video reel rendering for an existing reviewed case. |
 | `python scripts/run_backtest.py` | Historical backtest sweep evaluating verdicts against `SPY` alpha. |
 | `node app/valuation/calculator.mjs` | Standalone deterministic Reverse DCF & scenario calculator. |

@@ -317,33 +317,108 @@ node faceless/skills/faceless/scripts/doctor.mjs
 
 ## 6. Web Publishing & Cloudflare Edge Deployment (`app/cli/publish.py`)
 
-Synchronize local research case artifacts into the Astro Cloudflare website (`web/src/content/articles/`) with automated YouTube video embedding, interactive citation cards, and edge deployment:
+Synchronize local research case artifacts into the Astro Cloudflare website (`web/src/content/articles/`) with automated video optimization, interactive Wikipedia-style citation cards, client-side Pagefind indexing, and Cloudflare Workers/Pages edge deployment:
 
 ```bash
-# Publish the latest investigation to the Astro website
+# 1. Publish the latest investigation to the Astro website (local sync only)
 python -m app.cli.publish --latest
 
-# Publish and immediately deploy to Cloudflare Edge CDN (<20ms TTFB)
+# 2. Publish and immediately build + deploy to Cloudflare Edge CDN (<20ms TTFB)
 python -m app.cli.publish --latest --deploy
 
-# Publish a specific case with an existing YouTube Video ID
+# 3. Publish a specific case folder
+python -m app.cli.publish MU-2026-09-20-001 --deploy
+
+# 4. List all currently published articles and their companion video status
+python -m app.cli.publish --list
+
+# 5. Delete an article and its companion video from the website and redeploy to Cloudflare
+python -m app.cli.publish --delete mu-mu-2026-09-20-001 --deploy
+
+# 6. Publish with an explicit external YouTube Video ID
 python -m app.cli.publish MU-2026-09-15-007 --youtube-id dQw4w9WgXcQ --deploy
 
-# Or run directly via main.py
-python main.py --publish-case MU-2026-09-15-007 --deploy
+# 7. Or trigger directly through the main entrypoint
+python main.py --publish-case MU-2026-09-20-001 --deploy
 ```
 
-### Staged Independent Video Generation (`app/media/cli.py`)
-If you chose the Step-by-Step workflow (run research & article first, review prose, then render video):
+### Complete Publishing Arguments Reference
+
+| Argument | Short / Flag | Default | Description |
+| :--- | :---: | :---: | :--- |
+| `case_id` | Positional | `None` | Case directory name (e.g. `MU-2026-09-20-001`) or relative path. Defaults to latest if omitted with `--latest`. |
+| `--latest` | | `False` | Resolves the most recently created case directory in `cases/`. |
+| `--list` | | `False` | Prints a summary table of all published articles on the website (slug, title, case ID, video asset URL). |
+| `--delete` | `SLUG_OR_ID` | `None` | Deletes the matching Markdown article and companion video file from `web/`. Add `--deploy` to push deletions live to Cloudflare. |
+| `--deploy` | | `False` | Executes `npm run build` (Astro static build + Pagefind Wasm index) and `npx wrangler deploy` to push changes to Cloudflare edge. |
+| `--youtube` | | `True` | Automatically uploads the companion reel to YouTube if `client_secrets.json` is configured. |
+| `--no-youtube` | | `False` | Skips YouTube API upload and hosts video directly on Cloudflare edge CDN. |
+| `--privacy` | `CHOICE` | `unlisted` | Privacy level for YouTube uploads (`unlisted`, `public`, `private`). |
+| `--youtube-id` | `ID` | `None` | Manually attaches an existing YouTube video ID instead of local edge hosting. |
+| `--web-root` | | `web` | Path to the Astro website project root. |
+
+---
+
+### Video Delivery & Cloudflare Free Tier Architecture
+
+MemeForensics supports dual video delivery modes:
+
+#### 1. Native Cloudflare Edge Hosting (Default, Zero Config)
+When YouTube credentials are not provided, the publishing engine automatically prepares the video for Cloudflare Edge hosting:
+- **Cloudflare Free Tier Limits**:
+  - **Individual Asset Cap**: Cloudflare Workers/Pages static assets enforce a strict **25 MiB** limit per file.
+  - **Bandwidth / Data Transfer**: **100% Free and Unlimited** ($0 egress fees globally).
+  - **Asset Quantity**: Up to **20,000 files** per project deployment.
+- **Automated Web Optimization**:
+  - Raw master reels rendered by Faceless are often 70–95 MB (at 7.5 Mbps bitrate).
+  - If a video exceeds 24 MB, `publish.py` runs an automated optimization pass using `ffmpeg-static` to scale to 720×1280 at 1.4 Mbps with `+faststart` metadata (moving the `moov` atom to the front for zero-buffering mobile streaming).
+  - This compresses the video to **~15–18 MB** (safely under the 25 MiB cap) and copies it to `web/public/videos/<slug>.mp4`.
+  - The website serves it via a custom HTML5 `<video controls playsinline>` player without third-party ads or tracking.
+
+#### 2. Automated YouTube Video Embeds (Optional)
+If you configure Google Cloud OAuth2 credentials:
+1. Place your downloaded `client_secrets.json` into the project root.
+2. Run `python -m app.cli.publish --latest --youtube --privacy unlisted --deploy`.
+3. The video is uploaded to your YouTube channel via the YouTube Data API v3 and embedded as a responsive vertical 9:16 player (`https://www.youtube.com/embed/<VIDEO_ID>`). Tokens are cached locally in `.youtube_token.json` for unattended future uploads.
+
+---
+
+### Managing Published Content (List & Delete)
+
+To inspect your published portfolio:
 ```bash
-# Step 1: Run research + cited article
+python -m app.cli.publish --list
+```
+**Example Output:**
+```text
+📰 Published Articles on Website:
+================================================================================
+• Slug:    mu-mu-2026-09-20-001
+  Title:   The Trillion-Dollar Silicon Mirage: Unpacking Micron’s 84% Gross Margin Peak
+  Case:    MU-2026-09-20-001
+  Video:   /videos/mu-mu-2026-09-20-001.mp4
+--------------------------------------------------------------------------------
+```
+
+To purge an outdated case from the website:
+```bash
+# Delete markdown + video asset locally and redeploy immediately:
+python -m app.cli.publish --delete mu-mu-2026-09-20-001 --deploy
+```
+
+---
+
+### Staged Independent Video Generation (`app/media/cli.py`)
+If you prefer a step-by-step editorial review workflow (run research & write the article first, inspect prose, and only then render video):
+```bash
+# Step 1: Run research + cited Substack article
 python main.py --ticker MU --query "DRAM cycle pricing power" --article
 
-# Step 2: Render video reel for that reviewed case
-python -m app.media.cli video --case-id MU-2026-09-18-001 --character-pair rick_morty
+# Step 2: Render video reel for that reviewed case (Peter & Stewie or Rick & Morty)
+python -m app.media.cli video --case-id MU-2026-09-20-001 --character-pair peter_stewie
 
 # Step 3: Publish to Cloudflare website
-python -m app.cli.publish MU-2026-09-18-001 --deploy
+python -m app.cli.publish MU-2026-09-20-001 --deploy
 ```
 
 ---

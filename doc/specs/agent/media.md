@@ -76,9 +76,31 @@ class FacelessBridge:
     def add_captions(self, video_path: Path, dialogue_path: Path, audio_dir: Path, topic_slug: str, output_dir: Path) -> Path | None:
         """Invoke add-captions.mjs."""
 
-    def compose_reel(self, dialogue_path: Path, topic_slug: str, output_dir: Path, fish_model: str | None = None) -> Path | None:
+    def compose_reel(self, dialogue_path: Path, topic_slug: str, output_dir: Path, fish_model: str | None = None, template_name: str = "minecraft2.mp4") -> Path | None:
         """Full 4-stage chain: audio -> video -> characters -> captions."""
 ```
+
+### `app/cli/publish.py`
+
+#### `publish_case(case_dir: Path | str, web_root: Path | str = "web", youtube_upload: bool = True, youtube_privacy: str = "unlisted", youtube_id: str | None = None, deploy: bool = False) -> PublishResult`
+- Syncs a case folder into `web/src/content/articles/<slug>.md`.
+- Automatically extracts `reverseDcfImpliedGrowth`, `targetValuation`, `beneishMScore`, and citations from `investigation.json`.
+- When YouTube credentials are not present, compresses large master reels (>24 MB) down to 720×1280 mobile streaming MP4s (`1.4 Mbps`, `+faststart`) to comply with Cloudflare Workers 25 MiB static asset limits, placing them in `web/public/videos/<slug>.mp4`.
+- If `deploy=True`, runs `npm run build` and `npx wrangler deploy` using Node.js v22+ from `~/.nvm/versions/node/`.
+
+#### `list_published_articles(web_root: Path | str = "web") -> list[dict[str, Any]]`
+- Reads all `.md` files in `web/src/content/articles/` and extracts slug, case ID, title, and companion video URL.
+
+#### `delete_published_article(identifier: str, web_root: Path | str = "web", deploy: bool = False) -> bool`
+- Finds matching article by slug or case ID.
+- Deletes the Markdown file and its companion video asset from `web/public/videos/`.
+- If `deploy=True`, rebuilds and pushes updated state to Cloudflare edge.
+
+### `app/media/cli.py`
+
+#### `generate_video_for_case(case_dir: Path | str, character_pair: str = "peter_stewie", script_only: bool = False) -> Path | None`
+- Inspects existing `dialogue.json` for voice ID alignment with `character_pair`. If mismatched (e.g. existing dialogue used Rick & Morty while Peter & Stewie was requested), automatically re-synthesizes the script before rendering video.
+- Invokes `FacelessBridge.compose_reel` to produce the final captioned MP4 reel.
 
 ## Donor Code Provenance
 
@@ -92,3 +114,5 @@ class FacelessBridge:
 1. `dialogue.json` passes all Faceless validation rules (alternating voice IDs, emotion tags, sequential indices).
 2. `article.md` includes numbered SEC citations `[1]`, `[2]` bound to pre-indexed source cards, reading directly from `memo.md`.
 3. `FacelessBridge` handles missing Node, missing FFmpeg, or missing Fish API key gracefully without raising unhandled exceptions.
+4. Rendered video files larger than 24 MB are automatically re-encoded to 720×1280 (<25 MB) with `+faststart` before Cloudflare Edge deployment.
+5. `delete_published_article` cleanly removes both Markdown content and binary video files from the web repository and redeploys without orphaned assets.
