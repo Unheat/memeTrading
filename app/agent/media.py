@@ -30,7 +30,7 @@ Your mission is to write an authoritative, deeply cited, beautifully structured 
 EDITORIAL FORMAT & STRUCTURE:
 1. HEADLINE: Start with an authoritative, analytical `# Title` that captures the core financial paradox or forensic tension (no generic clickbait).
 2. STANDFIRST / DECK: Immediately below the title, write a 1–2 sentence high-conviction thesis summary in italics:
-   *The market is pricing a perpetual AI memory supercycle, but balance sheet inventory drift and negative free cash flow expose an asymmetric downside.*
+   *A concise analytical synthesis of the core fundamental tension, market mispricing, and audited risk/reward profile.*
 3. EXECUTIVE BRIEFING: Include a clean callout box summarizing the 3–4 key empirical findings:
    > ### Executive Briefing
    > - **Core Disconnect**: ...

@@ -128,6 +128,9 @@ def evaluate_accounting_gate(state: Mapping[str, Any]) -> dict[str, Any]:
     report = state.get("forensic_report") or {}
     if report.get("status") != "available":
         return {"passed": False, "status": "validation_required", "reason": report.get("reason", "accounting report unavailable")}
+    verdict = str(report.get("verdict") or "").upper()
+    if "FATAL" in verdict or "RED_FLAG" in verdict:
+        return {"passed": False, "status": "validation_required", "reason": f"Fatal accounting red flag: {report.get('verdict')}"}
     return {"passed": True, "status": "ready_for_valuation", "reason": None}
 
 

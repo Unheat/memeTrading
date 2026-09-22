@@ -154,16 +154,25 @@ def _capital_safety_scorecard(state: InvestigationState) -> str:
         earnings_risk = "MODERATE"
 
     # Expectation gap check
-    gap_verdict = gap.get("verdict") or "Unassessed"
+    gap_verdict = gap.get("expectation_gap_verdict") or gap.get("verdict") or "Unassessed"
 
     # Institutional Conviction Tier & 3:1 Asymmetry
+    ic_verdict = state.get("ic_verdict")
+    ratio = getattr(ic_verdict, "reward_to_risk_ratio", None) if ic_verdict else None
     confidence = state.get("confidence")
+
     if not is_liquid:
         conviction_tier = "PASSED 🚫 (Illiquid / Microcap Violation)"
         asymmetry_status = "FAILED (< $5M ADDV)"
     elif proximity_flag == "BLACKOUT_RISK":
         conviction_tier = "PASSED 🚫 (Earnings Blackout Risk)"
         asymmetry_status = "FAILED (Binary Event Risk)"
+    elif ic_verdict and getattr(ic_verdict, "conviction_tier", None):
+        conviction_tier = str(ic_verdict.conviction_tier)
+        if ratio is not None:
+            asymmetry_status = f"PASSED ({ratio:.1f}x >= 3.0x Downside Floor)" if ratio >= 3.0 else f"FAILED ({ratio:.1f}x < 3.0x Asymmetry Hurdle)"
+        else:
+            asymmetry_status = "FAILED (Negative or Unconfirmed Asymmetry)"
     elif confidence is not None and confidence >= 0.75:
         conviction_tier = "HIGH CONVICTION 🔥🔥🔥"
         asymmetry_status = "PASSED (Upside >= 3.0x Downside Floor)"

@@ -150,5 +150,6 @@ def run_candidate_diligence(
         "moat_rating": (cand_state.get("moat_report") or {}).get("analysis", {}).get("moat_rating"),
         "market_context": cand_state.get("market_context"),
         "sec_financials": cand_state.get("sec_financials"),
+        "expectation_gap": cand_state.get("expectation_gap"),
     }
     return dossier

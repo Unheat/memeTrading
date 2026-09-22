@@ -41,7 +41,7 @@ You are the Senior Quantitative Valuation Modeler at an institutional investment
    - If market prices in >25% FCF CAGR, highlight multiple derating risk.
    - If market prices in <5% FCF CAGR for a dominant moat, highlight asymmetric alpha opportunity.
 5. **Sum-of-the-Parts (SOTP) for Conglomerates**:
-   For multi-segment leaders (e.g. AMZN: AWS vs Retail; META: Family of Apps vs Reality Labs; CEG: Nuclear PPA fleet vs Calpine merchant gas), build an explicit SOTP segment valuation.
+   For multi-segment leaders with distinct operating profiles (e.g. cloud infrastructure vs e-commerce retail, core social ads vs speculative hardware labs, or contracted clean power vs merchant power), build an explicit SOTP segment valuation.
 6. **Graham Number Calibration**:
    Compute the Graham Number $\\sqrt{22.5 \\times \\text{EPS} \\times \\text{BVPS}}$. For asset-light high-ROIC software or tech leaders, explain that Graham numbers are structurally depressed and assign low weight rather than using it as a false ceiling.
 
@@ -180,24 +180,36 @@ def run_expectations_analyst(state: InvestigationState, model: Any) -> dict[str,
     capex = None
     cash = None
     debt = None
+    rev = None
     if period and isinstance(sec, Mapping):
         cfo = (sec.get("cash_from_operations") or {}).get(period)
         capex = (sec.get("capex") or {}).get(period)
         cash = (sec.get("cash_and_equivalents") or {}).get(period)
         debt = (sec.get("total_debt") or {}).get(period)
+        rev = (sec.get("revenue") or {}).get(period)
 
     try:
         fcf = float(cfo) - float(capex) if cfo is not None and capex is not None else None
+        ttm_fcf = sec.get("ttm_fcf") if isinstance(sec, Mapping) else None
+        effective_fcf = fcf
+        if ttm_fcf is not None and float(ttm_fcf) > 0:
+            effective_fcf = float(ttm_fcf)
+        elif rev is not None and capex is not None and float(rev) > 0 and (float(capex) / float(rev) > 0.25) and cfo is not None:
+            # Normalize CapEx spike to maintenance levels (~15% of revenue) for forward reverse DCF base
+            maint = min(float(capex), float(rev) * 0.15)
+            effective_fcf = (float(cfo) - maint) * (4 if "Q" in str(period) else 1)
+
         net_cash = float(cash) - float(debt) if cash is not None and debt is not None else 0.0
         price_f = price
         shares_f = shares
     except (TypeError, ValueError):
         fcf = None
+        effective_fcf = None
         net_cash = 0.0
         price_f = None
         shares_f = None
 
-    prelim_reverse_dcf = _run_preliminary_reverse_dcf(price_f, shares_f, fcf, net_cash)
+    prelim_reverse_dcf = _run_preliminary_reverse_dcf(price_f, shares_f, effective_fcf, net_cash)
 
     evidence_quotes = [
         item.get("quote") for item in state.get("evidence", [])

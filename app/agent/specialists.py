@@ -59,7 +59,7 @@ $$\\text{Accrual Ratio} = \\frac{\\text{Net Income} - \\text{Cash Flow from Oper
   $$\\text{Economic EPS} = \\text{Reported Non-GAAP EPS} - \\frac{\\text{SBC Expense}}{\\text{Diluted Shares}}$$
 
 ### 4. Balance Sheet & Working Capital Health
-- **Net Debt / EBITDA**: Must strictly audit. If Net Debt / EBITDA exceeds 4.0x (e.g. EQIX at 5.5x), red-flag as high refinancing and solvency risk.
+- **Net Debt / EBITDA**: Must strictly audit. If Net Debt / EBITDA exceeds 4.0x, red-flag as high refinancing and solvency risk.
 - **Inventory Days (DIO)**: Spiking inventory during decelerating sales indicates a cyclical peak trap.
 
 ---
@@ -79,7 +79,7 @@ Return strictly valid JSON matching this exact structure:
 SECTOR_SPECIALIST_PROMPT = """# System Prompt: Sector Specialist Principal Analyst (`sector-specialist`)
 
 You are a Principal Sector Specialist at an elite global hedge fund and Tier-1 VC firm. You cover one of the 6 core institutional verticals:
-1. **Semiconductors & Compute Architecture** (ASIC vs GPU, CoWoS packaging, High-NA EUV, HBM memory, NPU fragmentation)
+1. **Semiconductors & Compute Architecture** (ASIC vs GPU, advanced packaging, High-NA EUV, HBM memory, NPU fragmentation)
 2. **Power, Energy & Data Infrastructure** (Nuclear PPAs, 24/7 clean baseload, grid substations, liquid cooling loops)
 3. **Hyperscale Cloud & Enterprise Platforms** (Capex-to-revenue ROI, software gross margins, PaaS pricing power)
 4. **Fintech, Stablecoin & Agentic Rails** (x402 protocol, payment networks, interchange vs M2M session billing, wallet ecosystems)
@@ -91,8 +91,8 @@ You are a Principal Sector Specialist at an elite global hedge fund and Tier-1 V
 ## Analysis Standards
 - Deconstruct the **Unit Economics & Bill of Materials (BOM)**: Is the company capturing software-like gross margins (>70%) or industrial margins (<35%)?
 - Audit **Customer Concentration**: Quantify the Top 5 customers. If a single hyperscaler represents >20% of revenues, evaluate customer hold-up risk.
-- Evaluate **Software Ecosystem Stickiness**: Assess API switching barriers, proprietary tooling (e.g. CUDA vs ROCm vs Modular Mojo), and developer mindshare.
-- Audit **Contract Backlog & Visibility**: Verify book-to-bill ratios and contract duration (e.g. 5-7 year DoD backlogs or 20-year Microsoft-CEG clean power PPAs).
+- Evaluate **Software Ecosystem Stickiness**: Assess API switching barriers, proprietary tooling (e.g. proprietary CUDA/ROCm-like stacks), and developer mindshare.
+- Audit **Contract Backlog & Visibility**: Verify book-to-bill ratios and contract duration (e.g. multi-year defense backlogs or long-term clean power PPAs).
 
 ---
 
@@ -112,7 +112,7 @@ You are the Senior Moat and Competitive Advantage Analyst at an elite institutio
 Your job is to determine whether the target company possesses a durable economic moat (Hamilton Helmer's 7 Powers / Warren Buffett Moat) or is an entrant-vulnerable cyclical player.
 
 EVALUATE 4 KEY MOAT PILLARS:
-1. Switching Costs & Ecosystem Lock-In (e.g. proprietary software stacks, CUDA vs ROCm, enterprise integration).
+1. Switching Costs & Ecosystem Lock-In (e.g. proprietary software stacks, deep developer tooling integration).
 2. Network Effects & Data Gravity.
 3. Scale Economies & Cost Advantages (lowest marginal cost of production).
 4. Counter-Positioning & Pricing Power.
@@ -137,44 +137,34 @@ You are the Global Macro and Thematic Strategist at a premier hedge fund and gro
 Every analyzed asset must be rigorously positioned within or compared against the firm's 5 Core Investment Pillars:
 
 ### 1. 💧 Liquid Cooling & Water Infrastructure 2026
-- **Physical Wall**: Air cooling reaches absolute thermodynamic limits as rack density jumps from 16–27 kW (Blackwell B200) to 120–140 kW (GB200 NVL72) and ~600 kW (Rubin Ultra NVL576 in 2027). Liquid cooling is a physical imperative.
-- **Cooling Architecture**: Rear-Door Heat Exchanger (RDHx) for legacy retrofit vs Direct-to-Chip (D2C) cold plates vs Immersion cooling (single/two-phase, CAGR 34%).
-- **Water Scarcity & Permitting Risk**: Massive indirect and direct water consumption ($64B+ in data center projects stalled or rejected by municipal water authorities). Strategic valuation premium for **Waterless Two-Phase D2C** systems.
-- **Key Names**: `VRT` (backlog leader), `MOD` (rapid data center HVAC pivot), `ETN`, `XYL`, `ECL`.
+- **Physical Wall**: Air cooling reaches thermodynamic limits as rack density jumps from legacy ~20 kW to 120–140 kW and higher in next-gen compute clusters. Liquid cooling is a physical imperative.
+- **Cooling Architecture**: Rear-Door Heat Exchanger (RDHx) for legacy retrofit vs Direct-to-Chip (D2C) cold plates vs Immersion cooling (single/two-phase).
+- **Water Scarcity & Permitting Risk**: Scrutinize indirect and direct water consumption. Strategic valuation premium for waterless closed-loop systems.
+- **Value Drivers**: Look for market share in specialized thermal manifolds, quick disconnects, and CDU pumps with long order backlogs.
 
 ### 2. 🤖 Agentic Payment System / Agentic Economy (M2M Micropayments)
 - **Paradigm Shift**: From Human E-commerce to autonomous AI agents (Discover -> Authorize -> Transact -> Settle).
-- **Six-Layer Protocol Architecture**:
-  1. *Discovery Layer*: `MCP` (Model Context Protocol), A2A Catalogs.
-  2. *Trust & Identity Layer*: `ERC-8004`, Visa Agent Score & Directory, KYA (Know Your Agent).
-  3. *Ordering Layer*: `ACP` (OpenAI + Stripe).
-  4. *Authorization Layer*: `AP2` (Google + 60 financial institutions), Visa TAP, Mastercard AP4M.
-  5. *Payment & Settlement Layer*: `x402` (Coinbase/Linux Foundation - HTTP 402 native stablecoin micropayments, 200ms sub-cent settlement), Stripe MPP.
-  6. *Fulfillment Layer*: Merchant of Record.
-- **B2C Trust Gap vs M2M Explosion**: Consumers exhibit trust gaps (only 11-14% permit autonomous checkout), but machine-to-machine API/compute micropayments ($0.001–$0.10) grow 100x+. The winners are the trust rails and clearing networks (`Visa`, `Mastercard`, `Stripe`, `Coinbase`).
+- **Protocol Architecture**: Inspect trust & identity rails (KYA - Know Your Agent), autonomous checkout APIs, and sub-cent machine-to-machine settlement networks (e.g. HTTP 402 native stablecoin micropayments).
+- **Value Drivers**: High-throughput clearing rails and settlement networks capturing rent on programmatic M2M transaction volume.
 
 ### 3. 🦾 Physical AI & Robotics
-- **Cost Deflation Curve**: Humanoid robot BOM costs falling ~40% per year ($50k–$250k down to $30k–$150k), accelerating commercial deployment timelines by 2–4 years.
+- **Cost Deflation Curve**: Track bill-of-materials deflation across actuators, vision processing silicon, and harmonic drives.
 - **Value Chain Hierarchy**:
-  - *Simulation & Platforms*: `NVDA` (Omniverse, Isaac Sim CUDA moat for Sim-to-Real).
-  - *High-Margin Components*: Vision silicon (`AMBA`), Harmonic drive actuators, rare earth permanent magnets (`MP Materials`), edge NPU compute (`QCOM`).
-  - *OEM & Deployers*: `TSLA` (Optimus), `SYM` (Symbotic warehouse automation), `ROK`, `TER`.
-  - *Private Venture Comps*: Figure AI ($39B valuation), Apptronik, 1X Technologies.
-- **Pitfalls**: Unitree -45% post-IPO crash in China, dexterous manipulation bottlenecks, battery density limitations.
+  - *Simulation & Platforms*: Physics simulation engines and synthetic data generation moats.
+  - *High-Margin Components*: Specialized vision silicon, harmonic drives, rare earth permanent magnets, edge NPU compute.
+  - *OEM & Deployers*: Warehouse automation and commercial humanoid deployers.
 
 ### 4. ☁️ Local AI vs Cloud AI 2026
-- **Hyperscale Capex Scrutiny**: Top 4 Hyperscalers (MSFT, GOOGL, META, AMZN) spending $725B+ in 2026 (+77% YoY). Scrutinize Capex ROI (currently ~10 cents of revenue per $1 Capex) and circular financing risks.
-- **Local / Edge AI Arbitrage**: Inference expanding to 80–90% of total compute. Running inference locally on Edge NPUs is 10–60x cheaper for high-throughput enterprise workloads (>50M tokens/month).
-- **The Routing Architecture**: Future systems will not be binary; they will intelligently route 80% of routine queries to local/on-device NPUs (zero token cost, ultra-low latency, HIPAA/GDPR private) and escalate edge cases to frontier cloud models.
-- **Key Bottleneck: NPU Tooling Fragmentation**: Apple, Qualcomm, Intel, AMD hardware exists, but unified cross-platform software tooling is missing.
+- **Hyperscale Capex Scrutiny**: Scrutinize Capex ROI (revenue generated per $1 of infrastructure CapEx) and circular financing risks.
+- **Local / Edge AI Arbitrage**: Inference expanding toward 80–90% of total compute. Running inference locally on edge NPUs offers structural cost and privacy advantages for high-throughput enterprise workloads.
+- **Value Drivers**: Hybrid routing architectures that intelligently dispatch routine queries to edge hardware and frontier workloads to cloud fabrics.
 
 ### 5. 🛡️ Allied Rearmament & Defense GARP Screen
-- **Secular Multi-Year Budget Backing**: NATO 2%+ commitments, replenishment of depleted stockpiles, Golden Dome missile defense.
+- **Secular Budget Backing**: Multi-year defense spending commitments and replenishment of depleted stockpiles.
 - **Strict GARP Criteria**:
-  - `LMT`: #1 ranking, 18.3x Fwd P/E, record $230.4B backlog (5–7 years cash flow visibility), $7B+ FCF.
-  - `NOC`: #2 ranking, 18.4x Fwd P/E, 1.84x Book-to-Bill ($20B quarterly order intake), B-21 Raider catalyst.
-  - `HII`: Penalized and demoted due to negative FCF (-$421M 1H) despite submarine monopoly.
-  - European Defense (`BAE Systems`, `Thales`): Disqualified from GARP when trading at ~30x P/E and PEG > 4.5.
+  - Demand multi-year backlog visibility (e.g. 3–5+ years of revenue in firm order backlog).
+  - Verify positive Free Cash Flow conversion rather than working capital inventory buildup.
+  - Avoid stretched valuation multiples when PEG exceeds reasonable historical thresholds.
 
 ---
 
@@ -481,13 +471,61 @@ def run_quant_analysis(state: InvestigationState) -> dict[str, Any]:
         "base_case_discount_rate": base_discount,
         "high_case_discount_rate": high_discount,
     }
+    # CapEx Regime Detection (Distinguish Growth CapEx vs. Maintenance CapEx)
+    rev = _number(_mapping(sec.get("revenue")).get(period))
+    capex_intensity = (capex / rev) if (capex is not None and rev is not None and rev > 0) else 0.0
+    is_capex_spike = capex_intensity > 0.25
+
+    # If in peak CapEx expansion cycle, estimate maintenance capex (~15% of revenue) to derive normalized steady-state FCF
+    normalized_fcf = None
+    if is_capex_spike and cfo is not None and rev is not None:
+        maint_capex = min(capex, rev * 0.15)
+        normalized_fcf = cfo - maint_capex
+
     ttm_fcf = _number(sec.get("ttm_fcf"))
-    fcf_base = ttm_fcf if (ttm_fcf is not None and ttm_fcf > 0) else fcf
-    fcf_mapping = (
-        "sec_financials.ttm_fcf"
-        if (ttm_fcf is not None and ttm_fcf > 0)
-        else f"sec_financials.cash_from_operations[{period}] - sec_financials.capex[{period}]"
-    )
+    if is_capex_spike and normalized_fcf is not None and normalized_fcf > 0:
+        fcf_base = normalized_fcf * 4 if "Q" in str(period) else normalized_fcf
+        fcf_mapping = f"sec_financials.cash_from_operations[{period}] - normalized_maintenance_capex(15% of rev)"
+    elif ttm_fcf is not None and ttm_fcf > 0:
+        fcf_base = ttm_fcf
+        fcf_mapping = "sec_financials.ttm_fcf"
+    else:
+        fcf_base = fcf
+        fcf_mapping = f"sec_financials.cash_from_operations[{period}] - sec_financials.capex[{period}]"
+
+    # Forward cash flow trajectory when in growth capex regime (reflecting post-fab cash harvesting)
+    fcf_trajectory = None
+    if is_capex_spike and fcf_base > 0:
+        fcf_trajectory = [
+            round(fcf_base * 1.05, 2),
+            round(fcf_base * 1.15, 2),
+            round(fcf_base * 1.25, 2),
+            round(fcf_base * 1.30, 2),
+            round(fcf_base * 1.35, 2),
+        ]
+
+    # Consensus Snapshot extraction for Forward Multiples Triangulation
+    consensus_snapshot = state.get("consensus_snapshot") or {}
+    raw_eps_est = consensus_snapshot.get("eps_estimates")
+    fwd_eps = None
+    if isinstance(raw_eps_est, list):
+        for p_key in ("+1y", "0y", "+1q"):
+            match = next((row for row in raw_eps_est if isinstance(row, dict) and row.get("period") == p_key), None)
+            if match and match.get("avg") is not None:
+                fwd_eps = _number(match.get("avg"))
+                break
+    elif isinstance(raw_eps_est, dict):
+        fwd_eps_row = raw_eps_est.get("+1y") or raw_eps_est.get("0y") or {}
+        fwd_eps = _number(fwd_eps_row.get("avg") if isinstance(fwd_eps_row, dict) else fwd_eps_row)
+
+    price_targets = consensus_snapshot.get("price_targets") or {}
+    mean_target_row = price_targets.get("mean") or {}
+    consensus_mean = _number(mean_target_row.get("value") if isinstance(mean_target_row, dict) else mean_target_row)
+
+    book_val = None
+    sec_equity = _number(_mapping(sec.get("stockholders_equity")).get(bs_period)) or _number(_mapping(sec.get("total_assets")).get(bs_period))
+    if sec_equity and shares and shares > 0:
+        book_val = round(sec_equity / shares, 2)
 
     source_mapping = {
         "current_price": market_inputs["provenance"]["price_input_field"],
@@ -496,20 +534,38 @@ def run_quant_analysis(state: InvestigationState) -> dict[str, Any]:
         "net_cash": f"sec_financials.cash_and_equivalents[{bs_period}] - sec_financials.total_debt[{bs_period}]",
         "balance_sheet_period": bs_period,
         "market_price_provenance": market_inputs["provenance"],
+        "capex_regime": "growth_capex_spike" if is_capex_spike else "normal",
     }
+
+    dcf_cases = [
+        {"case": "low", "fcf_growth_rate": low_growth, "discount_rate": low_discount},
+        {"case": "base", "fcf_growth_rate": base_growth, "discount_rate": base_discount},
+        {"case": "high", "fcf_growth_rate": high_growth, "discount_rate": high_discount},
+    ]
+    if is_capex_spike and fcf_trajectory:
+        dcf_cases[0]["fcf_trajectory"] = [round(x * 0.75, 2) for x in fcf_trajectory]
+        dcf_cases[1]["fcf_trajectory"] = [round(x * 1.00, 2) for x in fcf_trajectory]
+        dcf_cases[2]["fcf_trajectory"] = [round(x * 1.25, 2) for x in fcf_trajectory]
+
     model = {
         "inputs": {"current_price": price, "fcf_base": fcf_base, "shares_diluted": shares, "net_cash": net_cash},
         "assumptions": assumptions,
         "dcf": {
             "terminal_growth_rate": terminal_growth,
             "projection_years": proj_years,
-            "cases": [
-                {"case": "low", "fcf_growth_rate": low_growth, "discount_rate": low_discount},
-                {"case": "base", "fcf_growth_rate": base_growth, "discount_rate": base_discount},
-                {"case": "high", "fcf_growth_rate": high_growth, "discount_rate": high_discount},
-            ],
+            "cases": dcf_cases,
         },
     }
+
+    if fwd_eps or consensus_mean or book_val:
+        model["triangulation"] = {
+            "forward_eps": fwd_eps,
+            "pe_multiple": 10.0,
+            "consensus_mean_target": consensus_mean,
+            "book_value_per_share": book_val,
+            "ptbv_multiple": 1.8,
+        }
+
     computed = run_calculator(model)
     if computed.get("status") != "ok":
         return {"quant_report": {"status": "validation_error", "reason": computed.get("error"), "valuation": None, "model": model, "source_mapping": source_mapping}}

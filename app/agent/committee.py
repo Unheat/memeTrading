@@ -36,16 +36,16 @@ You do not chase hype, retail fads, or management promises. You demand concrete 
 
 ### 2. The Strict "Passing Discipline" (Saying NO to Hot Names)
 You take pride in rejecting widely popular stocks when institutional fundamentals do not justify the risk. You enforce the firm's strict precedent:
-- **Cyclical Commodity Traps (e.g. `MU` - Micron)**: Even if peak earnings or HBM memory demand look astronomical, peak cycle multiples are an illusion. High Capex burdens and commoditized pricing mean you PASS when trading near or above fair value with low margin of safety.
-- **Multiple Compression & Entrant Cannibalization (e.g. `ISRG` - Intuitive Surgical)**: When a monopoly tollbooth trades at 40x+ P/E while well-funded rivals (Medtronic Hugo, J&J Ottava) secure FDA approval, future ROIC and margins will compress. PASS until multiple normalizes.
-- **Excessive Leverage & Zero Margin of Error (e.g. `EQIX` - Equinix)**: High Net Debt / EBITDA (> 4.0x, and especially ~5.5x) leaves the balance sheet fragile to debt refinancing cliffs and capex overruns. PASS.
-- **Structural Price Wars & Geopolitical Drag (e.g. `BABA` - Alibaba)**: Domestic market share erosion, cloud price slashing, and sovereign regulatory intervention permanently cap multiples. PASS.
-- **Scale Disadvantage (e.g. `AMBA` - Ambarella)**: Emerging chip players lacking foundry scale and software ecosystems cannot compete with Qualcomm or Nvidia. PASS.
+- **Cyclical Commodity Producers**: When trading near cyclical margin peaks with CapEx intensity > 30% and impending competitor capacity additions, peak cycle multiples are an illusion. High CapEx burdens and commoditized pricing mean you PASS when trading near or above fair value with low margin of safety.
+- **Multiple Compression & Entrant Cannibalization**: When a high-multiple tollbooth trades at 40x+ P/E while well-funded rivals secure regulatory or commercial qualification, future ROIC and margins will compress. PASS until multiple normalizes.
+- **Excessive Leverage & Zero Margin of Error**: High Net Debt / EBITDA (> 4.0x) leaves the balance sheet fragile to debt refinancing cliffs and capex overruns. PASS.
+- **Structural Price Wars & Regulatory Drag**: Domestic market share erosion, cloud price slashing, and sovereign regulatory intervention permanently cap multiples. PASS.
+- **Scale Disadvantage**: Emerging sub-scale players lacking foundry scale and software ecosystems cannot compete with dominant platforms. PASS.
 
 ### 3. Conviction Tiers
-- **`High 🔥🔥🔥`**: Irreplaceable bottleneck moat, >3:1 asymmetry, fortress balance sheet, structural secular tailwind (e.g. AMZN, META, CEG).
-- **`Medium 🔥🔥`**: Solid moat and catalysts, but near-term cycle transition or moderate customer concentration (e.g. QCOM).
-- **`Low 🔥` / `Validation`**: High multiple or unproven execution; waiting for operating margin confirmation and multiple digestion (e.g. VRT).
+- **`High 🔥🔥🔥`**: Irreplaceable bottleneck moat, >3:1 asymmetry, fortress balance sheet, structural secular tailwind.
+- **`Medium 🔥🔥`**: Solid moat and catalysts, but near-term cycle transition or moderate customer concentration.
+- **`Low 🔥` / `Validation`**: High multiple or unproven execution; waiting for operating margin confirmation and multiple digestion.
 - **`🚫 Passed`**: Fails margin of safety, commodity cycle trap, or extreme leverage.
 
 ### 4. Position Sizing Mandate (Fractional Kelly Framework)
@@ -129,11 +129,21 @@ def run_investment_committee(state: InvestigationState, model: Any) -> dict[str,
     mean_target = price_targets.get("mean")
     base_target_val = mean_target.get("value") if isinstance(mean_target, dict) else mean_target
     base_target = float(base_target_val) if base_target_val and float(base_target_val) > 0 else None
+
+    quant_val = (state.get("quant_report") or {}).get("valuation") or {}
+    quant_fair_val = quant_val.get("fair_value") or (quant_val.get("fair_value_range") or {}).get("base")
+    if quant_fair_val and float(quant_fair_val) > 0:
+        base_target = max(base_target or 0.0, float(quant_fair_val))
+
     if bull_report and bull_report.bull_target_price and current_price and bull_report.bull_target_price > current_price:
         base_target = max(base_target or 0.0, bull_report.bull_target_price)
 
     raw_floor = adversarial.bear_floor_price if adversarial else None
     bear_floor = float(raw_floor) if raw_floor and float(raw_floor) > 0 else None
+    if not bear_floor:
+        low_fv = (quant_val.get("fair_value_range") or {}).get("low")
+        if low_fv and float(low_fv) > 0:
+            bear_floor = float(low_fv)
 
     # Calculate 3:1 Reward-to-Risk Ratio
     ratio = None
@@ -157,9 +167,13 @@ def run_investment_committee(state: InvestigationState, model: Any) -> dict[str,
             passing_checks["price_gate"] = "FAIL (Missing or non-positive market price)"
         if not base_target:
             passing_checks["target_gate"] = "FAIL (Missing or non-positive upside target)"
+        elif current_price and base_target <= current_price:
+            passing_checks["target_gate"] = f"FAIL (Base fair value ${base_target:.2f} <= current price ${current_price:.2f})"
         if not bear_floor:
             passing_checks["bear_floor_gate"] = "FAIL (Missing or invalid bear downside floor)"
-        passing_checks["asymmetry_gate"] = "FAIL (Incomplete price targets or floor)"
+        elif current_price and bear_floor >= current_price:
+            passing_checks["bear_floor_gate"] = f"FAIL (Bear floor ${bear_floor:.2f} >= current price ${current_price:.2f})"
+        passing_checks["asymmetry_gate"] = f"FAIL (Reward-to-risk ratio does not clear 3:1 hurdle)"
 
     # Build comprehensive payload for CIO LLM deliberation
     forensic = state.get("forensic_report") or {}

@@ -540,12 +540,20 @@ def create_agent_tools(
         try:
             from app.market.market_data import get_market_data as fetch_mkt
             from app.sec.financials import get_sec_financials as fetch_sec
+            from app.market.company_research import get_company_research as fetch_research
             from app.agent.specialists import run_quant_analysis
+
+            consensus_dict = None
+            try:
+                consensus_dict = fetch_research(clean_ticker).to_dict()
+            except Exception:
+                pass
 
             cand_state = {
                 "ticker": clean_ticker,
                 "market_context": fetch_mkt(clean_ticker).to_dict(),
                 "sec_financials": fetch_sec(clean_ticker).to_dict(),
+                "consensus_snapshot": consensus_dict,
             }
             res = run_quant_analysis(cand_state)
             quant_rep = res.get("quant_report") or {}

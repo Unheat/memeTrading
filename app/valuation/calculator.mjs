@@ -594,13 +594,87 @@ export function compute(model) {
     });
   }
 
-  const range = {
+  const dcfRange = {
     low: results.low.fair_value_per_share,
     base: results.base.fair_value_per_share,
     high: results.high.fair_value_per_share,
   };
 
   const graham = grahamNumber(inputs.eps_used, inputs.book_value_per_share);
+
+  // Multi-method Triangulation (DCF + Forward Multiples + Asset Floor + Consensus)
+  let triangulation = null;
+  const triSpec = model.triangulation || model.multiples;
+  const forwardEps = triSpec?.forward_eps ?? inputs.forward_eps ?? null;
+  const consensusTarget = triSpec?.consensus_mean_target ?? inputs.consensus_mean_target ?? null;
+  const bookValue = triSpec?.book_value_per_share ?? inputs.book_value_per_share ?? null;
+  const peMultiple = triSpec?.pe_multiple ?? 10.0;
+  const ptbvMultiple = triSpec?.ptbv_multiple ?? 1.8;
+
+  if (forwardEps || consensusTarget || bookValue || triSpec) {
+    const dcfBase = dcfRange.base;
+    const multipleVal = forwardEps && forwardEps > 0 ? round(forwardEps * peMultiple) : null;
+    const assetFloorVal = bookValue && bookValue > 0 ? round(bookValue * ptbvMultiple) : null;
+
+    let totalWeight = 0;
+    let weightedSum = 0;
+
+    // Detect if single-stage DCF diverges sharply from market price on a profitable company
+    // (e.g. DCF < 35% of market price due to peak CapEx drag while forward multiple is much higher)
+    const isDcfDivergent = Boolean(
+      inputs.current_price &&
+      dcfBase &&
+      (dcfBase / inputs.current_price < 0.35) &&
+      ((multipleVal && multipleVal > dcfBase * 1.5) || (consensusTarget && consensusTarget > dcfBase * 1.5))
+    );
+
+    const dcfWeight = isDcfDivergent ? 0.25 : 0.40;
+    if (dcfBase && dcfBase > 0) {
+      weightedSum += dcfBase * dcfWeight;
+      totalWeight += dcfWeight;
+    }
+    if (multipleVal && multipleVal > 0) {
+      const multWeight = isDcfDivergent ? 0.45 : 0.35;
+      weightedSum += multipleVal * multWeight;
+      totalWeight += multWeight;
+    }
+    if (assetFloorVal && assetFloorVal > 0) {
+      const assetWeight = 0.15;
+      weightedSum += assetFloorVal * assetWeight;
+      totalWeight += assetWeight;
+    }
+    if (consensusTarget && consensusTarget > 0) {
+      const consWeight = 0.10;
+      weightedSum += consensusTarget * consWeight;
+      totalWeight += consWeight;
+    }
+
+    const blendedBase = totalWeight > 0 ? round(weightedSum / totalWeight) : dcfBase;
+
+    triangulation = {
+      dcf_base: dcfBase,
+      forward_eps: forwardEps,
+      pe_multiple: peMultiple,
+      multiple_valuation: multipleVal,
+      tangible_asset_floor: assetFloorVal,
+      consensus_mean_target: consensusTarget,
+      blended_fair_value: blendedBase,
+      dcf_divergence_flagged: isDcfDivergent,
+    };
+  }
+
+  const effectiveBase = triangulation?.blended_fair_value ?? dcfRange.base;
+  const isDiv = Boolean(triangulation?.dcf_divergence_flagged);
+  const effectiveLow = isDiv && triangulation?.tangible_asset_floor ? round(triangulation.tangible_asset_floor) : dcfRange.low;
+  const effectiveHigh = isDiv && triangulation?.multiple_valuation ? round(triangulation.multiple_valuation) : dcfRange.high;
+
+  const range = {
+    low: effectiveLow,
+    base: effectiveBase,
+    high: effectiveHigh,
+    dcf_base: dcfRange.base,
+    blended_base: effectiveBase,
+  };
 
   // Reverse DCF calculation
   const reverseDcf = solveReverseDCF({
@@ -730,6 +804,7 @@ export function compute(model) {
     sotp: sotpResult,
     sensitivity_matrix: sensitivityMatrix,
     asymmetric_risk_reward: riskReward,
+    triangulation,
     forensic: forensicReport,
     monte_carlo_dcf: monteCarloResult,
     lbo_model: lboResult,

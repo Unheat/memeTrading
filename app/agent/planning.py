@@ -30,7 +30,7 @@ class ResearchPlanSchema(BaseModel):
     )
     candidate_entities: List[str] = Field(
         default_factory=list,
-        description="Explicit or high-opportunity candidate tickers or company names to investigate (e.g. ['MSFT', 'NVDA', 'GOOGL', 'AVGO', 'TSM']).",
+        description="Explicit or high-opportunity candidate tickers or company names to investigate.",
     )
     primary_questions: List[str] = Field(
         default_factory=list,
@@ -205,7 +205,7 @@ def reflect_on_research_gaps(
         "Review the current state of gathered evidence against the original research plan.\n"
         "Check:\n"
         "1. Did we gather market data and financial evidence for all requested candidates?\n"
-        "2. If a foreign issuer (e.g. Form 20-F/6-K filers like TSM) lacks standard US-GAAP XBRL facts, note that and verify whether market fundamentals or 20-F filing searches were used.\n"
+        "2. If a foreign issuer (e.g. Form 20-F/6-K filers) lacks standard US-GAAP XBRL facts, note that and verify whether market fundamentals or 20-F filing searches were used.\n"
         "3. Is the cross-candidate comparison matrix populated?\n"
         "4. If significant gaps exist, specify them in evidence_gaps and set is_research_complete to False.\n"
         "5. If all essential questions have sufficient cited evidence, set is_research_complete to True."

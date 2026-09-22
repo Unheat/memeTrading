@@ -589,6 +589,9 @@ def create_research_graph(
                 )
                 updates["thesis_breakers"] = list(dossier.get("bear_kill_triggers") or ())
 
+            if not state.get("expectation_gap") and (dossier.get("expectation_gap") or chosen_candidate.get("expectation_gap")):
+                updates["expectation_gap"] = dossier.get("expectation_gap") or chosen_candidate.get("expectation_gap")
+
         # Only run single-stock gate checks and committee deliberation if not multi-candidate or single candidate
         if ticker and ticker != "UNKNOWN" and (not is_multi_candidate or len(candidates) == 1):
             st = {**state, **updates}
@@ -599,6 +602,8 @@ def create_research_graph(
                     st["sec_financials"] = chosen_candidate["sec_financials"]
                 if not st.get("consensus_snapshot") and chosen_candidate.get("consensus_snapshot"):
                     st["consensus_snapshot"] = chosen_candidate["consensus_snapshot"]
+                if not st.get("expectation_gap") and chosen_candidate.get("expectation_gap"):
+                    st["expectation_gap"] = chosen_candidate["expectation_gap"]
             updates["accounting_gate"] = evaluate_accounting_gate(st)
             updates["valuation_gate"] = evaluate_valuation_gate(st)
             updates["asymmetry_gate"] = evaluate_asymmetry_gate(st)

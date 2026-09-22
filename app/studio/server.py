@@ -354,12 +354,12 @@ def get_studio_html() -> str:
         <div class="space-y-4 text-xs font-mono">
           <div>
             <label class="text-text-muted block mb-1">Ticker Symbol</label>
-            <input id="input-ticker" type="text" placeholder="e.g. MU, NVDA, TSLA" class="w-full bg-obsidian border border-obsidian-border rounded-lg px-3 py-2 text-text-primary focus:border-emerald-audit focus:outline-none uppercase font-bold" />
+            <input id="input-ticker" type="text" placeholder="e.g. AAPL, MSFT, GOOGL" class="w-full bg-obsidian border border-obsidian-border rounded-lg px-3 py-2 text-text-primary focus:border-emerald-audit focus:outline-none uppercase font-bold" />
           </div>
 
           <div>
             <label class="text-text-muted block mb-1">Research Prompt / Thesis Query</label>
-            <textarea id="input-query" rows="2" placeholder="e.g. Investigate DRAM gross margin expansion and inventory buildup..." class="w-full bg-obsidian border border-obsidian-border rounded-lg px-3 py-2 text-text-primary focus:border-emerald-audit focus:outline-none"></textarea>
+            <textarea id="input-query" rows="2" placeholder="e.g. Audit balance sheet inventory drift, gross margin trajectory, and reverse DCF..." class="w-full bg-obsidian border border-obsidian-border rounded-lg px-3 py-2 text-text-primary focus:border-emerald-audit focus:outline-none"></textarea>
           </div>
 
           <div class="grid grid-cols-2 gap-3">
