@@ -17,6 +17,12 @@ Do not jump directly into implementation when requirements are unclear. Treat th
 - **Structured Outputs for Model Reasoning**: All model-driven intent parsing, research planning, sub-question generation, candidate identification, and gap reflection MUST use industry-standard structured outputs (`response_format` / Pydantic schemas via LangChain/LangGraph).
 - **Fail Gracefully with Clean Schemas**: Deterministic code verifies schema validity, enforces budgets/timeouts, and records immutable evidence; it never guesses user intent from prompt substrings.
 
+## Strict Media Audio Governance: Zero-TTS-Fallback Policy
+
+- **Never use fallback voices**: Under no circumstances should macOS `say`, espeak, or mock synthetic speech fallbacks be introduced or retained.
+- **Fail loudly on TTS errors**: If the Fish Audio API fails (invalid key, HTTP error, rate limit), the pipeline must immediately log `False`, report the exact HTTP status code and API response body, and terminate video rendering immediately.
+- **Strict audio cache validation**: Before reusing any cached audio clips in `audio/<topic>/`, verify that the line text and character `voiceId` match the current script. Invalidate and purge stale files when scripts or character pairs switch.
+
 ## Donor Code Provenance
 
 When production code is copied or adapted from any repository under `reference/`, record it in the matching per-file module spec **before** writing that code. Add a `## Donor code provenance` table with one row per copied/adapted local function, class, or method:

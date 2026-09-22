@@ -72,6 +72,7 @@ class FacelessBridge:
         topic_slug: str,
         output_dir: Path,
         fish_model: str | None = None,
+        clean: bool = False,
     ) -> Path | None:
         """Invoke generate-audio.mjs to produce full-dialogue.mp3 via Fish Audio.
 
@@ -80,6 +81,7 @@ class FacelessBridge:
             topic_slug: Short topic identifier for directory naming.
             output_dir: Root output directory for faceless artifacts.
             fish_model: Optional Fish Audio model override (e.g. "s2", "s2-free").
+            clean: If True, purges stale cached audio before synthesizing.
 
         Returns:
             Path to the generated full-dialogue.mp3, or None on failure.
@@ -93,6 +95,15 @@ class FacelessBridge:
             return None
 
         output_dir.mkdir(parents=True, exist_ok=True)
+        is_clean = clean
+        existing_audio = output_dir / "audio" / topic_slug / "full-dialogue.mp3"
+        if existing_audio.exists() and dialogue_path.exists():
+            try:
+                if dialogue_path.stat().st_mtime > existing_audio.stat().st_mtime:
+                    is_clean = True
+            except OSError:
+                pass
+
         cmd = [
             "node",
             str(script.resolve()),
@@ -103,6 +114,8 @@ class FacelessBridge:
             "--output",
             str(output_dir.resolve()),
         ]
+        if is_clean:
+            cmd.append("--clean")
 
         run_env = dict(os.environ)
         if fish_model:
@@ -315,6 +328,7 @@ class FacelessBridge:
         output_dir: Path,
         fish_model: str | None = None,
         template_name: str = "minecraft2.mp4",
+        clean: bool = False,
     ) -> Path | None:
         """Execute the full 4-stage Faceless pipeline to produce a finished video reel.
 
@@ -328,6 +342,7 @@ class FacelessBridge:
             output_dir: Root output directory for faceless artifacts.
             fish_model: Optional Fish Audio model override (e.g. "s2.1-pro-free").
             template_name: Video template filename (defaults to minecraft2.mp4).
+            clean: If True, forces clean audio generation by discarding cached MP3s.
 
         Returns:
             Path to the final rendered video (.mp4), or None if any stage failed.
@@ -344,7 +359,7 @@ class FacelessBridge:
             return None
 
         logger.info("compose_reel: Stage 1/4 — Generating audio via Fish Audio TTS...")
-        audio_path = self.generate_audio(dialogue_path, topic_slug, output_dir, fish_model=fish_model)
+        audio_path = self.generate_audio(dialogue_path, topic_slug, output_dir, fish_model=fish_model, clean=clean)
         if audio_path is None:
             logger.warning("compose_reel: Audio generation failed; aborting video pipeline.")
             return None

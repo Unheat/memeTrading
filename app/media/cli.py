@@ -13,6 +13,7 @@ import argparse
 import json
 import logging
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -97,6 +98,10 @@ def generate_video_for_case(
         (faceless_dir / "reel_script.txt").write_text(reel_script_text, encoding="utf-8")
         (faceless_dir / "caption.txt").write_text(caption_text, encoding="utf-8")
         logger.info("Dialogue and caption written to %s", faceless_dir)
+
+        # Invalidate old cached audio and video so no stale character clips remain
+        shutil.rmtree(faceless_dir / "audio", ignore_errors=True)
+        shutil.rmtree(faceless_dir / "video", ignore_errors=True)
     else:
         logger.info("Found existing dialogue script matching '%s' at %s", character_pair, dialogue_path)
 

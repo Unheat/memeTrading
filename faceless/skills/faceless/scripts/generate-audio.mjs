@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import {spawn} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {access, mkdir, readFile, rename, rm, stat, writeFile} from 'node:fs/promises';
 import {join, resolve} from 'node:path';
 import {ensureFfmpeg} from './ffmpeg.mjs';
@@ -19,15 +20,29 @@ const CASTS = [
 
 function parseArguments(argumentsList) {
   const options = {};
-  for (let index = 0; index < argumentsList.length; index += 2) {
-    const key = argumentsList[index];
-    const value = argumentsList[index + 1];
-    if (!key?.startsWith('--') || !value || value.startsWith('--')) {
-      throw new Error('Usage: generate-audio.mjs --script <dialogue.json> --topic <topic-slug> --output <faceless-output-directory>');
+  for (let index = 0; index < argumentsList.length; index += 1) {
+    const item = argumentsList[index];
+    if (item === '--clean' || item === '--force') {
+      options.clean = true;
+      continue;
     }
-    options[key.slice(2)] = value;
+    if (item?.startsWith('--')) {
+      const key = item.slice(2);
+      const value = argumentsList[index + 1];
+      if (!value || value.startsWith('--')) {
+        throw new Error('Usage: generate-audio.mjs --script <dialogue.json> --topic <topic-slug> --output <faceless-output-directory> [--clean]');
+      }
+      options[key] = value;
+      index += 1;
+    } else {
+      throw new Error('Usage: generate-audio.mjs --script <dialogue.json> --topic <topic-slug> --output <faceless-output-directory> [--clean]');
+    }
   }
   return options;
+}
+
+function computeLineHash(line) {
+  return createHash('sha256').update(`${line.voiceId}:${line.text.trim()}`).digest('hex').slice(0, 16);
 }
 
 function validateLines(value) {
@@ -134,16 +149,39 @@ const outputDirectory = resolve(options.output);
 const audioDirectory = join(outputDirectory, 'audio', options.topic);
 const lines = validateLines(JSON.parse(await readFile(scriptPath, 'utf8')));
 await ensureFfmpeg();
+
+if (options.clean) {
+  console.log(`--clean specified. Wiping audio directory for topic ${options.topic}.`);
+  await rm(audioDirectory, {recursive: true, force: true});
+}
+
 await mkdir(audioDirectory, {recursive: true});
+
+let existingManifest = null;
+const manifestPath = join(audioDirectory, 'audio-manifest.json');
+try {
+  existingManifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+} catch {}
 
 for (const line of lines) {
   const file = `${String(line.index).padStart(3, '0')}.mp3`;
   const filePath = join(audioDirectory, file);
-  if (await isCompletedAudioFile(filePath)) {
-    console.log(`Keeping existing ${file}.`);
+  const currentHash = computeLineHash(line);
+
+  const existingLineMeta = existingManifest?.lines?.find((m) => m.index === line.index);
+  const isHashMatch = existingLineMeta && existingLineMeta.hash === currentHash && existingLineMeta.voiceId === line.voiceId;
+
+  if (!options.clean && isHashMatch && (await isCompletedAudioFile(filePath))) {
+    console.log(`Keeping existing ${file} (voice & text match).`);
     continue;
   }
-  console.log(`Generating line ${line.index + 1} of ${lines.length}.`);
+
+  if (await isCompletedAudioFile(filePath)) {
+    console.log(`Invalidating stale ${file} (voice or text changed).`);
+    await rm(filePath, {force: true});
+  }
+
+  console.log(`Generating line ${line.index + 1} of ${lines.length} (${line.voiceId}).`);
   await generateLine({fishApiKey, line, filePath});
   console.log(`Saved ${file}.`);
 }
@@ -171,6 +209,7 @@ await writeFile(
       index: line.index,
       voiceId: line.voiceId,
       file: `${String(line.index).padStart(3, '0')}.mp3`,
+      hash: computeLineHash(line),
     })),
   }, null, 2)}\n`,
 );
