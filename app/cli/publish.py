@@ -31,6 +31,7 @@ from app.media.youtube_uploader import (
     is_youtube_configured,
     upload_reel_to_youtube,
 )
+from app.storage.cases import find_case_dir
 
 logger = logging.getLogger(__name__)
 
@@ -45,48 +46,6 @@ class PublishResult:
     is_deployed: bool
     deployment_url: str | None
     error: str | None = None
-
-
-def find_case_dir(case_identifier: str | None, cases_root: Path | str = "cases") -> Path:
-    """Resolve a case directory from an ID, path, or '--latest'.
-
-    Args:
-        case_identifier: Case ID (e.g. 'MU-2026-09-18-001'), path, or None for latest.
-        cases_root: Root directory where cases are stored.
-
-    Returns:
-        Resolved Path to the case folder.
-
-    Raises:
-        FileNotFoundError: If case cannot be found.
-    """
-    root = Path(cases_root)
-    if not root.exists():
-        raise FileNotFoundError(f"Cases root directory not found at {root.resolve()}")
-
-    if not case_identifier or case_identifier == "--latest" or case_identifier == "latest":
-        # Find newest case
-        case_dirs = [d for d in root.iterdir() if d.is_dir() and not d.name.startswith(".")]
-        if not case_dirs:
-            raise FileNotFoundError(f"No cases found in {root.resolve()}")
-        case_dirs.sort(key=lambda d: d.stat().st_mtime, reverse=True)
-        return case_dirs[0]
-
-    cand_path = Path(case_identifier)
-    if cand_path.is_dir():
-        return cand_path
-
-    # Try root / case_identifier
-    direct_match = root / case_identifier
-    if direct_match.is_dir():
-        return direct_match
-
-    # Search by prefix or ticker
-    for d in root.iterdir():
-        if d.is_dir() and (d.name == case_identifier or d.name.startswith(case_identifier)):
-            return d
-
-    raise FileNotFoundError(f"Could not locate case matching '{case_identifier}' in {root.resolve()}")
 
 
 def parse_citations_from_article(raw_article: str) -> list[dict[str, Any]]:

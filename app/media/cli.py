@@ -25,9 +25,9 @@ from app.agent.media import (
     generate_reel_script,
 )
 from app.agent.model_runtime import create_default_model_runtime
-from app.cli.publish import find_case_dir
 from app.config import load_config
 from app.media.faceless_bridge import FacelessBridge
+from app.storage.cases import find_case_dir
 
 logger = logging.getLogger(__name__)
 

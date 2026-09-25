@@ -208,7 +208,7 @@ def main() -> int:
     # Fast path 2: Direct video rendering for an existing case
     if args.video_for_case:
         from app.media.cli import generate_video_for_case
-        from app.cli.publish import find_case_dir
+        from app.storage.cases import find_case_dir
         try:
             target_case = find_case_dir(args.video_for_case)
             rendered = generate_video_for_case(

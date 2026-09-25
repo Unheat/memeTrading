@@ -20,8 +20,9 @@ from urllib.parse import parse_qs, urlparse
 
 from app.agent.runner import run_investigation
 from app.agent.state import ResearchRequest
-from app.cli.publish import find_case_dir, publish_case
+from app.cli.publish import publish_case
 from app.media.cli import generate_video_for_case
+from app.storage.cases import find_case_dir
 
 logger = logging.getLogger(__name__)
 

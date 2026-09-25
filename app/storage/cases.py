@@ -227,3 +227,43 @@ def read_corpus_manifest(case_directory: Path) -> PulledCorpus:
         raise StorageError("corpus manifest is missing") from error
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
         raise StorageError("corpus manifest is invalid") from error
+
+
+def find_case_dir(case_identifier: str | None, cases_root: Path | str = "cases") -> Path:
+    """Resolve a case directory from an ID, path, or '--latest'.
+
+    Args:
+        case_identifier: Case ID (e.g. 'MU-2026-09-18-001'), path, or None for latest.
+        cases_root: Root directory where cases are stored.
+
+    Returns:
+        Resolved Path to the case folder.
+
+    Raises:
+        FileNotFoundError: If case cannot be found.
+    """
+    root = Path(cases_root)
+    if not root.exists():
+        raise FileNotFoundError(f"Cases root directory not found at {root.resolve()}")
+
+    if not case_identifier or case_identifier == "--latest" or case_identifier == "latest":
+        case_dirs = [d for d in root.iterdir() if d.is_dir() and not d.name.startswith(".")]
+        if not case_dirs:
+            raise FileNotFoundError(f"No cases found in {root.resolve()}")
+        case_dirs.sort(key=lambda d: d.stat().st_mtime, reverse=True)
+        return case_dirs[0]
+
+    cand_path = Path(case_identifier)
+    if cand_path.is_dir():
+        return cand_path
+
+    direct_match = root / case_identifier
+    if direct_match.is_dir():
+        return direct_match
+
+    for d in root.iterdir():
+        if d.is_dir() and (d.name == case_identifier or d.name.startswith(case_identifier)):
+            return d
+
+    raise FileNotFoundError(f"Could not find case directory for '{case_identifier}' in {root.resolve()}")
+
