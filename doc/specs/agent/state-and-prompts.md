@@ -6,7 +6,7 @@ Define the public research request, bounded execution budget, universal investig
 
 ## `ResearchRequest` and intent
 
-`query` is required. Optional `ticker`, `company`, `theme`, and `mandate` are caller facts, not routing controls. `depth` is `standard` or `deep`; `BudgetLimits` defaults to 35 total tool calls and two identical calls.
+`query` is required. Optional `ticker`, `company`, `theme`, and `mandate` are caller facts, not routing controls. `depth` is `standard` or `deep`; `BudgetLimits` defaults to 50 total tool calls and two identical calls.
 
 `resolve_intent()` preserves only explicit structural requirements: caller-provided subjects, a requested count (`top 10`, `best 5`, `rank 3`, or `compare 4`), candidate-workspace requirement, and an explicit capital-allocation request. It never classifies prompt keywords, picks a research graph, creates candidates, or decides a recommendation.
 

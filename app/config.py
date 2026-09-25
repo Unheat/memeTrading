@@ -85,7 +85,7 @@ class MediaConfig:
 class ResearchConfig:
     """User-configurable execution limits and research defaults."""
 
-    max_tool_calls: int = 35
+    max_tool_calls: int = 50
     max_identical_calls: int = 2
     benchmark_ticker: str = "SPY"
     sec_periods: int = 4
@@ -187,7 +187,7 @@ def load_config(
     # Parse Research config
     raw_res = data.get("research", {}) or {}
     research_cfg = ResearchConfig(
-        max_tool_calls=int(raw_res.get("max_tool_calls", 35)),
+        max_tool_calls=int(raw_res.get("max_tool_calls", 50)),
         max_identical_calls=int(raw_res.get("max_identical_calls", 2)),
         benchmark_ticker=str(raw_res.get("benchmark_ticker", "SPY")),
         sec_periods=int(raw_res.get("sec_periods", 4)),

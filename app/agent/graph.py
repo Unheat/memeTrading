@@ -99,7 +99,7 @@ def should_continue_executor(state: InvestigationState) -> Literal["tools", "ref
     messages = state.get("messages", [])
     tool_calls = getattr(messages[-1], "tool_calls", None) if messages else None
     budget = state.get("budget_state", {})
-    max_calls = budget.get("max_tool_calls") if budget.get("max_tool_calls") is not None else budget.get("max_total_tool_calls", 35)
+    max_calls = budget.get("max_tool_calls") if budget.get("max_tool_calls") is not None else budget.get("max_total_tool_calls", 50)
     tool_calls_done = state.get("tool_calls", 0)
 
     if tool_calls:
@@ -125,7 +125,7 @@ def should_continue_reflection(state: InvestigationState) -> Literal["executor",
         ``executor`` if follow-up work was proposed, else ``committee`` to proceed forward.
     """
     budget = state.get("budget_state", {})
-    max_calls = budget.get("max_tool_calls") if budget.get("max_tool_calls") is not None else budget.get("max_total_tool_calls", 35)
+    max_calls = budget.get("max_tool_calls") if budget.get("max_tool_calls") is not None else budget.get("max_total_tool_calls", 50)
     tool_calls_done = state.get("tool_calls", 0)
 
     if tool_calls_done >= max_calls:
@@ -319,7 +319,7 @@ def create_research_graph(
         )
         response = model_with_tools.invoke(list(prepared.messages))
         budget = state.get("budget_state", {})
-        max_calls = budget.get("max_tool_calls") if budget.get("max_tool_calls") is not None else budget.get("max_total_tool_calls", 35)
+        max_calls = budget.get("max_tool_calls") if budget.get("max_tool_calls") is not None else budget.get("max_total_tool_calls", 50)
         remaining = max(0, max_calls - state.get("tool_calls", 0))
         allowed = list(getattr(response, "tool_calls", None) or [])[:remaining]
         if isinstance(response, AIMessage) and allowed != response.tool_calls:

@@ -83,7 +83,8 @@ def test_search_social_ticker_query_orchestration():
 def test_search_social_graceful_on_provider_failures():
     with patch("app.social.search.RedditProvider") as MockReddit, \
          patch("app.social.search.ApeWisdomClient") as MockApe, \
-         patch("app.social.search.StockTwitsClient") as MockST:
+         patch("app.social.search.StockTwitsClient") as MockST, \
+         patch("app.social.search.ApifyTwitterClient") as MockApify:
         
         mock_reddit_inst = MockReddit.return_value
         mock_reddit_inst.search.side_effect = Exception("Reddit down")
@@ -93,6 +94,10 @@ def test_search_social_graceful_on_provider_failures():
 
         mock_st_inst = MockST.return_value
         mock_st_inst.get_symbol_stream.side_effect = Exception("StockTwits down")
+
+        mock_apify_inst = MockApify.return_value
+        mock_apify_inst.is_configured = True
+        mock_apify_inst.search.side_effect = Exception("Apify down")
 
         # Must not raise an unhandled crash; returns structured empty/degraded result
         res = search_social(ticker="UNKNOWN")

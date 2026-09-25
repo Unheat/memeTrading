@@ -29,7 +29,7 @@ class BudgetLimits:
         Immutable multi-stage budget configuration.
     """
 
-    max_total_tool_calls: int = 35
+    max_total_tool_calls: int = 50
     max_identical_calls: int = 2
     max_reflection_rounds: int = 2
     breadth_limit: int = 10

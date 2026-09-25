@@ -15,7 +15,7 @@ from app.agent.prompts import build_research_system_prompt
 
 def test_budget_limits_defaults():
     budget = BudgetLimits()
-    assert budget.max_tool_calls == 35
+    assert budget.max_tool_calls == 50
     assert budget.max_identical_calls == 2
 
 
@@ -23,7 +23,7 @@ def test_research_request_validation():
     req = ResearchRequest(query="Investigate NVDA hype", ticker="nvda")
     assert req.ticker == "NVDA"
     assert req.query == "Investigate NVDA hype"
-    assert req.budget.max_tool_calls == 35
+    assert req.budget.max_tool_calls == 50
 
     with pytest.raises(ValueError, match="query"):
         ResearchRequest(query="")
@@ -53,7 +53,7 @@ def test_build_research_system_prompt():
     })
     content = build_research_system_prompt(state).content
     assert "ABC" in content
-    assert "Remaining tool calls: 32" in content
+    assert "Remaining tool calls: 47" in content
     assert '"requested_ranking_count": 4' in content
     assert '"quote": "non-binding"' in content
 
