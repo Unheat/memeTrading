@@ -44,6 +44,17 @@ def is_google_api_installed() -> bool:
         return False
 
 
+def find_client_secrets_file(default: Path | str = DEFAULT_CLIENT_SECRETS_FILE) -> Path:
+    """Find client_secrets.json or any client_secret_*.json downloaded from Google Cloud Console."""
+    p = Path(default)
+    if p.exists():
+        return p
+    candidates = sorted(Path(".").glob("client_secret_*.json"), key=lambda f: f.stat().st_mtime, reverse=True)
+    if candidates:
+        return candidates[0]
+    return p
+
+
 def is_youtube_configured(
     secrets_path: Path | str | None = None,
     token_path: Path | str | None = None,
@@ -52,7 +63,7 @@ def is_youtube_configured(
     if not is_google_api_installed():
         return False
 
-    sec_file = Path(secrets_path or os.getenv("YOUTUBE_CLIENT_SECRETS_FILE", DEFAULT_CLIENT_SECRETS_FILE))
+    sec_file = Path(secrets_path) if secrets_path else find_client_secrets_file(os.getenv("YOUTUBE_CLIENT_SECRETS_FILE", DEFAULT_CLIENT_SECRETS_FILE))
     tok_file = Path(token_path or os.getenv("YOUTUBE_TOKEN_FILE", DEFAULT_TOKEN_FILE))
     has_secrets_env = bool(os.getenv("YOUTUBE_CLIENT_SECRETS_JSON"))
 
@@ -128,18 +139,18 @@ def extract_youtube_metadata(
     }
 
 
-def get_authenticated_service(
+def get_authenticated_credentials(
     secrets_path: Path | str | None = None,
     token_path: Path | str | None = None,
 ) -> Any:
-    """Authenticate and return an authorized YouTube Resource service.
+    """Authenticate and return authorized Google OAuth2 Credentials.
 
     Args:
         secrets_path: Path to client_secrets.json.
         token_path: Path to stored token.json.
 
     Returns:
-        Google API YouTube service object.
+        Google Credentials object.
 
     Raises:
         RuntimeError: If dependencies or credentials are not configured.
@@ -147,16 +158,15 @@ def get_authenticated_service(
     if not is_google_api_installed():
         raise RuntimeError(
             "Google API libraries not installed. Install with: "
-            "pip install google-api-python-client google-auth-oauthlib google-auth-httplib2"
+            "uv pip install google-api-python-client google-auth-oauthlib google-auth-httplib2"
         )
 
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
-    from googleapiclient.discovery import build
 
     tok_file = Path(token_path or os.getenv("YOUTUBE_TOKEN_FILE", DEFAULT_TOKEN_FILE))
-    sec_file = Path(secrets_path or os.getenv("YOUTUBE_CLIENT_SECRETS_FILE", DEFAULT_CLIENT_SECRETS_FILE))
+    sec_file = Path(secrets_path) if secrets_path else find_client_secrets_file(os.getenv("YOUTUBE_CLIENT_SECRETS_FILE", DEFAULT_CLIENT_SECRETS_FILE))
     secrets_json_env = os.getenv("YOUTUBE_CLIENT_SECRETS_JSON")
 
     creds: Any = None
@@ -189,7 +199,80 @@ def get_authenticated_service(
         except Exception as exc:
             logger.warning("Failed to persist token to %s: %s", tok_file, exc)
 
+    return creds
+
+
+def get_authenticated_service(
+    secrets_path: Path | str | None = None,
+    token_path: Path | str | None = None,
+) -> Any:
+    """Authenticate and return an authorized YouTube Resource service.
+
+    Args:
+        secrets_path: Path to client_secrets.json.
+        token_path: Path to stored token.json.
+
+    Returns:
+        Google API YouTube service object.
+    """
+    from googleapiclient.discovery import build
+
+    creds = get_authenticated_credentials(secrets_path=secrets_path, token_path=token_path)
     return build("youtube", "v3", credentials=creds)
+
+
+def check_youtube_auth(
+    secrets_path: Path | str | None = None,
+    token_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Test OAuth authentication and return token introspection metadata.
+
+    Args:
+        secrets_path: Path to client_secrets.json.
+        token_path: Path to stored token.json.
+
+    Returns:
+        Dict with status, scope, and token details.
+    """
+    if not is_google_api_installed():
+        return {
+            "status": "error",
+            "error": "Google API libraries not installed. Run: uv pip install google-api-python-client google-auth-oauthlib",
+        }
+
+    sec_file = Path(secrets_path) if secrets_path else find_client_secrets_file(os.getenv("YOUTUBE_CLIENT_SECRETS_FILE", DEFAULT_CLIENT_SECRETS_FILE))
+    tok_file = Path(token_path or os.getenv("YOUTUBE_TOKEN_FILE", DEFAULT_TOKEN_FILE))
+    has_secrets_env = bool(os.getenv("YOUTUBE_CLIENT_SECRETS_JSON"))
+
+    if not tok_file.exists() and not sec_file.exists() and not has_secrets_env:
+        return {
+            "status": "error",
+            "error": f"Credentials file not found ({sec_file}). Place client_secrets.json in workspace.",
+        }
+
+    try:
+        import urllib.request
+        from google.auth.transport.requests import Request
+
+        creds = get_authenticated_credentials(secrets_path=secrets_path, token_path=token_path)
+        if not creds.valid:
+            creds.refresh(Request())
+
+        url = f"https://oauth2.googleapis.com/tokeninfo?access_token={creds.token}"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+
+        return {
+            "status": "ok",
+            "scope": data.get("scope"),
+            "expires_in": data.get("expires_in"),
+            "token_file": str(tok_file),
+            "secrets_file": str(sec_file),
+        }
+    except Exception as exc:
+        logger.error("YouTube authentication verification failed: %s", exc)
+        return {"status": "error", "error": str(exc)}
 
 
 def upload_reel_to_youtube(

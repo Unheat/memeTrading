@@ -28,3 +28,10 @@ cases/
 temp_plan/
 web/public/videos/
 *.mp4
+
+# YouTube credentials & tokens
+client_secret*.json
+client_secrets*.json
+credentials*.json
+.youtube_token*.json
+token*.json

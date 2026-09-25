@@ -375,11 +375,26 @@ When YouTube credentials are not provided, the publishing engine automatically p
   - This compresses the video to **~15–18 MB** (safely under the 25 MiB cap) and copies it to `web/public/videos/<slug>.mp4`.
   - The website serves it via a custom HTML5 `<video controls playsinline>` player without third-party ads or tracking.
 
-#### 2. Automated YouTube Video Embeds (Optional)
-If you configure Google Cloud OAuth2 credentials:
-1. Place your downloaded `client_secrets.json` into the project root.
-2. Run `python -m app.cli.publish --latest --youtube --privacy unlisted --deploy`.
-3. The video is uploaded to your YouTube channel via the YouTube Data API v3 and embedded as a responsive vertical 9:16 player (`https://www.youtube.com/embed/<VIDEO_ID>`). Tokens are cached locally in `.youtube_token.json` for unattended future uploads.
+#### 2. Automated YouTube Video Embeds (Optional Extension)
+If you want to enable automatic YouTube uploading on a new machine or deployment:
+1. **Install optional publishing dependencies**:
+   ```bash
+   pip install -r requirements-publish.txt
+   ```
+   *(Regular users running only the research and video generator only need `requirements.txt`).*
+2. **Provide your OAuth credentials**:
+   - Place your downloaded `client_secrets.json` into the project root, **or**
+   - Provide the path via `export YOUTUBE_CLIENT_SECRETS_FILE=/path/to/client_secrets.json`, **or**
+   - Provide the raw JSON string directly in `.env`: `YOUTUBE_CLIENT_SECRETS_JSON='{"installed":{...}}'`.
+3. **Verify credentials**:
+   ```bash
+   python -m app.cli.publish --check-youtube
+   ```
+4. **Publish**:
+   ```bash
+   python -m app.cli.publish --latest --youtube --privacy unlisted --deploy
+   ```
+   The video is uploaded to your YouTube channel via YouTube Data API v3 and embedded as a responsive vertical 9:16 player. Refresh tokens are cached in `.youtube_token.json` for unattended future uploads.
 
 ---
 

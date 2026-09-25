@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from app.media.youtube_uploader import (
+    check_youtube_auth,
     extract_youtube_metadata,
     is_youtube_configured,
     upload_reel_to_youtube,
@@ -522,6 +523,7 @@ def main() -> None:
     parser.add_argument("case_id", nargs="?", default=None, help="Case directory name or path (defaults to latest)")
     parser.add_argument("--latest", action="store_true", help="Publish the most recently generated case")
     parser.add_argument("--list", action="store_true", help="List all currently published articles")
+    parser.add_argument("--check-youtube", action="store_true", help="Test and verify YouTube OAuth authorization")
     parser.add_argument("--delete", type=str, default=None, help="Delete an article + companion video by slug or caseId")
     parser.add_argument("--web-root", default="web", help="Path to website directory")
     parser.add_argument("--youtube", action="store_true", default=True, help="Auto-upload video to YouTube if configured")
@@ -545,6 +547,20 @@ def main() -> None:
             print(f"  Case:    {a['case_id']}")
             print(f"  Video:   {a['video_url'] or 'None'}")
             print("-" * 80)
+        return
+
+    if args.check_youtube:
+        print("\n🔍 Checking YouTube OAuth Configuration...")
+        res = check_youtube_auth()
+        if res.get("status") == "ok":
+            print("✅ YouTube Authentication Successful!")
+            print(f"• Scope:        {res.get('scope')}")
+            print(f"• Token file:   {res.get('token_file')}")
+            print(f"• Secrets file: {res.get('secrets_file')}")
+            print(f"• Expires in:   {res.get('expires_in')}s")
+        else:
+            print(f"❌ YouTube Auth Check Failed: {res.get('error')}", file=sys.stderr)
+            sys.exit(1)
         return
 
     if args.delete:

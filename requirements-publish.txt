@@ -1,0 +1,5 @@
+# Optional dependencies for YouTube video upload and public journal publishing
+-r requirements.txt
+google-api-python-client>=2.100.0
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.2.0
