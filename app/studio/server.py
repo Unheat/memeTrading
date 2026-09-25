@@ -260,12 +260,14 @@ class StudioHandler(BaseHTTPRequestHandler):
         if path == "/api/publish":
             case_id = req_data.get("case_id", "")
             youtube_id = req_data.get("youtube_id", "").strip() or None
+            youtube_upload = bool(req_data.get("youtube_upload", True))
             deploy = bool(req_data.get("deploy", False))
 
             try:
                 case_path = find_case_dir(case_id)
                 res = publish_case(
                     case_dir=case_path,
+                    youtube_upload=youtube_upload,
                     youtube_id=youtube_id,
                     deploy=deploy,
                 )
@@ -465,9 +467,15 @@ No case selected. Choose an investigation on the left to read the forensic audit
               <label class="text-text-muted block mb-1">Optional YouTube Video ID (Override or Pre-uploaded):</label>
               <input id="input-yt-id" type="text" placeholder="e.g. dQw4w9WgXcQ (leave blank to auto-upload)" class="w-full bg-obsidian border border-obsidian-border rounded-lg px-3 py-2 text-text-primary text-xs" />
             </div>
-            <div class="flex items-center gap-2 pt-1">
-              <input id="check-deploy" type="checkbox" checked class="rounded bg-obsidian border-obsidian-border text-emerald-audit" />
-              <label for="check-deploy" class="text-text-secondary cursor-pointer">Build and Deploy to Cloudflare Workers Static Assets immediately</label>
+            <div class="space-y-2 pt-1">
+              <div class="flex items-center gap-2">
+                <input id="check-yt-upload" type="checkbox" checked class="rounded bg-obsidian border-obsidian-border text-emerald-audit" />
+                <label for="check-yt-upload" class="text-text-secondary cursor-pointer">Auto-upload video reel to YouTube if credentials exist (otherwise hosts on Cloudflare)</label>
+              </div>
+              <div class="flex items-center gap-2">
+                <input id="check-deploy" type="checkbox" checked class="rounded bg-obsidian border-obsidian-border text-emerald-audit" />
+                <label for="check-deploy" class="text-text-secondary cursor-pointer">Build and Deploy to Cloudflare Workers Static Assets immediately</label>
+              </div>
             </div>
           </div>
 
@@ -606,6 +614,7 @@ No case selected. Choose an investigation on the left to read the forensic audit
     document.getElementById('btn-publish-submit').addEventListener('click', async () => {
       if (!activeCaseId) return alert('Select a case first');
       const ytId = document.getElementById('input-yt-id').value;
+      const ytUpload = document.getElementById('check-yt-upload').checked;
       const deploy = document.getElementById('check-deploy').checked;
 
       const outcome = document.getElementById('publish-outcome');
@@ -616,7 +625,7 @@ No case selected. Choose an investigation on the left to read the forensic audit
         const res = await fetch('/api/publish', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ case_id: activeCaseId, youtube_id: ytId, deploy })
+          body: JSON.stringify({ case_id: activeCaseId, youtube_id: ytId, youtube_upload: ytUpload, deploy })
         });
         const data = await res.json();
         if (data.success) {
