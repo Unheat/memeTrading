@@ -65,6 +65,7 @@ export function dcf({
   const pvFlows = flows.reduce((s, f) => s + f.pv, 0);
   const enterpriseValue = pvFlows + pvTerminal;
   const equityValue = enterpriseValue + netCash;
+  const fairValuePerShare = equityValue > 0 ? equityValue / shares : 0.0;
 
   return {
     pv_explicit_flows: round(pvFlows),
@@ -72,7 +73,7 @@ export function dcf({
     terminal_share_of_value: round(pvTerminal / (pvFlows + pvTerminal), 3),
     enterprise_value: round(enterpriseValue),
     equity_value: round(equityValue),
-    fair_value_per_share: round(equityValue / shares),
+    fair_value_per_share: round(fairValuePerShare),
     flows: flows.map((f) => ({ year: f.year, fcf: round(f.fcf), pv: round(f.pv) })),
   };
 }

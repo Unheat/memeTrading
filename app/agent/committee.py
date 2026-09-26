@@ -235,7 +235,9 @@ def run_investment_committee(state: InvestigationState, model: Any) -> dict[str,
     kelly_size = 0.0
     if current_price and base_target and bear_floor and base_target > current_price and bear_floor < current_price:
         upside_dollar = base_target - current_price
-        downside_dollar = current_price - bear_floor
+        # Enforce realistic minimum downside divisor (at least 3% of current price or $1.00)
+        # to prevent divide-by-near-zero ratio inflation from micro downside spreads
+        downside_dollar = max(current_price - bear_floor, current_price * 0.03, 1.0)
         ratio = round(upside_dollar / downside_dollar, 2)
         passing_checks["asymmetry_gate"] = "PASS" if ratio >= asymmetry_hurdle else f"FAIL ({ratio:.1f}x < {asymmetry_hurdle:.1f}x)"
         if ratio >= asymmetry_hurdle and is_liquid and not is_blackout:
