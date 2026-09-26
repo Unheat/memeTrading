@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from datetime import date
 import json
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Sequence
@@ -37,14 +38,16 @@ class ToolCallGuard:
 
     max_identical: int = 2
     _counts: dict[tuple[str, Any], int] = field(default_factory=dict)
+    _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def check_and_record(self, signature: tuple[str, Any]) -> bool:
         """Record signature and return True if duplicate limit exceeded."""
-        current = self._counts.get(signature, 0)
-        if current >= self.max_identical:
-            return True
-        self._counts[signature] = current + 1
-        return False
+        with self._lock:
+            current = self._counts.get(signature, 0)
+            if current >= self.max_identical:
+                return True
+            self._counts[signature] = current + 1
+            return False
 
 
 def create_agent_tools(

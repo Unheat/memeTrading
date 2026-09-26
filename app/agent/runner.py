@@ -148,7 +148,8 @@ def run_investigation(
             "pipeline.start case_id=%s ticker=%s depth=%s budget=%s intent=%s",
             case_id, ticker, effective_request.depth, budget.max_total_tool_calls, initial_state["research_intent"],
         )
-        final_state = dict(graph.invoke(initial_state, config={"recursion_limit": 100}))
+        max_concurrency = getattr(cfg.research, "max_concurrency", 6)
+        final_state = dict(graph.invoke(initial_state, config={"recursion_limit": 100, "max_concurrency": max_concurrency}))
         logger.info(
             "pipeline.graph_complete case_id=%s status=%s tool_calls=%s candidates=%s receipts=%s evidence=%s",
             case_id, final_state.get("status"), final_state.get("tool_calls"), len(final_state.get("candidates") or {}),
