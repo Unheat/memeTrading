@@ -142,6 +142,35 @@ supports it.
 
 ---
 
+## Post-fix e2e results (case GOOG-2026-09-26-003)
+
+Final verification run (36 tool calls, planner chose a 4-name mega-cap comparison:
+GOOG/MSFT/META/AMZN) — every fix verified live:
+
+- **Fix 6/10**: bull advocate emitted `bull_target_price 435.0` (retry machinery active);
+  CIO anchor citation reads "bull_target_price ($435.00 ... 28x on normalized FY27 bull
+  EPS of $15.50; **explicitly not a DCF output**)" — anchor provenance enforced in prose.
+- **Batch D tier live**: ratio 2.4x → `PAPER_TRADE_WATCH`, `paper_trade: true`,
+  zero capital — the near-miss is recorded for calibration instead of discarded.
+- **Bear side**: `red_team_bear_floor` 172.5 with source recorded.
+- **Fix 1**: recorded base growth 0.05 → DCF flows grow exactly 1.05/year (ladder gone).
+- **Fix 3 + follow-up**: deterministic implied growth 0.0886 (8.86%) — matches hand
+  computation; no fabricated 20.38%.
+- **Fix 5**: full moat report in main state (`WIDE`, durability 8.8) → CIO payload.
+
+### Follow-up discovery (merged after the e2e exposed it)
+
+The post-fix e2e showed implied growth 0.2038 — deterministic, matching the old
+"fabricated" number. Root cause: `get_sec_financials`' `ttm_fcf` was unstable across
+fetches (partial XBRL windows fell back to annualizing one quarter), and the
+expectations prelim trusted a positive `ttm_fcf` blindly — giving the prelim and the
+quant DCF different FCF bases (53.3B vs 84.4B). Fixed on `fix/ttm-fcf-stability`:
+partial windows → None; prelim uses the same capex-spike normalization as the quant,
+so both reverse DCFs share one FCF base by construction. This also corrected the audit:
+the old "20.38%" was not LLM-fabricated — it was this deterministic-but-flaky value.
+
+---
+
 ## Execution log
 
 - [x] Feature branch `feat/concurrent-diligence-and-tool-batching` merged to main (e2e validated)
