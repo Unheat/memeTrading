@@ -72,8 +72,8 @@ def test_sec_financials_feed_forensic_and_quant_source_mapping():
     assert forensic["status"] == "available"
     assert forensic["forensic"]["gross_margin_pct"] == .3
     assert quant["status"] == "available"
-    assert quant["model"]["inputs"] == {"current_price": 10.0, "fcf_base": 80.0, "shares_diluted": 10.0, "net_cash": 40.0}
-    assert quant["source_mapping"]["fcf_base"] == "sec_financials.cash_from_operations[2026-Q2] - sec_financials.capex[2026-Q2]"
+    assert quant["model"]["inputs"] == {"current_price": 10.0, "fcf_base": 320.0, "shares_diluted": 10.0, "net_cash": 40.0}
+    assert quant["source_mapping"]["fcf_base"] == "sec_financials.cash_from_operations[2026-Q2] - sec_financials.capex[2026-Q2] (annualized x4)"
     assert quant["assumptions"] == quant["model"]["assumptions"]
 
 
