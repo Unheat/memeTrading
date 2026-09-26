@@ -359,7 +359,7 @@ def run_expectations_analyst(state: InvestigationState, model: Any) -> dict[str,
         elif ttm_fcf is not None and float(ttm_fcf) > 0:
             effective_fcf = float(ttm_fcf)
         elif fcf is not None and float(fcf) > 0:
-            effective_fcf = fcf
+            effective_fcf = float(fcf) * (4.0 if ("Q" in str(period) or not str(period).upper().startswith("FY")) else 1.0)
 
         net_cash = float(cash) - float(debt) if cash is not None and debt is not None else 0.0
         price_f = price

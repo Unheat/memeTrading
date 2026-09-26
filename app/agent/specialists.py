@@ -546,9 +546,12 @@ def run_quant_analysis(state: InvestigationState) -> dict[str, Any]:
     elif ttm_fcf is not None and ttm_fcf > 0 and not is_hyper_growth:
         fcf_base = ttm_fcf
         fcf_mapping = "sec_financials.ttm_fcf"
+    elif fcf is not None:
+        fcf_base = fcf * 4.0 if ("Q" in str(period) or not str(period).upper().startswith("FY")) else fcf
+        fcf_mapping = f"sec_financials.cash_from_operations[{period}] - sec_financials.capex[{period}] (annualized x4)"
     else:
-        fcf_base = fcf
-        fcf_mapping = f"sec_financials.cash_from_operations[{period}] - sec_financials.capex[{period}]"
+        fcf_base = None
+        fcf_mapping = "unavailable"
 
     # CapEx-spike / hyper-growth regimes affect ONLY the fcf_base normalization above.
     # DCF flow shapes must come from the case growth rates authored by the expectations

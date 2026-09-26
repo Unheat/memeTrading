@@ -88,6 +88,7 @@ def test_expectations_analyst_populates_expectation_gap_and_assumptions():
         "capex": {"2026-Q2": 2_000_000_000.0},
         "cash_and_equivalents": {"2026-Q2": 9_000_000_000.0},
         "total_debt": {"2026-Q2": 5_000_000_000.0},
+        "ttm_fcf": 2_000_000_000.0,
     }
 
     result = run_expectations_analyst(state, model=FakeExpectationsModel())
