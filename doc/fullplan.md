@@ -104,10 +104,12 @@ The system organizes institutional equity research into a **5-Stage Model-Direct
                │  • 3. Instant Math Governance Gates (Zero engine rerun)│
                │       - Accounting Gate (G2: Full 8-Factor Beneish)    │
                │       - Valuation Gate (G3: calculator.mjs check)      │
-               │       - Asymmetry Gate (G4: Reward-to-Risk >= 3.0x)    │
+               │       - Asymmetry Gate (G4: >= configured hurdle,      │
+               │         default 3.0x; mandate-style profiles)          │
                │  • 4. Investment Committee (CIO Deliberation):         │
                │       - Single LLM deliberation on Bull vs Bear evidence│
-               │       - Enforces strict 3:1 Passing Discipline         │
+               │       - Passing Discipline + Tiered Kelly Sizing       │
+               │         (paper-trade queue for near-miss ratios)       │
                │       - Sizes portfolio weight via Fractional Kelly    │
                │  • Renders Final Institutional Memo & Audit JSON       │
                └───────────────────────────┬────────────────────────────┘
@@ -297,7 +299,7 @@ Compiles a normalized cross-company comparison matrix across registered candidat
 evaluate_valuation(ticker: str, candidate_id: str | None = None) -> ValuationResult
 ```
 
-Executes deterministic quantitative valuation modeling via `app/valuation/calculator.mjs`. Solves for the Michael Mauboussin Reverse DCF implied growth rate ($g_{\text{implied}}$) baked into the current market price, computes intrinsic Fair Value ranges (Low / Base / High), and tests the 3:1 asymmetric reward-to-risk hurdle against verified SEC cash flows, net cash, and diluted shares.
+Executes deterministic quantitative valuation modeling via `app/valuation/calculator.mjs`. Solves for the Michael Mauboussin Reverse DCF implied growth rate ($g_{\text{implied}}$) baked into the current market price, computes intrinsic Fair Value ranges (Low / Base / High), and tests the configured asymmetric reward-to-risk hurdle (default 3:1) against verified SEC cash flows, net cash, and diluted shares.
 
 ### `conduct_candidate_diligence`
 
@@ -529,9 +531,9 @@ cases/XYZ-2026-09-01-001/
 ### Report Accuracy & Integrity Policy
 
 1. **Fail-Closed Reporting**: When prices, analyst targets, bear floors, earnings dates, or SEC evidence are missing or unparseable, report them explicitly as `UNAVAILABLE` or `INSUFFICIENT_EVIDENCE`. Never substitute synthetic defaults (e.g. defaulting price to $100 or assuming +30% upside). If essential valuation or downside data is missing, the report assigns **0.0% capital allocation** and flags the uncertainty so generated reels do not assert ungrounded claims.
-2. **Strict 3:1 Asymmetric Reward-to-Risk Rule**: The 3.0x threshold is a strict hurdle for a positive long recommendation:
-   $$\text{Reward-to-Risk Ratio} = \frac{\text{Base Target Price} - \text{Current Price}}{\text{Current Price} - \text{Bear Downside Floor}} \ge 3.0$$
-   Any ratio below 3.0x (including 2.0–2.99x) receives `VALIDATION_WATCH` (awaiting pullback) or `PASSED`, with **0.0% position sizing**.
+2. **Tiered Asymmetric Reward-to-Risk Rule**: The reward-to-risk hurdle is config-driven (`research.asymmetry_hurdle`, mandate-style profile: `deep_value` 3.0x, `compounder` 2.0x, `momo` 4.0x):
+   $$\text{Reward-to-Risk Ratio} = \frac{\text{Upside Anchor} - \text{Current Price}}{\text{Current Price} - \text{Bear Downside Floor}} \ge \text{asymmetry\_hurdle}$$
+   Ratio $< 2.0\times$ receives `VALIDATION_WATCH`; $2.0\times$ up to the hurdle receives `PAPER_TRADE_WATCH` (decision recorded for calibration, **0.0% position sizing**); ratios at or above the hurdle size capital via **tiered Fractional Kelly** (quarter-Kelly 8% cap; half-Kelly 10% cap at $\ge 5.0\times$ with fully available debate reports).
 3. **Deterministic Valuation Scenarios**: The bear floor and base target prices must be supported by explicit valuation metrics (trough P/E, EV/Sales, net debt, dilution), not raw unverified model guesses. $0 < \text{bear\_floor} < \text{current\_price}$.
 4. **Clean Fallbacks Without Hallucinations**: When model generation or parsing fails in the Red Team node, memo renderer, or reel dialogue generator, record a clean failure/degraded state. Never emit canned or fake financial claims (such as pretending "10-Q confirmed gross margin expansion" when generation failed).
 5. **Path & Storage Containment**: All case-local reads, corpus pulls, index building (`sec.faiss`), and artifact writes use `case_path()` to ensure files stay cleanly organized in their respective case folders.

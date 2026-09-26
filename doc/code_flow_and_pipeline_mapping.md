@@ -131,7 +131,7 @@ Discovery & Market Data      investigate_sec()           conduct_candidate_dilig
 2. **`run_moat_analysis(state, model)`** ([`specialists.py:322`](../app/agent/specialists.py:322)):
    - **Pipeline Position**: Stage 2 Diligence Sub-Agent (Engine 2: Forensic & Moat).
    - **Function**: Evaluates Hamilton Helmer's 7 Powers (switching costs, network effects, cost advantages, counter-positioning) using `MOAT_ANALYSIS_PROMPT`.
-3. **`run_quant_analysis(state)`** ([`specialists.py:406`](../app/agent/specialists.py:406)):
+3. **`run_quant_analysis(state)`** ([`specialists.py:427`](../app/agent/specialists.py:427)):
    - **Pipeline Position**: Stage 2 Diligence Sub-Agent (Engine 3: Quant DCF) AND standalone tool `evaluate_valuation`.
    - **Function**: Executes deterministic DCF modeling via `app/valuation/engine.py::run_calculator` (`calculator.mjs`). It incorporates:
      - **Dynamic FRED WACC**: Derives risk-free rate $R_f$ from Federal Reserve `DGS10`, Blume-adjusted Beta, Damodaran ERP (4.75%), and capital-structure weights.
@@ -141,17 +141,14 @@ Discovery & Market Data      investigate_sec()           conduct_candidate_dilig
    - **Pipeline Position**: Supplementary Stage 2 specialist prompts for sector unit economics and macro thematic positioning.
 
 #### The `conduct_candidate_diligence` Orchestrator
-[`app/agent/diligence.py::run_candidate_diligence`](../app/agent/diligence.py:24) is the wrapper invoked by the tool `conduct_candidate_diligence(ticker)`. It:
+[`app/agent/diligence.py::run_candidate_diligence`](../app/agent/diligence.py:25) is the wrapper invoked by the tool `conduct_candidate_diligence(ticker)`. It:
 1. Spawns an isolated synthetic state for the target candidate.
 2. Automatically pulls missing market data or SEC financials.
-3. Sequentially executes:
-   - `run_expectations_analyst()` from [`expectations.py:154`](../app/agent/expectations.py:154) (market-implied expectations gap).
-   - `run_forensic_analysis()` from [`specialists.py:203`](../app/agent/specialists.py:203) (Beneish M-Score & forensics).
-   - `run_moat_analysis()` from [`specialists.py:322`](../app/agent/specialists.py:322) (economic moat rating).
-   - `run_quant_analysis()` from [`specialists.py:406`](../app/agent/specialists.py:406) (deterministic DCF & valuation).
-   - `run_bull_advocate()` from [`bull.py:58`](../app/agent/bull.py:58) (catalysts & upside thesis).
-   - `run_adversarial_red_team()` from [`adversarial.py:67`](../app/agent/adversarial.py:67) (falsifiable kill criteria & bear floor).
-4. Packages these results into a standardized `diligence_dossier` dictionary and saves it directly onto the candidate workspace.
+3. Executes a **3-stage dependency-safe thread pipeline** (outer dossier contract unchanged):
+   - **Stage 1 (parallel)**: `run_expectations_analyst()` from [`expectations.py:310`](../app/agent/expectations.py:310) (deterministic reverse DCF & expectation gap), `run_forensic_analysis()` from [`specialists.py:203`](../app/agent/specialists.py:203) (Beneish M-Score & forensics), and `run_moat_analysis()` from [`specialists.py:322`](../app/agent/specialists.py:322) (economic moat rating) run concurrently with exception shielding.
+   - **Stage 2 (synchronous)**: `run_quant_analysis()` from [`specialists.py:427`](../app/agent/specialists.py:427) (deterministic DCF & valuation) consumes Stage 1's `expectation_gap` assumptions.
+   - **Stage 3 (parallel)**: `run_bull_advocate()` from [`bull.py`](../app/agent/bull.py) (catalysts & numeric target with one structured retry) and `run_adversarial_red_team()` from [`adversarial.py`](../app/agent/adversarial.py) (kill criteria & bear floor) run air-gapped and concurrently.
+4. `build_diligence_dossier()` ([`diligence.py:154`](../app/agent/diligence.py:154)) packages the results into the standardized `diligence_dossier` dictionary and saves it onto the candidate workspace. The dossier additionally carries `bull_target_price`, per-report honest statuses (`bull_report_status` / `bear_report_status`), and the full `moat_report` so the committee deliberates on every specialist's work.
 
 ---
 
@@ -212,15 +209,16 @@ Discovery & Market Data      investigate_sec()           conduct_candidate_dilig
 
 #### Execution Flow
 1. **Evidence Gate (G1)**: `evaluate_research_completeness()` verifies that primary SEC filings, real-time market data, and required candidate workspaces exist. If G1 fails and the user requested an investment position, execution halts immediately without issuing an ungrounded recommendation.
-2. **Candidate Promotion**: In single-stock mode or after peer ranking, `diligence_node` selects the winning candidate (prioritizing the highest asymmetric reward-to-risk ratio) and promotes its dossier (DCF fair value, Bull catalysts, Bear kill criteria, Beneish verdict) into top-level state variables.
+2. **Candidate Promotion**: In single-stock mode or after peer ranking, `diligence_node` selects the winning candidate (prioritizing the highest asymmetric reward-to-risk ratio) and promotes its dossier (DCF fair value, Bull catalysts & numeric target, Bear kill criteria & floor, Beneish verdict, full moat report) into top-level state variables.
 3. **Governance Gates (Instant Deterministic Math)**:
    - **Accounting Gate (G2)**: `evaluate_accounting_gate()` checks the Beneish M-Score ($M \le -1.78$).
    - **Valuation Gate (G3)**: `evaluate_valuation_gate()` verifies calculator reproducibility and reasonable growth hurdles.
-   - **Asymmetry Gate (G4)**: `evaluate_asymmetry_gate()` enforces the institutional $\ge 3.0\times$ reward-to-risk hurdle.
-4. **Investment Committee Deliberation**: `run_investment_committee()` runs a single formal CIO deliberation using `INVESTMENT_COMMITTEE_PROMPT` in [`committee.py:28`](../app/agent/committee.py). It:
-   - Synthesizes Bull upside catalysts versus Bear kill criteria.
+   - **Asymmetry Gate (G4)**: `evaluate_asymmetry_gate()` enforces the reward-to-risk hurdle from the deterministic DCF risk/reward (the committee applies the configured `asymmetry_hurdle`, profile-selected, default $3.0\times$).
+4. **Investment Committee Deliberation**: `run_investment_committee()` ([`committee.py:154`](../app/agent/committee.py:154)) runs a single formal CIO deliberation using `CIO_SYSTEM_PROMPT`. It:
+   - Synthesizes Bull upside catalysts versus Bear kill criteria with **enforced anchor provenance**: the payload separates `upside_anchor` (source: `consensus_mean` / `quant_fair_value` / `bull_target_price` / `consensus_high_fallback`) from `dcf_base_fair_value`, records `bear_anchor_source` (`red_team_bear_floor` / `dcf_low_fallback`), and the CIO must cite the anchor source accurately in `anchor_citation`.
    - Enforces the strict "Passing Discipline" (rejecting cyclical peak multiples, commoditized capex traps, or excessive debt).
-   - Outputs an `ICVerdict` schema with formal recommendation (`INVEST`, `PASS`, or `MONITOR`), conviction tier, and position sizing via **Fractional Kelly %**.
+   - Applies **tiered sizing** from config-driven hurdles in `budget_state`: ratio $< 2.0\times$ → `VALIDATION_WATCH`; $[2.0\times, \text{hurdle})$ → `PAPER_TRADE_WATCH` (`paper_trade: true`, zero capital, kept for calibration); $\ge$ hurdle → quarter-Kelly (8% cap); $\ge 5.0\times$ with fully available debate reports → half-Kelly (10% cap).
+   - Outputs an `ICVerdict` schema with verdict, conviction tier, tiered Kelly position size, anchor fields, `paper_trade`, and `bear_floor`.
 5. **State Transition**: Connects directly to `END`.
 
 ---
@@ -236,14 +234,15 @@ The remaining modules in `app/agent/` provide the runtime, state, and serializat
 | [`app/agent/prompts.py`](../app/agent/prompts.py) | Builds the comprehensive research prompt (`build_research_system_prompt`), reprojection packets, and durable state blocks. |
 | [`app/agent/ledger.py`](../app/agent/ledger.py) | Manages immutable evidence ledgers, citation records (`SourceDocument`, `SourceExcerpt`, `ClaimRecord`), and disk serialization. |
 | [`app/agent/screening.py`](../app/agent/screening.py) | Implements multi-candidate workspace models (`CandidateResearchState`, `ScreenCandidate`, `ComparisonCard`) and cross-peer comparison logic (`build_candidate_comparisons`). |
-| [`app/agent/adversarial.py`](../app/agent/adversarial.py) | Implements the hostile Bear Red Team analyst (`run_adversarial_red_team`, `AdversarialReport`) that identifies numeric kill criteria. |
-| [`app/agent/bull.py`](../app/agent/bull.py) | Implements the air-gapped Bull Advocate (`run_bull_advocate`, `BullReport`) that models operating leverage and catalyst upside. |
-| [`app/agent/expectations.py`](../app/agent/expectations.py) | Implements the Expectations Analyst (`run_expectations_analyst`, `ExpectationGapAnalysis`) that reverse-engineers market-implied growth hurdles. |
+| [`app/agent/adversarial.py`](../app/agent/adversarial.py) | Implements the hostile Bear Red Team analyst (`run_adversarial_red_team`, `AdversarialReport`) with field-level tolerance and honest `status`/`degradation_reasons`. |
+| [`app/agent/bull.py`](../app/agent/bull.py) | Implements the air-gapped Bull Advocate (`run_bull_advocate`, `BullReport`) that models operating leverage, catalyst upside, and a numeric `bull_target_price` (one structured retry before flagging `degraded`). |
+| [`app/agent/expectations.py`](../app/agent/expectations.py) | Implements the Expectations Analyst (`run_expectations_analyst`, `ExpectationGapAnalysis`). Implied growth, expectation edge, and the gap verdict are **deterministic** (calculator reverse DCF + consensus spread classification); model text is validated commentary, replaced and flagged `degraded` on contradiction. |
 | [`app/agent/memo.py`](../app/agent/memo.py) | Formats final deliverables: `render_research_report()` (Markdown research memo), `render_forensic_memo()`, and `serialize_investigation_json()`. |
 | [`app/agent/runner.py`](../app/agent/runner.py) | Entry point for CLI and services (`run_investigation()`). Compiles the graph, streams progress events, and writes results to disk. |
 | [`app/agent/model_runtime.py`](../app/agent/model_runtime.py) | Configures LLM providers, model bindings, fallback chains, and temperature/token policies. |
 | [`app/agent/sanitizer.py`](../app/agent/sanitizer.py) | Sanitizes user inputs, tickers, and file paths before state initialization. |
 | [`app/agent/media.py`](../app/agent/media.py) | Downstream post-pipeline stage: converts finalized research memos and verdicts into grounded video scripts, TTS audio, and render assets. |
+| [`tools/backtest_score.py`](../tools/backtest_score.py) | Decision-scoring harness: grades persisted cases against forward 3/6/12-month returns (injectable price provider) — hit rate, realized vs predicted upside, calibration error per verdict bucket. |
 
 ---
 

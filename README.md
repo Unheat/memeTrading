@@ -148,8 +148,8 @@ flowchart TD
         G1["Evidence Gate (G1): Primary Citations Verified"]
         G2["Accounting Gate (G2): Beneish M-Score & Sloan Accruals"]
         G3["Valuation Gate (G3): Reverse DCF Hurdle Check"]
-        G4["Asymmetry Gate (G4): Reward-to-Risk ≥ 3.0x"]
-        CIO["CIO Deliberation: 3:1 Passing Discipline & Fractional Kelly Sizing"]
+        G4["Asymmetry Gate (G4): Reward-to-Risk ≥ configured hurdle (default 3.0x)"]
+        CIO["CIO Deliberation: anchor-provenance discipline & tiered Kelly sizing (paper-trade queue below hurdle)"]
         G1 --> G2 --> G3 --> G4 --> CIO
     end
 
