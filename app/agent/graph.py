@@ -38,6 +38,28 @@ from app.agent.tool_result_ingestion import ingest_tool_results
 logger = logging.getLogger(__name__)
 
 
+def _is_issuer_pdf(source: Mapping[str, Any], active_candidate_ids: set[str]) -> bool:
+    """Decide whether a discovered source is an issuer-relevant unread PDF.
+
+    A PDF is issuer-relevant when it is an SEC.gov document or when its source record
+    is bound to an active candidate workspace. Junk PDFs from unrelated domains are
+    excluded so reflection never spends tool budget reading them.
+
+    Args:
+        source: Source record dict (url, status, candidate_id).
+        active_candidate_ids: Ids of candidates not vetoed/screened out.
+
+    Returns:
+        True when the record is a discovered PDF worth flagging.
+    """
+    if str(source.get("status") or "") != "discovered":
+        return False
+    url = str(source.get("url") or "").lower()
+    if not url.endswith(".pdf"):
+        return False
+    return "sec.gov" in url or str(source.get("candidate_id") or "") in active_candidate_ids
+
+
 def _has_evidence_gaps(state: InvestigationState) -> bool:
     """Check if multi-candidate or deep research has actionable evidence gaps."""
     candidates = state.get("candidates") or {}
@@ -441,13 +463,21 @@ def create_research_graph(
                         f"Candidate ${t} lacks valuation and Red Team stress testing; call `conduct_candidate_diligence` or `evaluate_valuation` (or veto candidate if uninvestable)."
                     )
 
+        # Fix 9 (audit 2026-09-26): only issuer-relevant PDFs are suggested as unread —
+        # SEC.gov documents or source records attached to an active candidate workspace.
+        # Unfiltered discovery previously demanded reading irrelevant government PDFs.
+        active_candidate_ids = {
+            cid for cid, c in candidates.items()
+            if isinstance(c, Mapping)
+            and c.get("status") not in {"vetoed", "rejected", "screened_out"}
+            and not c.get("veto_reason")
+        }
         unread_pdfs = [
             str(s.get("url"))
             for s in sources
-            if isinstance(s, Mapping) and s.get("status") == "discovered"
-            and str(s.get("url") or "").lower().endswith(".pdf")
+            if isinstance(s, Mapping) and _is_issuer_pdf(s, active_candidate_ids)
         ]
-        for url in unread_pdfs[:2]:
+        for url in unread_pdfs[:1]:
             deterministic_gaps.append(f"Unread financial/earnings PDF {url}; call `read_document` if needed.")
 
         open_items = [w.get("question") for w in (state.get("work_queue") or []) if isinstance(w, Mapping) and w.get("status") == "queued"]
@@ -574,10 +604,14 @@ def create_research_graph(
                     ticker=ticker,
                     catalysts=tuple(dossier.get("bull_catalysts") or ()),
                     operating_leverage_drivers=(),
-                    bull_target_price=val.get("fair_value"),
+                    bull_target_price=dossier.get("bull_target_price") or val.get("fair_value"),
                     bull_thesis_summary=dossier.get("bull_thesis") or "",
                     invalidation_conditions=(),
+                    status=str(dossier.get("bull_report_status") or "available"),
                 )
+
+            if not state.get("moat_report") and dossier.get("moat_report"):
+                updates["moat_report"] = dossier.get("moat_report")
 
             if not state.get("adversarial_report") and (dossier.get("bear_kill_triggers") or dossier.get("bear_thesis") or dossier.get("bear_floor") is not None):
                 updates["adversarial_report"] = AdversarialReport(

@@ -147,6 +147,30 @@ def run_candidate_diligence(
     # Extract clean dossier values
     bull = cand_state.get("bull_report")
     bear = cand_state.get("adversarial_report")
+    dossier = build_diligence_dossier(cand_state, bull, bear, cid, clean_ticker)
+    return dossier
+
+
+def build_diligence_dossier(
+    cand_state: dict[str, Any],
+    bull: Any | None,
+    bear: Any | None,
+    cid: str,
+    clean_ticker: str,
+) -> dict[str, Any]:
+    """Project the diligence sub-agent's specialist outputs into the slim dossier payload.
+
+    Args:
+        cand_state: Candidate-scoped state after all specialist stages ran.
+        bull: Bull advocate report object (or None).
+        bear: Adversarial red team report object (or None).
+        cid: Candidate workspace id.
+        clean_ticker: Normalized ticker symbol.
+
+    Returns:
+        Dossier dict with the same outer keys as before plus additive completeness
+        fields (bull_target_price, report statuses, full moat_report).
+    """
     quant = cand_state.get("quant_report") or {}
     val = quant.get("valuation") or {}
 
@@ -164,11 +188,17 @@ def run_candidate_diligence(
         },
         "bull_catalysts": list(getattr(bull, "catalysts", [])) if bull else [],
         "bull_thesis": getattr(bull, "bull_thesis_summary", ""),
+        "bull_target_price": getattr(bull, "bull_target_price", None),
+        "bull_report_status": getattr(bull, "status", "unavailable"),
         "bear_kill_triggers": list(getattr(bear, "numeric_kill_criteria", [])) if bear else [],
         "bear_thesis": getattr(bear, "bear_thesis_summary", ""),
         "bear_floor": getattr(bear, "bear_floor_price", None),
+        "bear_report_status": getattr(bear, "status", "unavailable"),
         "forensic_verdict": (cand_state.get("forensic_report") or {}).get("verdict"),
         "moat_rating": (cand_state.get("moat_report") or {}).get("analysis", {}).get("moat_rating"),
+        # Full moat report travels in the dossier so the committee deliberates on it
+        # (audit 2026-09-26, Fix 5 — previously reduced to a rating string and dropped).
+        "moat_report": cand_state.get("moat_report"),
         "market_context": cand_state.get("market_context"),
         "sec_financials": cand_state.get("sec_financials"),
         "expectation_gap": cand_state.get("expectation_gap"),

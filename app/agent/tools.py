@@ -48,13 +48,29 @@ class ToolCallGuard:
     _counts: dict[tuple[str, Any], int] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
+    @staticmethod
+    def _hashable(value: Any) -> Any:
+        """Coerce a signature component into a hashable form deterministically.
+
+        Callers normally pass stringified kwargs via ``_guard_check``, but the guard
+        must not depend on caller discipline: raw dicts are converted to sorted
+        ``(key, str(value))`` tuples matching the production convention so the same
+        logical arguments always collide on the same key.
+        """
+        if isinstance(value, dict):
+            return tuple(sorted((k, str(ToolCallGuard._hashable(v))) for k, v in value.items()))
+        if isinstance(value, (list, tuple)):
+            return tuple(ToolCallGuard._hashable(v) for v in value)
+        return value
+
     def check_and_record(self, signature: tuple[str, Any]) -> bool:
         """Record signature and return True if duplicate limit exceeded."""
+        key = (signature[0], self._hashable(signature[1]))
         with self._lock:
-            current = self._counts.get(signature, 0)
+            current = self._counts.get(key, 0)
             if current >= self.max_identical:
                 return True
-            self._counts[signature] = current + 1
+            self._counts[key] = current + 1
             return False
 
 
