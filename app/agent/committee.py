@@ -30,8 +30,11 @@ You do not chase hype, retail fads, or management promises. You demand concrete 
 ## Core Mandates & Governance Rules
 
 ### 1. The 3:1 Asymmetric Reward-to-Risk Rule
-- You only approve long positions (`APPROVED_LONG`) if the upside to Base Fair Value outweighs the downside to Bear Floor by at least **3.0 to 1**:
-  $$\\text{Reward-to-Risk Ratio} = \\frac{\\text{Base DCF Fair Value} - \\text{Current Price}}{\\text{Current Price} - \\text{Bear DCF Fair Value}} \\ge 3.0$$
+- You only approve long positions (`APPROVED_LONG`) if the upside to the Upside Anchor outweighs the downside to the Bear Floor by at least **3.0 to 1**:
+  $$\\text{Reward-to-Risk Ratio} = \\frac{\\text{Upside Anchor} - \\text{Current Price}}{\\text{Current Price} - \\text{Bear Floor}} \\ge 3.0$$
+- The Upside Anchor is NOT necessarily a DCF output: cite its `upside_anchor_source`
+  (consensus_mean, quant_fair_value, bull_target_price, or consensus_high_fallback)
+  accurately in your `anchor_citation` field. Never describe a consensus target as a DCF value.
 - If the ratio is below 3.0x, the trade is rejected or assigned to `Validation` awaiting a price pullback.
 
 ### 2. The Strict "Passing Discipline" (Saying NO to Hot Names)
@@ -79,6 +82,10 @@ class ICVerdict:
     kelly_position_size_pct: float
     passing_discipline_checks: dict[str, str]
     cio_deliberation_summary: str
+    upside_anchor: float | None = None
+    upside_anchor_source: str = "missing"
+    bear_anchor_source: str = "missing"
+    anchor_citation: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -90,6 +97,10 @@ class ICVerdict:
             "kelly_position_size_pct": self.kelly_position_size_pct,
             "passing_discipline_checks": dict(self.passing_discipline_checks),
             "cio_deliberation_summary": self.cio_deliberation_summary,
+            "upside_anchor": self.upside_anchor,
+            "upside_anchor_source": self.upside_anchor_source,
+            "bear_anchor_source": self.bear_anchor_source,
+            "anchor_citation": self.anchor_citation,
         }
 
 
@@ -129,21 +140,42 @@ def run_investment_committee(state: InvestigationState, model: Any) -> dict[str,
     mean_target = price_targets.get("mean")
     base_target_val = mean_target.get("value") if isinstance(mean_target, dict) else mean_target
     base_target = float(base_target_val) if base_target_val and float(base_target_val) > 0 else None
+    upside_anchor_source = "consensus_mean" if base_target else "missing"
 
     quant_val = (state.get("quant_report") or {}).get("valuation") or {}
     quant_fair_val = quant_val.get("fair_value") or (quant_val.get("fair_value_range") or {}).get("base")
     if quant_fair_val and float(quant_fair_val) > 0:
-        base_target = max(base_target or 0.0, float(quant_fair_val))
+        if base_target is None or float(quant_fair_val) > base_target:
+            base_target = max(base_target or 0.0, float(quant_fair_val))
+            upside_anchor_source = "quant_fair_value"
+        else:
+            base_target = max(base_target or 0.0, float(quant_fair_val))
 
     if bull_report and bull_report.bull_target_price and current_price and bull_report.bull_target_price > current_price:
-        base_target = max(base_target or 0.0, bull_report.bull_target_price)
+        if base_target is None or bull_report.bull_target_price > base_target:
+            base_target = max(base_target or 0.0, bull_report.bull_target_price)
+            upside_anchor_source = "bull_target_price"
+        else:
+            base_target = max(base_target or 0.0, bull_report.bull_target_price)
+
+    # Symmetric numeric anchor fallback (audit 2026-09-26, Fix 6): when no anchor sits
+    # above the price (e.g. a degraded bull report), escalate to the Street-high target
+    # so the debate is measured against the bull side's best source-backed anchor.
+    if current_price and (base_target is None or base_target <= current_price):
+        high_target = price_targets.get("high")
+        high_val = high_target.get("value") if isinstance(high_target, dict) else high_target
+        if high_val and float(high_val) > current_price:
+            base_target = float(high_val)
+            upside_anchor_source = "consensus_high_fallback"
 
     raw_floor = adversarial.bear_floor_price if adversarial else None
     bear_floor = float(raw_floor) if raw_floor and float(raw_floor) > 0 else None
+    bear_anchor_source = "red_team_bear_floor" if bear_floor else "missing"
     if not bear_floor:
         low_fv = (quant_val.get("fair_value_range") or {}).get("low")
         if low_fv and float(low_fv) > 0:
             bear_floor = float(low_fv)
+            bear_anchor_source = "dcf_low_fallback"
 
     # Calculate 3:1 Reward-to-Risk Ratio
     ratio = None
@@ -175,24 +207,35 @@ def run_investment_committee(state: InvestigationState, model: Any) -> dict[str,
             passing_checks["bear_floor_gate"] = f"FAIL (Bear floor ${bear_floor:.2f} >= current price ${current_price:.2f})"
         passing_checks["asymmetry_gate"] = f"FAIL (Reward-to-risk ratio does not clear 3:1 hurdle)"
 
-    # Build comprehensive payload for CIO LLM deliberation
+    # Build comprehensive payload for CIO LLM deliberation.
+    # Fix 10 (audit 2026-09-26): the upside anchor and the DCF fair value are reported
+    # separately with their sources so the CIO prose cannot relabel a consensus target
+    # as a DCF output.
     forensic = state.get("forensic_report") or {}
     thematic = state.get("thematic_report") or {}
+    moat = state.get("moat_report") or {}
     prompt_payload = json.dumps(
         {
             "ticker": ticker,
             "current_price": current_price,
-            "base_target_price": base_target,
+            "upside_anchor": base_target,
+            "upside_anchor_source": upside_anchor_source,
+            "dcf_base_fair_value": float(quant_fair_val) if quant_fair_val else None,
             "bear_floor_price": bear_floor,
+            "bear_anchor_source": bear_anchor_source,
             "reward_to_risk_ratio": ratio,
             "kelly_position_size_pct": f"{kelly_size:.1%}",
             "passing_discipline_checks": passing_checks,
             "forensic_verdict": forensic.get("verdict"),
+            "moat_rating": (moat.get("analysis") or {}).get("moat_rating") if isinstance(moat.get("analysis"), dict) else None,
             "thematic_thesis": thematic.get("thesis"),
             "bull_thesis": bull_report.bull_thesis_summary if bull_report else "No bull model.",
             "bull_catalysts": list(bull_report.catalysts) if bull_report else [],
+            "bull_target_price": bull_report.bull_target_price if bull_report else None,
+            "bull_report_status": bull_report.status if bull_report else "unavailable",
             "operating_leverage_drivers": list(bull_report.operating_leverage_drivers) if bull_report else [],
             "adversarial_flaws": list(adversarial.falsifiable_objections) if adversarial else [],
+            "adversarial_report_status": adversarial.status if adversarial else "unavailable",
             "numeric_kill_triggers": list(adversarial.numeric_kill_criteria) if adversarial else [],
         },
         indent=2,
@@ -202,12 +245,13 @@ def run_investment_committee(state: InvestigationState, model: Any) -> dict[str,
 ```json
 {prompt_payload}
 ```
-Deliberate as CIO and return strictly valid JSON."""
+Deliberate as CIO, cite `upside_anchor_source` accurately in the required `anchor_citation` field, and return strictly valid JSON."""
 
     cio_verdict_str = "VALIDATION_WATCH"
     cio_conviction = "VALIDATION 🔥"
     cio_summary = "Committee deliberation completed."
     passing_rationale = None
+    anchor_citation = ""
 
     try:
         response = model.invoke([
@@ -225,6 +269,7 @@ Deliberate as CIO and return strictly valid JSON."""
             cio_conviction = str(parsed.get("conviction_tier", "VALIDATION 🔥"))
             cio_summary = str(parsed.get("cio_deliberation_summary", raw_text[:500]))
             passing_rationale = parsed.get("passing_rationale")
+            anchor_citation = str(parsed.get("anchor_citation", ""))
         except Exception as parse_exc:
             cio_summary = raw_text[:500] if raw_text else f"CIO deliberation completed: {parse_exc}"
             if "APPROVED_LONG" in raw_text or "HIGH CONVICTION" in raw_text or (ratio and ratio >= 3.0 and is_liquid and not is_blackout):
@@ -266,5 +311,9 @@ Deliberate as CIO and return strictly valid JSON."""
         kelly_position_size_pct=kelly_size,
         passing_discipline_checks=passing_checks,
         cio_deliberation_summary=cio_summary,
+        upside_anchor=base_target,
+        upside_anchor_source=upside_anchor_source,
+        bear_anchor_source=bear_anchor_source,
+        anchor_citation=anchor_citation,
     )
     return {"ic_verdict": verdict_obj}

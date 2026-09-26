@@ -94,8 +94,15 @@ def test_expectations_analyst_populates_expectation_gap_and_assumptions():
 
     assert "expectation_gap" in result
     gap = result["expectation_gap"]
-    assert gap["verdict"] == "UNDERPRICED_CATALYST"
+    # Fix 3: verdict and implied growth are deterministic; model text is commentary only.
+    assert gap["verdict"] == "ALREADY_PRICED_IN"  # deterministic edge: consensus 12% << implied
+    assert gap["model_verdict"] == "UNDERPRICED_CATALYST"
+    assert gap["implied_fcf_growth_rate"] is not None
+    assert gap["implied_growth_interpretation"].startswith("Deterministic reverse DCF")
+    assert f"{gap['implied_fcf_growth_rate'] * 100:.2f}" in gap["implied_growth_interpretation"]
     assert "Consensus underprices" in gap["summary"]
+    assert gap["status"] == "degraded"  # model narrative cited conflicting percentages
+    assert gap["commentary"] == ""
     assert gap["terminal_growth_rate"] == 0.025
     assert gap["assumptions"]["base"]["growth"] == 0.09
     assert gap["assumptions"]["high"]["growth"] == 0.20

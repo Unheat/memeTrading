@@ -130,7 +130,11 @@ class ForensicReport(BaseModel):
 
 
 class BullCase(BaseModel):
-    """Institutional Bull case advocate artifact."""
+    """Institutional Bull case advocate artifact.
+
+    ``status`` is honest: ``available`` only when the model produced a valid numeric
+    target; ``degraded`` when fallbacks fired; ``unavailable`` when unparseable.
+    """
 
     model_config = ConfigDict(extra="allow")
 
@@ -140,6 +144,8 @@ class BullCase(BaseModel):
     bull_target_price: float | None = None
     bull_thesis_summary: str = ""
     invalidation_conditions: tuple[str, ...] = Field(default_factory=tuple)
+    status: str = "available"
+    degradation_reasons: tuple[str, ...] = Field(default_factory=tuple)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize for state storage."""
@@ -150,11 +156,17 @@ class BullCase(BaseModel):
             "bull_target_price": self.bull_target_price,
             "bull_thesis_summary": self.bull_thesis_summary,
             "invalidation_conditions": list(self.invalidation_conditions),
+            "status": self.status,
+            "degradation_reasons": list(self.degradation_reasons),
         }
 
 
 class BearCase(BaseModel):
-    """Hostile short-seller adversarial red team artifact."""
+    """Hostile short-seller adversarial red team artifact.
+
+    ``status`` is honest: ``available`` when a numeric bear floor parsed; ``degraded``
+    when field-level fallbacks fired; ``unavailable`` when the model was unparseable.
+    """
 
     model_config = ConfigDict(extra="allow")
 
@@ -163,6 +175,8 @@ class BearCase(BaseModel):
     numeric_kill_criteria: tuple[str, ...] = Field(default_factory=tuple)
     bear_floor_price: float | None = None
     bear_thesis_summary: str = ""
+    status: str = "available"
+    degradation_reasons: tuple[str, ...] = Field(default_factory=tuple)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize for state storage."""
@@ -172,6 +186,8 @@ class BearCase(BaseModel):
             "numeric_kill_criteria": list(self.numeric_kill_criteria),
             "bear_floor_price": self.bear_floor_price,
             "bear_thesis_summary": self.bear_thesis_summary,
+            "status": self.status,
+            "degradation_reasons": list(self.degradation_reasons),
         }
 
 
@@ -200,3 +216,35 @@ class RiskRegister(BaseModel):
     bear_floor: float | None = None
     max_loss_budget_pct: float = 15.0
 
+
+
+def parse_llm_json_block(content: Any) -> dict[str, Any]:
+    """Parse a model response into a JSON object, stripping markdown fences.
+
+    Deterministic validation utility: it performs no intent inference — it either
+    returns the parsed mapping or raises so callers can degrade honestly.
+
+    Args:
+        content: Raw model response content (string expected).
+
+    Returns:
+        Parsed JSON mapping.
+
+    Raises:
+        ValueError: If the content is not a string or is not valid JSON.
+    """
+    import json
+
+    if not isinstance(content, str):
+        raise ValueError("model content is not a string")
+    clean = content.strip()
+    if "```json" in clean:
+        clean = clean.split("```json")[1].split("```")[0].strip()
+    elif clean.startswith("```"):
+        clean = clean.strip("`")
+        if clean.startswith("json"):
+            clean = clean[4:].strip()
+    parsed = json.loads(clean)
+    if not isinstance(parsed, dict):
+        raise ValueError("model JSON is not an object")
+    return parsed
