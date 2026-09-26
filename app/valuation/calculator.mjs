@@ -239,7 +239,10 @@ export function computeSOTP(sotpConfig, shares, netCash = 0) {
 
 /**
  * Forensic Accounting: Beneish M-Score Calculation
- * Formula: M = -4.84 + 0.920*DSRI + 0.528*GMI + 0.404*AQI + 0.892*SGI + 0.115*DEPI - 0.172*SGAI + 4.037*TATA + 0.0327*LVGI
+ * Published eight-variable model (Beneish, 1999):
+ * M = -4.84 + 0.920*DSRI + 0.528*GMI + 0.404*AQI + 0.892*SGI + 0.115*DEPI - 0.172*SGAI + 4.679*TATA - 0.327*LVGI
+ * TATA is positive-weighted (accruals raise manipulation risk); LVGI is negative-weighted
+ * (rising leverage lowers the score in the published model). Threshold: M > -1.78 flags risk.
  */
 export function computeBeneishMScore(b) {
   if (!b) return null;
@@ -261,8 +264,8 @@ export function computeBeneishMScore(b) {
     0.892 * sgi +
     0.115 * depi -
     0.172 * sgai +
-    4.037 * tata +
-    0.0327 * lvgi;
+    4.679 * tata -
+    0.327 * lvgi;
 
   const isManipulator = mScore > -1.78;
 
@@ -830,18 +833,24 @@ export function compute(model) {
 export function verify(model) {
   const fresh = compute(model);
   const mismatches = [];
+  let comparedCases = 0;
 
   for (const c of model.dcf.cases) {
     const stored = c.fair_value_per_share;
     const recomputed = fresh.cases[c.case].fair_value_per_share;
-    if (stored != null && Math.abs(stored - recomputed) > 0.01) {
+    // A case without a stored value contributes no comparison; callers must inject
+    // previously computed results, otherwise the verdict is inconclusive by design.
+    if (stored == null) continue;
+    comparedCases += 1;
+    if (Math.abs(stored - recomputed) > 0.01) {
       mismatches.push(`${c.case}: stored ${stored}, recomputed ${recomputed}`);
     }
   }
   if (model.computed_by !== "calculator") {
     mismatches.push(`computed_by is "${model.computed_by}" — must be "calculator"`);
   }
-  return { verdict: mismatches.length ? "fail" : "pass", mismatches, recomputed: fresh };
+  const verdict = mismatches.length ? "fail" : comparedCases > 0 ? "pass" : "inconclusive";
+  return { verdict, mismatches, compared_cases: comparedCases, recomputed: fresh };
 }
 
 /**
