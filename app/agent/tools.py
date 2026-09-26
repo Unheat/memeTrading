@@ -6,11 +6,19 @@ from __future__ import annotations
 
 from datetime import date
 import json
+import logging
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Annotated, Any, Callable, Sequence
 from langchain_core.tools import BaseTool, tool
+from langgraph.prebuilt import InjectedState
+
+logger = logging.getLogger(__name__)
+
+# Relative drift between the evaluate_valuation result and the diligence-internal
+# valuation below which the two runs are considered reconciled (audit 2026-09-26, Fix 2).
+VALUATION_RECONCILIATION_TOLERANCE = 0.005
 
 from app.social.search import search_social as _search_social
 from app.articles.search import search_articles as _search_articles
@@ -529,11 +537,18 @@ def create_agent_tools(
         })
 
     @tool
-    def evaluate_valuation(ticker: str, candidate_id: str | None = None) -> str:
+    def evaluate_valuation(
+        ticker: str,
+        candidate_id: str | None = None,
+        injected_state: Annotated[dict[str, Any] | None, InjectedState] = None,
+    ) -> str:
         """Compute deterministic Reverse DCF, Fair Value ranges (Low/Base/High), and 3:1 asymmetry hurdle test via calculator.mjs.
 
         Evaluates intrinsic value from verified SEC free cash flows, net cash, and diluted shares.
-        Can be called on any stock ticker (target or peer) to evaluate implied growth expectations.
+        Inherits the candidate's expectation-gap assumptions and FRED macro context when the
+        research state already holds them, so this valuation reconciles with the diligence-
+        internal run instead of silently recomputing from defaults. Can be called on any stock
+        ticker (target or peer) to evaluate implied growth expectations.
         """
         clean_ticker = ticker.strip().upper()
         cand_id = candidate_id or f"cand_{clean_ticker.lower()}"
@@ -541,26 +556,69 @@ def create_agent_tools(
         if suppressed:
             return suppressed
         try:
-            from app.market.market_data import get_market_data as fetch_mkt
-            from app.sec.financials import get_sec_financials as fetch_sec
-            from app.market.company_research import get_company_research as fetch_research
             from app.agent.specialists import run_quant_analysis
 
-            consensus_dict = None
-            try:
-                consensus_dict = fetch_research(clean_ticker).to_dict()
-            except Exception:
-                pass
+            state = injected_state if isinstance(injected_state, dict) else {}
+            candidates = state.get("candidates") or {}
+            workspace = candidates.get(cand_id) if isinstance(candidates, dict) else None
+            workspace = workspace if isinstance(workspace, dict) else {}
+            dossier = workspace.get("diligence_dossier") if isinstance(workspace.get("diligence_dossier"), dict) else {}
+
+            market_ctx = workspace.get("market_context") or state.get("market_context")
+            sec_ctx = workspace.get("sec_financials") or state.get("sec_financials")
+            consensus_ctx = workspace.get("consensus_snapshot") or state.get("consensus_snapshot")
+            if not isinstance(market_ctx, dict) or not market_ctx:
+                market_ctx = _get_market_data(clean_ticker).to_dict()
+            if not isinstance(sec_ctx, dict) or not sec_ctx:
+                sec_ctx = _get_sec_financials(clean_ticker).to_dict()
+            if not isinstance(consensus_ctx, dict) or not consensus_ctx:
+                try:
+                    consensus_ctx = _get_company_research(clean_ticker).to_dict()
+                except Exception:
+                    consensus_ctx = None
+
+            # Prefer the expectations analyst's authored assumptions so this valuation uses
+            # the same inputs as the diligence-internal run (audit 2026-09-26, Fix 2).
+            gap = dossier.get("expectation_gap") or state.get("expectation_gap")
+            if not isinstance(gap, dict):
+                gap = {}
+            macro_series = state.get("macro_series") or (state.get("capability_outputs") or {}).get("macro_context", {}).get("macro_series")
+            if isinstance(macro_series, dict) and macro_series:
+                macro_source = "injected_state"
+            else:
+                try:
+                    macro_series = _get_macro_context(["DGS10"])
+                    macro_source = "fred_fetched"
+                except Exception as exc:
+                    logger.warning("evaluate_valuation FRED DGS10 fetch failed for %s: %s; using static default rf", clean_ticker, exc)
+                    macro_series = {}
+                    macro_source = "static_default"
 
             cand_state = {
                 "ticker": clean_ticker,
-                "market_context": fetch_mkt(clean_ticker).to_dict(),
-                "sec_financials": fetch_sec(clean_ticker).to_dict(),
-                "consensus_snapshot": consensus_dict,
+                "market_context": market_ctx,
+                "sec_financials": sec_ctx,
+                "consensus_snapshot": consensus_ctx,
+                "expectation_gap": gap,
+                "macro_series": macro_series,
             }
             res = run_quant_analysis(cand_state)
             quant_rep = res.get("quant_report") or {}
             val = quant_rep.get("valuation") or {}
+
+            reconciliation = "no_diligence_reference"
+            dossier_val = dossier.get("valuation") if isinstance(dossier.get("valuation"), dict) else {}
+            dossier_base = (dossier_val.get("fair_value_range") or {}).get("base")
+            computed_base = (val.get("fair_value_range") or {}).get("base")
+            if dossier_base and computed_base:
+                drift = abs(float(dossier_base) - float(computed_base)) / float(dossier_base)
+                reconciliation = "matches_diligence" if drift <= VALUATION_RECONCILIATION_TOLERANCE else "mismatch_vs_diligence"
+                if drift > VALUATION_RECONCILIATION_TOLERANCE:
+                    logger.warning(
+                        "valuation.reconciliation_mismatch ticker=%s dossier_base=%s computed_base=%s drift=%.2f%%",
+                        clean_ticker, dossier_base, computed_base, drift * 100,
+                    )
+
             d = {
                 "status": "ok" if quant_rep.get("status") == "available" else "unavailable",
                 "ticker": clean_ticker,
@@ -572,6 +630,11 @@ def create_agent_tools(
                     "reproducibility": (quant_rep.get("reproducibility") or {}).get("verdict", "unverified"),
                 },
                 "quant_report": quant_rep,
+                "provenance": {
+                    "assumption_source": "inherited_expectations" if gap.get("assumptions") else "institutional_defaults",
+                    "macro_source": macro_source,
+                    "reconciliation": reconciliation,
+                },
                 "reason": quant_rep.get("reason"),
             }
             return json.dumps(d)

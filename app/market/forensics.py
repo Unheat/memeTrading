@@ -29,9 +29,9 @@ def compute_beneish_m_score(
 ) -> dict[str, Any]:
     """Calculate the 8-factor Beneish M-Score for earnings manipulation detection.
 
-    Formula:
+    Formula (published eight-variable model, Beneish 1999):
       M = -4.84 + 0.920*DSRI + 0.528*GMI + 0.404*AQI + 0.892*SGI +
-          0.115*DEPI - 0.172*SGAI + 4.037*TATA + 0.0327*LVGI
+          0.115*DEPI - 0.172*SGAI + 4.679*TATA - 0.327*LVGI
 
     Threshold:
       M > -1.78 indicates high probability of accounting manipulation.
@@ -44,8 +44,8 @@ def compute_beneish_m_score(
         + 0.892 * sgi
         + 0.115 * depi
         - 0.172 * sgai
-        + 4.037 * tata
-        + 0.0327 * lvgi
+        + 4.679 * tata
+        - 0.327 * lvgi
     )
 
     is_manipulator = m_score > -1.78

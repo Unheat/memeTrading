@@ -403,6 +403,27 @@ Analyze secular capex wave phase, bottleneck monopoly score (1-10), and thematic
         }
 
 
+def _normalize_reproducibility(verified: dict[str, Any]) -> dict[str, Any]:
+    """Normalize the calculator verify run into a flat, honest reproducibility verdict.
+
+    Args:
+        verified: Raw ``run_calculator(..., verify=True)`` result envelope.
+
+    Returns:
+        ``{"verdict": pass|fail|inconclusive|unverified, "mismatches": [...],
+        "compared_cases": int}`` — ``unverified`` only when the verify run itself failed.
+    """
+    if not isinstance(verified, Mapping) or verified.get("status") != "ok":
+        return {"verdict": "unverified", "mismatches": [], "compared_cases": 0,
+                "reason": verified.get("error") if isinstance(verified, Mapping) else "verify run failed"}
+    result = verified.get("result") or {}
+    return {
+        "verdict": str(result.get("verdict", "inconclusive")),
+        "mismatches": list(result.get("mismatches") or []),
+        "compared_cases": int(result.get("compared_cases") or 0),
+    }
+
+
 def run_quant_analysis(state: InvestigationState) -> dict[str, Any]:
     """Compute DCF and sensitivity matrix from dynamic model assumptions or verified SEC inputs."""
     market = _mapping(state.get("market_context"))
@@ -529,16 +550,10 @@ def run_quant_analysis(state: InvestigationState) -> dict[str, Any]:
         fcf_base = fcf
         fcf_mapping = f"sec_financials.cash_from_operations[{period}] - sec_financials.capex[{period}]"
 
-    # Forward cash flow trajectory when in growth capex regime (reflecting post-fab cash harvesting)
-    fcf_trajectory = None
-    if is_capex_spike and fcf_base > 0:
-        fcf_trajectory = [
-            round(fcf_base * 1.05, 2),
-            round(fcf_base * 1.15, 2),
-            round(fcf_base * 1.25, 2),
-            round(fcf_base * 1.30, 2),
-            round(fcf_base * 1.35, 2),
-        ]
+    # CapEx-spike / hyper-growth regimes affect ONLY the fcf_base normalization above.
+    # DCF flow shapes must come from the case growth rates authored by the expectations
+    # analyst — do not inject a fixed trajectory ladder here, it silently overrides the
+    # recorded assumptions (audit 2026-09-26, Fix 1).
 
     # Consensus Snapshot extraction for Forward Multiples Triangulation
     consensus_snapshot = state.get("consensus_snapshot") or {}
@@ -586,10 +601,6 @@ def run_quant_analysis(state: InvestigationState) -> dict[str, Any]:
         {"case": "base", "fcf_growth_rate": base_growth, "discount_rate": base_discount},
         {"case": "high", "fcf_growth_rate": high_growth, "discount_rate": high_discount},
     ]
-    if (is_capex_spike or is_hyper_growth) and fcf_trajectory:
-        dcf_cases[0]["fcf_trajectory"] = [round(x * 0.75, 2) for x in fcf_trajectory]
-        dcf_cases[1]["fcf_trajectory"] = [round(x * 1.00, 2) for x in fcf_trajectory]
-        dcf_cases[2]["fcf_trajectory"] = [round(x * 1.25, 2) for x in fcf_trajectory]
 
     model = {
         "inputs": {"current_price": price, "fcf_base": fcf_base, "shares_diluted": shares, "net_cash": net_cash},
@@ -613,5 +624,10 @@ def run_quant_analysis(state: InvestigationState) -> dict[str, Any]:
     computed = run_calculator(model)
     if computed.get("status") != "ok":
         return {"quant_report": {"status": "validation_error", "reason": computed.get("error"), "valuation": None, "model": model, "source_mapping": source_mapping}}
-    verified = run_calculator({**model, "computed_by": "calculator"}, verify=True)
-    return {"quant_report": {"status": "available", "period": period, "valuation": computed["result"], "model": model, "assumptions": assumptions, "source_mapping": source_mapping, "reproducibility": verified}}
+    verify_model = {**model, "computed_by": "calculator"}
+    computed_cases = (computed.get("result") or {}).get("cases") or {}
+    for case_spec in verify_model.get("dcf", {}).get("cases", []):
+        case_result = computed_cases.get(case_spec.get("case")) or {}
+        case_spec["fair_value_per_share"] = case_result.get("fair_value_per_share")
+    verified = run_calculator(verify_model, verify=True)
+    return {"quant_report": {"status": "available", "period": period, "valuation": computed["result"], "model": model, "assumptions": assumptions, "source_mapping": source_mapping, "reproducibility": _normalize_reproducibility(verified)}}
