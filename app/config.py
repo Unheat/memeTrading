@@ -83,7 +83,11 @@ class MediaConfig:
 
 @dataclass(frozen=True)
 class ResearchConfig:
-    """User-configurable execution limits and research defaults."""
+    """User-configurable execution limits and research defaults.
+
+    ``asymmetry_hurdle`` defaults to 0 (= derive from ``mandate_style`` profile).
+    Profiles: deep_value=3.0, compounder=2.0, momo=4.0 (audit 2026-09-26, Batch D).
+    """
 
     max_tool_calls: int = 50
     max_identical_calls: int = 2
@@ -91,6 +95,10 @@ class ResearchConfig:
     sec_periods: int = 4
     cases_root: str = "cases"
     max_concurrency: int = 6
+    mandate_style: str = "deep_value"
+    asymmetry_hurdle: float = 0.0
+    half_kelly_ratio: float = 5.0
+    paper_trade_ratio: float = 2.0
 
 
 @dataclass(frozen=True)
@@ -100,6 +108,32 @@ class AppConfig:
     llm: LLMConfig = field(default_factory=LLMConfig)
     media: MediaConfig = field(default_factory=MediaConfig)
     research: ResearchConfig = field(default_factory=ResearchConfig)
+
+
+# Mandate-style asymmetry hurdle profiles (audit 2026-09-26, Batch D). A style picks
+# how much payoff asymmetry the committee demands before committing capital.
+MANDATE_STYLE_HURDLE_PROFILES = {
+    "deep_value": 3.0,
+    "compounder": 2.0,
+    "momo": 4.0,
+}
+
+
+def effective_asymmetry_hurdle(raw_research: dict) -> float:
+    """Resolve the configured asymmetry hurdle for the committee.
+
+    Args:
+        raw_research: Raw research config mapping (may carry asymmetry_hurdle override
+            and mandate_style).
+
+    Returns:
+        Explicit hurdle when configured positive, else the mandate-style profile value.
+    """
+    style = str(raw_research.get("mandate_style", "deep_value")).lower()
+    explicit = float(raw_research.get("asymmetry_hurdle") or 0.0)
+    if explicit > 0:
+        return explicit
+    return MANDATE_STYLE_HURDLE_PROFILES.get(style, 3.0)
 
 
 def load_config(
@@ -194,6 +228,10 @@ def load_config(
         sec_periods=int(raw_res.get("sec_periods", 4)),
         cases_root=str(raw_res.get("cases_root", "cases")),
         max_concurrency=int(raw_res.get("max_concurrency", 6)),
+        mandate_style=str(raw_res.get("mandate_style", "deep_value")).lower(),
+        asymmetry_hurdle=effective_asymmetry_hurdle(raw_res),
+        half_kelly_ratio=float(raw_res.get("half_kelly_ratio", 5.0)),
+        paper_trade_ratio=float(raw_res.get("paper_trade_ratio", 2.0)),
     )
 
     return AppConfig(llm=llm_cfg, media=media_cfg, research=research_cfg)
