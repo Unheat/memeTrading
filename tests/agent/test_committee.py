@@ -112,7 +112,11 @@ def test_investment_committee_fails_closed_on_missing_data():
 
 
 def test_investment_committee_rejects_sub_3x_asymmetry():
-    """Verify asymmetry below 3.0x strictly yields VALIDATION_WATCH and 0% allocation."""
+    """Verify asymmetry in [2.0, 3.0) yields PAPER_TRADE_WATCH with 0% capital.
+
+    Batch D tiering: near-miss ratios (>= paper_trade_ratio 2.0, < hurdle 3.0) are
+    recorded as paper trades for calibration instead of being discarded outright.
+    """
     req = ResearchRequest(query="Investigate SUB3X", ticker="SUB3X")
     state = create_initial_state(req, case_id="case_sub3x")
     state["market_context"] = {
@@ -134,7 +138,8 @@ def test_investment_committee_rejects_sub_3x_asymmetry():
     model = FakeCIOModel()
     updates = run_investment_committee(state, model=model)
     verdict = updates["ic_verdict"]
-    assert verdict.verdict == "VALIDATION_WATCH"
+    assert verdict.verdict == "PAPER_TRADE_WATCH"
+    assert verdict.paper_trade is True
     assert verdict.reward_to_risk_ratio == pytest.approx(2.5)
     assert verdict.kelly_position_size_pct == 0.0
     assert "FAIL" in verdict.passing_discipline_checks["asymmetry_gate"]

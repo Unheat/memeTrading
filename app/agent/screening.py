@@ -159,7 +159,8 @@ def build_candidate_comparisons(
         List of serialized ComparisonCard dictionaries.
     """
     target_metrics = metrics or [
-        "price", "pe_ratio", "gross_margin", "operating_margin", "revenue", "net_cash", "capex"
+        "price", "pe_ratio", "gross_margin", "operating_margin", "revenue", "net_cash", "capex",
+        "expectation_edge",
     ]
     cards: list[dict[str, Any]] = []
 
@@ -236,6 +237,17 @@ def build_candidate_comparisons(
                 val = (sec.get("capex") or {}).get(latest_period)
                 if latest_period != "latest":
                     periods_seen.add(latest_period)
+            elif metric == "expectation_edge":
+                # Mauboussin expectation edge (Batch D): consensus forward growth minus
+                # the deterministic market-implied FCF growth. Positive edge = the
+                # market prices in less than fundamentals deliver.
+                from app.agent.expectations import _consensus_growth_estimate
+
+                gap = ((cand.get("diligence_dossier") or {}).get("expectation_gap")) or {}
+                implied = gap.get("implied_fcf_growth_rate")
+                consensus_growth = _consensus_growth_estimate(cand.get("consensus_snapshot") or {})
+                if implied is not None and consensus_growth is not None:
+                    val = round(consensus_growth - implied, 4)
             elif metric in ("cash_from_operations", "cfo", "operating_cash_flow"):
                 val = (sec.get("cash_from_operations") or {}).get(latest_period)
                 if latest_period != "latest":

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -18,6 +19,18 @@ from app.agent.state import InvestigationState
 from app.market.metrics import compute_fractional_kelly
 
 logger = logging.getLogger(__name__)
+
+# Tiered sizing governance (audit 2026-09-26, Batch D). Hurdles are config-driven via
+# budget_state; these defaults keep the committee safe when no config was injected.
+DEFAULT_ASYMMETRY_HURDLE = 3.0
+DEFAULT_HALF_KELLY_RATIO = 5.0
+DEFAULT_PAPER_TRADE_RATIO = 2.0
+QUARTER_KELLY_FRACTION = 0.25
+HALF_KELLY_FRACTION = 0.5
+# Conviction-tier single-name caps: exceptional asymmetry with fully available
+# debate reports earns a larger cap than the standard quarter-Kelly tier.
+QUARTER_TIER_POSITION_CAP = 0.08
+HALF_TIER_POSITION_CAP = 0.10
 
 CIO_SYSTEM_PROMPT = """# System Prompt: Chief Investment Officer & Investment Committee Chair (`cio-ic`)
 
@@ -30,12 +43,12 @@ You do not chase hype, retail fads, or management promises. You demand concrete 
 ## Core Mandates & Governance Rules
 
 ### 1. The 3:1 Asymmetric Reward-to-Risk Rule
-- You only approve long positions (`APPROVED_LONG`) if the upside to the Upside Anchor outweighs the downside to the Bear Floor by at least **3.0 to 1**:
-  $$\\text{Reward-to-Risk Ratio} = \\frac{\\text{Upside Anchor} - \\text{Current Price}}{\\text{Current Price} - \\text{Bear Floor}} \\ge 3.0$$
+- You only approve long positions (`APPROVED_LONG`) if the upside to the Upside Anchor outweighs the downside to the Bear Floor by at least the configured `asymmetry_hurdle` (payload field; default 3.0 to 1):
+  $$\\text{Reward-to-Risk Ratio} = \\frac{\\text{Upside Anchor} - \\text{Current Price}}{\\text{Current Price} - \\text{Bear Floor}} \\ge \\text{asymmetry_hurdle}$$
 - The Upside Anchor is NOT necessarily a DCF output: cite its `upside_anchor_source`
   (consensus_mean, quant_fair_value, bull_target_price, or consensus_high_fallback)
   accurately in your `anchor_citation` field. Never describe a consensus target as a DCF value.
-- If the ratio is below 3.0x, the trade is rejected or assigned to `Validation` awaiting a price pullback.
+- If the ratio is below the hurdle, the trade is rejected, paper-traded when near-miss, or assigned to `Validation` awaiting a price pullback.
 
 ### 2. The Strict "Passing Discipline" (Saying NO to Hot Names)
 You take pride in rejecting widely popular stocks when institutional fundamentals do not justify the risk. You enforce the firm's strict precedent:
@@ -86,6 +99,8 @@ class ICVerdict:
     upside_anchor_source: str = "missing"
     bear_anchor_source: str = "missing"
     anchor_citation: str = ""
+    paper_trade: bool = False
+    bear_floor: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -101,7 +116,39 @@ class ICVerdict:
             "upside_anchor_source": self.upside_anchor_source,
             "bear_anchor_source": self.bear_anchor_source,
             "anchor_citation": self.anchor_citation,
+            "paper_trade": self.paper_trade,
+            "bear_floor": self.bear_floor,
         }
+
+
+def _report_status(report: Any) -> str:
+    """Read the honest status of a bull/bear report object or dict.
+
+    Args:
+        report: Report object, dict, or None.
+
+    Returns:
+        One of ``available``, ``degraded``, ``unavailable``.
+    """
+    if report is None:
+        return "unavailable"
+    if isinstance(report, dict):
+        return str(report.get("status", "available"))
+    return str(getattr(report, "status", "available"))
+
+
+def _specialist_reports_clean(state: Mapping[str, Any]) -> bool:
+    """True when both debate anchors come from fully available specialist reports.
+
+    Args:
+        state: Current investigation state.
+
+    Returns:
+        False when any debate report is degraded or unavailable.
+    """
+    bull_status = _report_status(state.get("bull_report"))
+    bear_status = _report_status(state.get("adversarial_report"))
+    return "degraded" not in (bull_status, bear_status) and "unavailable" not in (bull_status, bear_status)
 
 
 def run_investment_committee(state: InvestigationState, model: Any) -> dict[str, Any]:
@@ -130,6 +177,12 @@ def run_investment_committee(state: InvestigationState, model: Any) -> dict[str,
 
     is_blackout = (proximity_flag == "BLACKOUT_RISK")
     passing_checks["earnings_blackout_gate"] = "FAIL (Earnings <= 7d)" if is_blackout else "PASS"
+
+    # Tiered sizing governance read from budget_state (config-driven, Batch D).
+    budget_governance = state.get("budget_state") or {}
+    asymmetry_hurdle = float(budget_governance.get("asymmetry_hurdle") or DEFAULT_ASYMMETRY_HURDLE)
+    half_kelly_ratio = float(budget_governance.get("half_kelly_ratio") or DEFAULT_HALF_KELLY_RATIO)
+    paper_trade_ratio = float(budget_governance.get("paper_trade_ratio") or DEFAULT_PAPER_TRADE_RATIO)
 
     # Pricing & Valuation Targets
     quote = market.get("quote") or {}
@@ -184,14 +237,18 @@ def run_investment_committee(state: InvestigationState, model: Any) -> dict[str,
         upside_dollar = base_target - current_price
         downside_dollar = current_price - bear_floor
         ratio = round(upside_dollar / downside_dollar, 2)
-        passing_checks["asymmetry_gate"] = "PASS" if ratio >= 3.0 else f"FAIL ({ratio:.1f}x < 3.0x)"
-        if ratio >= 3.0 and is_liquid and not is_blackout:
+        passing_checks["asymmetry_gate"] = "PASS" if ratio >= asymmetry_hurdle else f"FAIL ({ratio:.1f}x < {asymmetry_hurdle:.1f}x)"
+        if ratio >= asymmetry_hurdle and is_liquid and not is_blackout:
+            # Tiered sizing: half-Kelly only at exceptional asymmetry with fully
+            # available debate reports; quarter-Kelly otherwise (Batch D).
+            half_tier = ratio >= half_kelly_ratio and _specialist_reports_clean(state)
+            tier_fraction = HALF_KELLY_FRACTION if half_tier else QUARTER_KELLY_FRACTION
             kelly_size = compute_fractional_kelly(
                 upside_pct=upside_dollar / current_price,
                 downside_pct=downside_dollar / current_price,
                 win_prob=0.60,
-                fraction=0.25,
-                max_position_cap=0.08,
+                fraction=tier_fraction,
+                max_position_cap=HALF_TIER_POSITION_CAP if half_tier else QUARTER_TIER_POSITION_CAP,
                 max_loss_budget=0.05,
             )
     else:
@@ -224,6 +281,7 @@ def run_investment_committee(state: InvestigationState, model: Any) -> dict[str,
             "bear_floor_price": bear_floor,
             "bear_anchor_source": bear_anchor_source,
             "reward_to_risk_ratio": ratio,
+            "asymmetry_hurdle": asymmetry_hurdle,
             "kelly_position_size_pct": f"{kelly_size:.1%}",
             "passing_discipline_checks": passing_checks,
             "forensic_verdict": forensic.get("verdict"),
@@ -272,28 +330,37 @@ Deliberate as CIO, cite `upside_anchor_source` accurately in the required `ancho
             anchor_citation = str(parsed.get("anchor_citation", ""))
         except Exception as parse_exc:
             cio_summary = raw_text[:500] if raw_text else f"CIO deliberation completed: {parse_exc}"
-            if "APPROVED_LONG" in raw_text or "HIGH CONVICTION" in raw_text or (ratio and ratio >= 3.0 and is_liquid and not is_blackout):
+            if "APPROVED_LONG" in raw_text or "HIGH CONVICTION" in raw_text or (ratio and ratio >= asymmetry_hurdle and is_liquid and not is_blackout):
                 confidence = state.get("confidence")
-                if ratio and ratio >= 3.0 and confidence is not None and confidence >= 0.70:
+                if ratio and ratio >= asymmetry_hurdle and confidence is not None and confidence >= 0.70:
                     cio_verdict_str = "APPROVED_LONG_HIGH"
                     cio_conviction = "HIGH CONVICTION 🔥🔥🔥"
-                elif ratio and ratio >= 3.0:
+                elif ratio and ratio >= asymmetry_hurdle:
                     cio_verdict_str = "APPROVED_LONG_MEDIUM"
                     cio_conviction = "MEDIUM CONVICTION 🔥🔥"
     except Exception as exc:
         logger.warning("CIO LLM deliberation failed for %s: %s", ticker, exc)
         cio_summary = f"CIO deliberation generated under fallback: {exc}"
 
-    # Hard risk limits enforce zero capital allocation if hard gates fail
-    if not is_liquid or is_blackout or ratio is None or ratio < 3.0:
-        if not is_liquid or is_blackout:
-            cio_verdict_str = "PASSED_STRICT_DISCIPLINE"
-            cio_conviction = "PASSED 🚫"
-        else:
-            cio_verdict_str = "VALIDATION_WATCH"
-            cio_conviction = "VALIDATION 🔥"
+    # Tiered hard risk limits (Batch D):
+    #   ratio < paper_trade_ratio            -> VALIDATION_WATCH (zero capital)
+    #   paper_trade_ratio <= ratio < hurdle  -> PAPER_TRADE_WATCH (recorded, zero capital)
+    #   ratio >= hurdle                      -> capital via quarter/half-Kelly tiers
+    paper_trade = False
+    if not is_liquid or is_blackout:
+        cio_verdict_str = "PASSED_STRICT_DISCIPLINE"
+        cio_conviction = "PASSED 🚫"
         kelly_size = 0.0
-    elif ratio and ratio >= 3.0 and cio_verdict_str in ("VALIDATION_WATCH", "PASSED_STRICT_DISCIPLINE"):
+    elif ratio is None or ratio < paper_trade_ratio:
+        cio_verdict_str = "VALIDATION_WATCH"
+        cio_conviction = "VALIDATION 🔥"
+        kelly_size = 0.0
+    elif ratio < asymmetry_hurdle:
+        cio_verdict_str = "PAPER_TRADE_WATCH"
+        cio_conviction = "PAPER TRADE 📋"
+        kelly_size = 0.0
+        paper_trade = True
+    elif ratio and ratio >= asymmetry_hurdle and cio_verdict_str in ("VALIDATION_WATCH", "PASSED_STRICT_DISCIPLINE", "PAPER_TRADE_WATCH"):
         confidence = state.get("confidence")
         if confidence is not None and confidence >= 0.70:
             cio_verdict_str = "APPROVED_LONG_HIGH"
@@ -315,5 +382,7 @@ Deliberate as CIO, cite `upside_anchor_source` accurately in the required `ancho
         upside_anchor_source=upside_anchor_source,
         bear_anchor_source=bear_anchor_source,
         anchor_citation=anchor_citation,
+        paper_trade=paper_trade,
+        bear_floor=bear_floor,
     )
     return {"ic_verdict": verdict_obj}

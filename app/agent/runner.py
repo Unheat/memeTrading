@@ -128,6 +128,11 @@ def run_investigation(
             requested_position_decision=request.requested_position_decision,
         )
         initial_state = create_initial_state(effective_request, case_id=case_id)
+        # Tiered sizing governance (Batch D): the committee reads its hurdles from
+        # budget_state so mandate style stays config-driven, not code-baked.
+        initial_state["budget_state"]["asymmetry_hurdle"] = cfg.research.asymmetry_hurdle
+        initial_state["budget_state"]["half_kelly_ratio"] = cfg.research.half_kelly_ratio
+        initial_state["budget_state"]["paper_trade_ratio"] = cfg.research.paper_trade_ratio
         manifest["research_intent"] = initial_state["research_intent"]
         if effective_request.as_of_date:
             manifest["as_of_date"] = effective_request.as_of_date
