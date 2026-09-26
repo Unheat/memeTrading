@@ -7,6 +7,7 @@ Each candidate runs with an isolated context window and returns a structured dos
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Mapping
 
 from app.agent.adversarial import run_adversarial_red_team
@@ -73,55 +74,75 @@ def run_candidate_diligence(
         except Exception as exc:
             logger.debug("Failed to fetch SEC financials for %s: %s", clean_ticker, exc)
 
-    # 1. Expectations analysis
-    exp_res = {}
-    if model:
-        try:
-            exp_res = run_expectations_analyst(cand_state, model)
-            cand_state.update(exp_res)
-        except Exception as exc:
-            logger.warning("Expectations analysis failed for %s: %s", clean_ticker, exc)
+    # --- Stage 1: Independent Fundamentals (Expectations, Forensics, Moat in parallel) ---
+    exp_res: dict[str, Any] = {}
+    forensic_res: dict[str, Any] = {}
+    moat_res: dict[str, Any] = {}
 
-    # 2. Forensic accounting & Moat
-    forensic_res = {}
-    moat_res = {}
     if model:
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            fut_exp = executor.submit(run_expectations_analyst, cand_state, model)
+            fut_for = executor.submit(run_forensic_analysis, cand_state, model)
+            fut_moat = executor.submit(run_moat_analysis, cand_state, model)
+
+            try:
+                exp_res = fut_exp.result()
+            except Exception as exc:
+                logger.warning("Expectations analysis failed for %s: %s", clean_ticker, exc)
+
+            try:
+                forensic_res = fut_for.result()
+            except Exception as exc:
+                logger.warning("Forensic analysis failed for %s: %s", clean_ticker, exc)
+
+            try:
+                moat_res = fut_moat.result()
+            except Exception as exc:
+                logger.warning("Moat analysis failed for %s: %s", clean_ticker, exc)
+    else:
+        # Deterministic offline paths when model is None
         try:
-            forensic_res = run_forensic_analysis(cand_state, model)
-            cand_state.update(forensic_res)
+            forensic_res = run_forensic_analysis(cand_state, None)
         except Exception as exc:
             logger.warning("Forensic analysis failed for %s: %s", clean_ticker, exc)
         try:
-            moat_res = run_moat_analysis(cand_state, model)
-            cand_state.update(moat_res)
+            moat_res = run_moat_analysis(cand_state, None)
         except Exception as exc:
             logger.warning("Moat analysis failed for %s: %s", clean_ticker, exc)
 
-    # 3. Deterministic Reverse DCF / Quant modeling
-    quant_res = {}
+    cand_state.update(exp_res)
+    cand_state.update(forensic_res)
+    cand_state.update(moat_res)
+
+    # --- Stage 2: Quant DCF / Valuation modeling (synchronous, consuming Stage 1 expectation_gap) ---
+    quant_res: dict[str, Any] = {}
     try:
         quant_res = run_quant_analysis(cand_state)
         cand_state.update(quant_res)
     except Exception as exc:
         logger.warning("Quant analysis failed for %s: %s", clean_ticker, exc)
 
-    # 4. Air-gapped Bull Advocate
-    bull_res = {}
-    if model:
-        try:
-            bull_res = run_bull_advocate(cand_state, model)
-            cand_state.update(bull_res)
-        except Exception as exc:
-            logger.warning("Bull advocate failed for %s: %s", clean_ticker, exc)
+    # --- Stage 3: Dialectical Debate (Air-gapped Bull Advocate & Bear Red Team in parallel) ---
+    bull_res: dict[str, Any] = {}
+    bear_res: dict[str, Any] = {}
 
-    # 5. Hostile Bear Red Team
-    bear_res = {}
     if model:
-        try:
-            bear_res = run_adversarial_red_team(cand_state, model)
-            cand_state.update(bear_res)
-        except Exception as exc:
-            logger.warning("Bear red team failed for %s: %s", clean_ticker, exc)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            fut_bull = executor.submit(run_bull_advocate, cand_state, model)
+            fut_bear = executor.submit(run_adversarial_red_team, cand_state, model)
+
+            try:
+                bull_res = fut_bull.result()
+            except Exception as exc:
+                logger.warning("Bull advocate failed for %s: %s", clean_ticker, exc)
+
+            try:
+                bear_res = fut_bear.result()
+            except Exception as exc:
+                logger.warning("Bear red team failed for %s: %s", clean_ticker, exc)
+
+        cand_state.update(bull_res)
+        cand_state.update(bear_res)
 
     # Extract clean dossier values
     bull = cand_state.get("bull_report")

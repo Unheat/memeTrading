@@ -43,7 +43,7 @@ flowchart TD
 
         subgraph T_SEC["2. Unified SEC Specialist Sub-Agent (LangGraph)"]
             direction TB
-            t_sec_fin["get_sec_financials: Deterministic XBRL accounting<br/>• Form 10-Q YTD Cash Flow De-cumulation<br/>• True TTM Free Cash Flow Base<br/>• 8 Forensic Concepts (Assets, Receivables, PP&E, SG&A)"]
+            t_sec_fin["get_sec_financials: Deterministic XBRL accounting<br/>• Form 10-Q YTD Cash Flow De-cumulation<br/>• True TTM Free Cash Flow Base<br/>• 8 Forensic Concepts (Assets, Receivables, PP&E, SG&A)<br/>• Deterministic Working Capital Ratios (DIO & DSO)"]
             
             subgraph SEC_SUBAGENT["investigate_sec(ticker, task) Sub-Agent"]
                 direction TB
@@ -79,7 +79,7 @@ flowchart TD
                 direction TB
                 ENG_EXP["Expectations Analyst<br/>Reverses consensus & market-implied growth"]
                 ENG_FOR["Forensic & Moat<br/>Full 8-Factor Beneish M-Score & Sloan Accruals"]
-                ENG_QNT["Deterministic Quant DCF<br/>calculator.mjs on audited TTM FCF & consensus assumptions"]
+                ENG_QNT["Deterministic Quant DCF & Triangulation<br/>calculator.mjs on audited TTM FCF<br/>• Dynamic FRED DGS10 WACC & Blume Beta<br/>• CapEx Normalization & Hyper-Growth Regime<br/>• Multi-Method Triangulation (DCF + Multiples + P/TBV)"]
                 ENG_BULL["Bull Advocate<br/>Operating leverage catalysts & upside thesis"]
                 ENG_BEAR["Hostile Bear Red Team<br/>Catastrophic failure modes & numeric kill criteria"]
 
@@ -159,10 +159,10 @@ flowchart TD
 
 | Analysis Component | Stage 2 (The Analyst Workbench) | Stage 5 (The Boardroom Committee) |
 |---|---|---|
-| **Heavy Modeling & Sub-Agents** | Runs per-candidate on demand via `conduct_candidate_diligence(ticker)`: Quant DCF, Forensics, Bull Advocate, and Bear Red Team. Or commands the `investigate_sec` analyst sub-agent for deep filing retrieval. | **Zero engine execution.** It never spins up sub-agents or re-runs models. |
+| **Heavy Modeling & Sub-Agents** | Runs per-candidate on demand via `conduct_candidate_diligence(ticker)`: Quant DCF (with dynamic FRED WACC, CapEx normalization, and Multi-Method Triangulation), Forensics, Moat, Bull Advocate, and Bear Red Team. Or commands the `investigate_sec` analyst sub-agent for deep filing retrieval. | **Zero engine execution.** It never spins up sub-agents or re-runs models. |
 | **Candidate Selection** | Dynamically screens candidates, registers workspaces (`register_candidate`), declares early vetoes (`status='vetoed'`), and builds cross-candidate comparison matrices (`compare_candidates`). | Promotes the **winning candidate's dossier** into state (prioritizing the highest asymmetric reward-to-risk ratio). |
 | **Evidence & Compliance** | Commands `investigate_sec` to auto-discover, pull, chunk, and cite 10-K/10-Qs; verifies rumors via `verify_sec_claim`. | Evaluates the **Evidence Gate (G1)**: ensures primary SEC citations and market context exist before voting. |
-| **Audit Gates** | Collects raw metrics (Reverse DCF implied growth hurdle, Beneish M-Score, Bear floor). | Runs **instant mathematical checks**: Accounting Gate (G2), Valuation Gate (G3), and Asymmetry Gate (G4 $\ge 3.0x$). |
+| **Audit Gates** | Collects raw metrics (Reverse DCF implied growth hurdle, Beneish M-Score, Bear floor, Multi-method divergence flag). | Runs **instant mathematical checks**: Accounting Gate (G2), Valuation Gate (G3), and Asymmetry Gate (G4 $\ge 3.0x$). |
 | **Capital Allocation & Sizing** | Formulates thesis, operating leverage catalysts, and downside floor prices. | The **Chief Investment Officer (CIO)** conducts a single formal deliberation, assigns conviction tier, and sizes the position via **Fractional Kelly %**. |
 
 ---
@@ -194,9 +194,42 @@ The de-cumulated quarterly cash flows are summed across the 4 most recent discre
 3. **Stock-Based Compensation Dilution Burden**:
    $$\text{SBC Burden} = \frac{\text{Stock-Based Compensation}}{\text{Free Cash Flow}}$$
    Flags hidden compensation dilution ($> 25\%$ of FCF indicates high shareholder dilution).
+4. **Deterministic Working Capital Ratios (DIO & DSO)**:
+   Under `app/sec/financials.py`, discrete period Days Inventory Outstanding (DIO) and Days Sales Outstanding (DSO) are calculated deterministically across all periods (using 365 days for annual FY, 91.25 days for quarterly periods):
+   $$\text{DIO} = \frac{\text{Inventories}}{\text{Cost of Goods Sold}} \times \text{Days}$$
+   $$\text{DSO} = \frac{\text{Accounts Receivable}}{\text{Revenue}} \times \text{Days}$$
+   Spikes in DIO flag inventory build-up at cyclical peaks, while elevated DSO warns of aggressive revenue booking and channel stuffing.
 
 ### 3.3 Immutable FactCard Evidence Ledger & Context Compaction
 To ensure zero factual or citation amnesia during deep multi-turn investigations:
 1. **Deterministic Distillation (`app/agent/tool_result_ingestion.py`)**: Incoming tool payloads from `get_sec_financials` and `get_market_data` are immediately distilled into atomic, cited `FactCard` instances (`fact_{ticker}_{metric}_{period}`).
 2. **Entity Backlink Preservation (`app/agent/context.py`)**: When large `ToolMessage` payloads are pruned down to compact metadata envelopes under token limits, entity identifiers (`ticker`, `periods`) are retained in the envelope.
 3. **System Prompt Reprojection (`app/agent/prompts.py`)**: Active FactCards are projected into the `SystemMessage` under `DURABLE RESEARCH STATE`. Because `SystemMessage` is permanently preserved during context compaction, all audited metrics, citations, and verified quotes survive indefinitely across turns.
+
+### 3.4 Dynamic Macro WACC & Capital Structure Calibration
+In `app/agent/specialists.py::run_quant_analysis`, discount rates are dynamically anchored to macroeconomic conditions rather than static guesses:
+1. **Official Risk-Free Rate ($R_f$)**: Extracted from official Federal Reserve FRED series `DGS10` (10-Year Treasury Constant Maturity). If FRED data is unavailable, defaults to institutional benchmark of 4.30%.
+2. **Blume-Adjusted Beta**: Reversion toward mean market volatility via Bloomberg/Blume adjustment:
+   $$\beta_{\text{adj}} = \min(\max(0.67 \cdot \beta_{\text{raw}} + 0.33, 0.60), 2.00)$$
+3. **Cost of Equity ($K_e$)**: CAPM using Damodaran US Equity Risk Premium ($\text{ERP} = 4.75\%$):
+   $$K_e = R_f + \beta_{\text{adj}} \cdot \text{ERP}$$
+4. **After-Tax Cost of Debt ($K_d$)**:
+   $$K_d = (R_f + 1.50\%) \cdot (1 - 0.21)$$
+5. **Weighted Average Cost of Capital (WACC)**: Weighted by enterprise capital structure ($W_e, W_d$) and bounded within $[7.5\%, 13.0\%]$ to prevent unrealistic cost-of-capital extremes.
+
+### 3.5 CapEx Normalization & Hyper-Growth Inflection Regime
+In heavy capital-expenditure phases (e.g. semiconductor foundry builds, AI hyperscaler cluster buildouts), unadjusted single-stage DCFs suffer severe distortions because growth CapEx directly depresses reported Free Cash Flow. `app/agent/specialists.py::run_quant_analysis` implements automated regime detection:
+1. **CapEx Spike Detection**: Flagged when $\text{CapEx} / \text{Revenue} > 25\%$.
+2. **Hyper-Growth Inflection**: Flagged when latest quarter revenue annualizes to $>1.35\times$ trailing 12-month revenue ($\text{Quarter Revenue} \times 4 > 1.35 \times \text{TTM Revenue}$).
+3. **Maintenance CapEx Normalization**: For firms flagged in growth capex or hyper-growth inflection, maintenance CapEx is normalized to a steady-state rate of $15\%$ of revenue:
+   $$\text{Maintenance CapEx} = \min(\text{Reported CapEx}, \text{Revenue} \times 0.15)$$
+   $$\text{Normalized FCF} = \text{Cash from Operations} - \text{Maintenance CapEx}$$
+4. **Post-Fab Cash Harvesting Trajectory**: For growth CapEx regimes, a 5-year multi-stage scaling trajectory ($[1.05\times, 1.15\times, 1.25\times, 1.30\times, 1.35\times]$) models post-investment operating cash flow conversion.
+
+### 3.6 Multi-Method Valuation Triangulation Engine (`calculator.mjs`)
+To prevent over-reliance on a single DCF model, `app/valuation/calculator.mjs` executes multi-method triangulation across four institutional pillars:
+1. **Intrinsic DCF Fair Value**: Discounted cash flow base case.
+2. **Forward Earnings Multiple Valuation**: $\text{Forward EPS} \times 10.0\times P/E$.
+3. **Tangible Asset Floor**: $\text{Book Value per Share} \times 1.8\times P/TBV$ (automatically disabled for asset-light businesses where $\text{Book Value} \times \text{Shares} < 8\% \text{ Market Cap}$).
+4. **Wall Street Consensus Target**: Mean price target from equity research analysts.
+5. **DCF Divergence Circuit Breaker**: If intrinsic DCF falls below $35\%$ of current market price due to temporary peak CapEx drag while forward multiples or consensus targets are $\ge 1.5\times$ higher, the engine flags `dcf_divergence_flagged: true` and re-weights the valuation ($25\%$ DCF, $45\%$ Multiple, $15\%$ Asset Floor, $10\%$ Consensus) with the asset floor as the valuation low and multiple as the valuation high.

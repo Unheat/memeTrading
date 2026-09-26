@@ -90,6 +90,7 @@ class ResearchConfig:
     benchmark_ticker: str = "SPY"
     sec_periods: int = 4
     cases_root: str = "cases"
+    max_concurrency: int = 6
 
 
 @dataclass(frozen=True)
@@ -192,6 +193,7 @@ def load_config(
         benchmark_ticker=str(raw_res.get("benchmark_ticker", "SPY")),
         sec_periods=int(raw_res.get("sec_periods", 4)),
         cases_root=str(raw_res.get("cases_root", "cases")),
+        max_concurrency=int(raw_res.get("max_concurrency", 6)),
     )
 
     return AppConfig(llm=llm_cfg, media=media_cfg, research=research_cfg)

@@ -230,6 +230,92 @@ def test_market_and_parallel_tool_results_are_ingested_before_committee(monkeypa
     ]
 
 
+def test_multi_candidate_concurrent_tool_batching_in_single_turn(monkeypatch):
+    """Verify Main Agent can emit multiple candidate tools in one turn and ingest all concurrently."""
+    executed_calls = []
+
+    @tool("get_market_data")
+    def mock_market(ticker: str, candidate_id: str | None = None) -> str:
+        """Mock market data tool returning ticker-specific quote."""
+        cid = candidate_id or f"cand_{ticker.lower()}"
+        executed_calls.append(f"market_{ticker}")
+        return json.dumps({
+            "status": "ok",
+            "ticker": ticker.upper(),
+            "candidate_id": cid,
+            "quote": {"price": 100.0, "currency": "USD"},
+        })
+
+    @tool("conduct_candidate_diligence")
+    def mock_diligence(ticker: str, candidate_id: str | None = None) -> str:
+        """Mock diligence tool returning candidate dossier."""
+        cid = candidate_id or f"cand_{ticker.lower()}"
+        executed_calls.append(f"diligence_{ticker}")
+        return json.dumps({
+            "status": "ok",
+            "ticker": ticker.upper(),
+            "candidate_id": cid,
+            "valuation": {"fair_value": 150.0, "implied_growth_rate": 0.10},
+            "bull_catalysts": ["Strong demand"],
+            "bear_kill_triggers": ["Supply glut"],
+        })
+
+    class MultiBatchModel:
+        def __init__(self):
+            self.call_count = 0
+
+        def bind_tools(self, tools):
+            return self
+
+        def invoke(self, messages):
+            self.call_count += 1
+            if self.call_count == 1:
+                return AIMessage(
+                    content="",
+                    tool_calls=[
+                        {"name": "get_market_data", "args": {"ticker": "NVDA", "candidate_id": "cand_nvda"}, "id": "m-nvda", "type": "tool_call"},
+                        {"name": "get_market_data", "args": {"ticker": "AMD", "candidate_id": "cand_amd"}, "id": "m-amd", "type": "tool_call"},
+                        {"name": "conduct_candidate_diligence", "args": {"ticker": "MU", "candidate_id": "cand_mu"}, "id": "d-mu", "type": "tool_call"},
+                        {"name": "conduct_candidate_diligence", "args": {"ticker": "WDC", "candidate_id": "cand_wdc"}, "id": "d-wdc", "type": "tool_call"},
+                    ],
+                )
+            return AIMessage(content="Investigation complete.")
+
+    def fake_committee(state, model):
+        return {"ic_verdict": "passed"}
+
+    monkeypatch.setattr(graph_module, "run_investment_committee", fake_committee)
+    graph = create_research_graph(
+        model=MultiBatchModel(), tools=[mock_market, mock_diligence]
+    )
+    initial_state = create_initial_state(
+        ResearchRequest(query="Compare best AI semiconductor stocks", ticker=None, requested_ranking_count=4),
+        case_id="case_multi_batch",
+    )
+    _add_sufficient_mocked_evidence(initial_state)
+
+    final_state = graph.invoke(initial_state)
+
+    assert len(executed_calls) == 4
+    assert set(executed_calls) == {"market_NVDA", "market_AMD", "diligence_MU", "diligence_WDC"}
+
+    candidates = final_state.get("candidates") or {}
+    assert "cand_nvda" in candidates
+    assert candidates["cand_nvda"]["market_context"]["quote"]["price"] == 100.0
+
+    assert "cand_amd" in candidates
+    assert candidates["cand_amd"]["market_context"]["quote"]["price"] == 100.0
+
+    assert "cand_mu" in candidates
+    assert candidates["cand_mu"]["diligence_dossier"]["valuation"]["fair_value"] == 150.0
+
+    assert "cand_wdc" in candidates
+    assert candidates["cand_wdc"]["diligence_dossier"]["valuation"]["fair_value"] == 150.0
+
+    receipt_ids = {r.get("tool_call_id") for r in final_state.get("searches_performed", [])}
+    assert {"m-nvda", "m-amd", "d-mu", "d-wdc"}.issubset(receipt_ids)
+
+
 def test_agent_graph_executes_exact_remaining_tool_budget(monkeypatch):
     """Prove excess parallel calls are clipped while allowed call pairs stay complete."""
     executed_queries = []
