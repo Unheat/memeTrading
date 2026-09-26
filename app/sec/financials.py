@@ -137,21 +137,33 @@ def _sort_period_cols(cols: list[str]) -> list[str]:
     """Sort period columns in descending chronological order (newest first)."""
     import re
 
-    def _parse_key(col: str):
+    def _parse_key(col: str) -> tuple[int, int, int, int]:
         c = str(col).strip()
-        m_q = re.search(r"Q([1-4])\s*(\d{4})", c, re.I)
-        if m_q:
-            return (int(m_q.group(2)), int(m_q.group(1)), c)
-        m_yq = re.search(r"(\d{4})\s*[-Q]\s*([1-4])", c, re.I)
-        if m_yq:
-            return (int(m_yq.group(1)), int(m_yq.group(2)), c)
+        # 1. Full date YYYY-MM-DD or YYYY/MM/DD
         m_date = re.search(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})", c)
         if m_date:
-            return (int(m_date.group(1)), int(m_date.group(2)), int(m_date.group(3)))
-        m_fy = re.search(r"(\d{4})", c)
+            y, m, d = int(m_date.group(1)), int(m_date.group(2)), int(m_date.group(3))
+            q = (m - 1) // 3 + 1
+            return (y, q, m, d)
+        # 2. Q[1-4] YYYY
+        m_q = re.search(r"Q([1-4])\s*(\d{4})", c, re.I)
+        if m_q:
+            q_num = int(m_q.group(1))
+            return (int(m_q.group(2)), q_num, q_num * 3, 31)
+        # 3. YYYY-Q[1-4] or YYYY Q[1-4]
+        m_yq = re.search(r"(\d{4})\s*[-_\sQ]\s*Q?([1-4])", c, re.I)
+        if m_yq:
+            q_num = int(m_yq.group(2))
+            return (int(m_yq.group(1)), q_num, q_num * 3, 31)
+        # 4. FY YYYY
+        m_fy = re.search(r"\bFY\s*(\d{4})\b", c, re.I)
         if m_fy:
-            return (int(m_fy.group(1)), 0, c)
-        return (0, 0, c)
+            return (int(m_fy.group(1)), 0, 0, 0)
+        # 5. Standalone 4-digit year
+        m_year = re.search(r"\b(\d{4})\b", c)
+        if m_year:
+            return (int(m_year.group(1)), 0, 0, 0)
+        return (0, 0, 0, 0)
 
     return sorted(cols, key=_parse_key, reverse=True)
 
@@ -183,7 +195,7 @@ def _period_col_after_as_of(col: str, as_of_str: str | None) -> bool:
             q_num = int(m_q.group(1))
             as_of_q = (as_of_d.month - 1) // 3 + 1
             return q_num > as_of_q
-    m_yq = re.search(r"(\d{4})\s*[-Q]\s*([1-4])", c, re.I)
+    m_yq = re.search(r"(\d{4})\s*[-_\sQ]\s*Q?([1-4])", c, re.I)
     if m_yq:
         q_year = int(m_yq.group(1))
         if q_year > as_of_d.year:
@@ -192,7 +204,7 @@ def _period_col_after_as_of(col: str, as_of_str: str | None) -> bool:
             q_num = int(m_yq.group(2))
             as_of_q = (as_of_d.month - 1) // 3 + 1
             return q_num > as_of_q
-    m_fy = re.search(r"(\d{4})", c)
+    m_fy = re.search(r"\bFY\s*(\d{4})\b", c, re.I)
     if m_fy:
         return int(m_fy.group(1)) > as_of_d.year
     return False
@@ -210,6 +222,7 @@ def _find_row_val(df: Any, concept_names: list[str], col: str) -> float | None:
     """
     if df is None or not hasattr(df, "columns") or col not in df.columns:
         return None
+    capex_tokens = ("payment", "capex", "capitalexpenditure", "purchaseofproperty", "productiveasset", "additionstoproperty")
     try:
         df_index_lower = [str(idx).lower() for idx in df.index]
         # 1. Exact matches in priority order
@@ -221,9 +234,12 @@ def _find_row_val(df: Any, concept_names: list[str], col: str) -> float | None:
                 if hasattr(val, "iloc"):
                     val = val.iloc[0]
                 if val is not None:
-                    f_val = float(val)
-                    if math.isfinite(f_val):
-                        return abs(f_val) if "payments" in c_low or "capex" in c_low else f_val
+                    try:
+                        f_val = float(val)
+                        if math.isfinite(f_val):
+                            return abs(f_val) if any(k in c_low for k in capex_tokens) else f_val
+                    except (ValueError, TypeError):
+                        pass
 
         # 2. Substring matches in priority order
         for concept in concept_names:
@@ -235,9 +251,12 @@ def _find_row_val(df: Any, concept_names: list[str], col: str) -> float | None:
                     if hasattr(val, "iloc"):
                         val = val.iloc[0]
                     if val is not None:
-                        f_val = float(val)
-                        if math.isfinite(f_val):
-                            return abs(f_val) if "payments" in c_low or "capex" in c_low else f_val
+                        try:
+                            f_val = float(val)
+                            if math.isfinite(f_val):
+                                return abs(f_val) if any(k in c_low for k in capex_tokens) else f_val
+                        except (ValueError, TypeError):
+                            pass
     except Exception:
         pass
     return None
@@ -279,33 +298,20 @@ def _find_bs_metric(
     bs_a: Any,
     fallback_cols: list[str] | None = None,
 ) -> float | None:
-    """Find a balance sheet metric for a period with 10-K FY and prior-quarter fallback."""
+    """Find a balance sheet metric for a period with 10-K FY mapping."""
     df, matched_col = _resolve_bs_dataframe_and_col(col, bs_q, bs_a)
     if df is not None and matched_col:
         val = _find_row_val(df, concept_names, matched_col)
         if val is not None:
             return val
-
-    # If not found and fallback columns provided, check most recent available period
-    if fallback_cols:
-        for f_col in fallback_cols:
-            if f_col == col:
-                continue
-            f_df, f_matched_col = _resolve_bs_dataframe_and_col(f_col, bs_q, bs_a)
-            if f_df is not None and f_matched_col:
-                f_val = _find_row_val(f_df, concept_names, f_matched_col)
-                if f_val is not None:
-                    return f_val
     return None
 
 
 def _compute_ttm_fcf(fcf: dict[str, float | None], period_list: list[str]) -> float | None:
-    """Sum trailing-twelve-month free cash flow from the 4 most recent quarters.
+    """Sum trailing-twelve-month free cash flow from 4 contiguous quarterly periods.
 
-    A partial window (any quarter missing cfo or capex) is NOT a TTM. Annualizing a
-    single quarter or summing partial windows produced unstable values across fetches
-    and silently flipped downstream reverse-DCF bases (audit 2026-09-26 follow-up), so
-    None is reported whenever the full 4-quarter window is unavailable.
+    A partial window (any quarter missing cfo or capex) is NOT a TTM.
+    Annual columns (e.g. FY) or periods with non-quarterly durations are excluded.
 
     Args:
         fcf: Per-period free cash flow map (may contain None values).
@@ -314,83 +320,85 @@ def _compute_ttm_fcf(fcf: dict[str, float | None], period_list: list[str]) -> fl
     Returns:
         TTM FCF rounded to 2 decimals, or None when the window is incomplete.
     """
-    valid_fcfs = [fcf[p] for p in period_list[:4] if fcf.get(p) is not None]
+    quarterly_periods = [p for p in period_list if not str(p).upper().startswith("FY") and "FY" not in str(p).upper()]
+    if len(quarterly_periods) < 4:
+        return None
+    valid_fcfs = [fcf[p] for p in quarterly_periods[:4] if fcf.get(p) is not None]
     if len(valid_fcfs) == 4:
         return round(sum(valid_fcfs), 2)
     return None
 
 
-def _decumulate_cash_flows(periods: list[str], series: dict[str, float | None]) -> dict[str, float | None]:
-    """Convert cumulative YTD cash flow statement periods into discrete quarters if needed.
+def _extract_fact_quarterly_capex(company: Any, periods: list[str]) -> dict[str, float | None]:
+    """Fallback extraction of discrete quarterly CapEx directly from company facts.
 
-    SEC Form 10-Q filings report cash flow on a cumulative year-to-date basis:
-      Q1: 3-month discrete (~90 days)
-      Q2: 6-month cumulative (~180 days)
-      Q3: 9-month cumulative (~270 days)
-      Q4: 12-month annual (Form 10-K)
-
-    If the series exhibits monotonic cumulative YTD growth within a fiscal year,
-    this derives discrete quarterly values:
-      Q2_discrete = Q2_cumulative - Q1
-      Q3_discrete = Q3_cumulative - Q2_cumulative
-      Q4_discrete = Q4_cumulative - Q3_cumulative
+    Handles companies like AMZN or NVDA that switched tags to PaymentsToAcquireProductiveAssets
+    which may be omitted from edgartools's face statement builder dataframe.
     """
-    if not periods or not series:
-        return dict(series)
+    capex_by_period: dict[str, float | None] = {}
+    try:
+        facts = getattr(company, "facts", None)
+        if not facts:
+            return capex_by_period
 
-    result = dict(series)
-    import re
-    from collections import defaultdict
+        import re
 
-    def _extract_fy_and_q(p_str: str) -> tuple[int | None, int | None]:
-        m_q = re.search(r"Q([1-4])[-_\s]*(\d{4})", p_str, re.I)
-        if m_q:
-            return int(m_q.group(2)), int(m_q.group(1))
-        m_yq = re.search(r"(\d{4})[-_\s]*Q?([1-4])", p_str, re.I)
-        if m_yq:
-            return int(m_yq.group(1)), int(m_yq.group(2))
-        m_date = re.search(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})", p_str)
-        if m_date:
-            year, month = int(m_date.group(1)), int(m_date.group(2))
-            q = (month - 1) // 3 + 1
-            return year, q
-        m_fy = re.search(r"(\d{4})", p_str)
-        if m_fy:
-            return int(m_fy.group(1)), None
-        return None, None
+        def _parse_period_year_q(p_str: str) -> tuple[int | None, int | None]:
+            m_q = re.search(r"Q([1-4])\s*(\d{4})", p_str, re.I)
+            if m_q:
+                return int(m_q.group(2)), int(m_q.group(1))
+            m_yq = re.search(r"(\d{4})\s*[-_\sQ]\s*Q?([1-4])", p_str, re.I)
+            if m_yq:
+                return int(m_yq.group(1)), int(m_yq.group(2))
+            return None, None
 
-    by_year: dict[int, list[tuple[int, str]]] = defaultdict(list)
-    for p in periods:
-        fy, q = _extract_fy_and_q(p)
-        if fy is not None and q is not None:
-            by_year[fy].append((q, p))
+        concepts = [
+            "paymentstoacquireproductiveassets",
+            "paymentstoacquirepropertyplantandequipment",
+            "capitalexpenditures",
+            "propertyplantandequipmentadditions",
+        ]
 
-    for fy, q_list in by_year.items():
-        q_list.sort(key=lambda item: item[0])
-        if len(q_list) < 2:
-            continue
+        for p in periods:
+            fy, fq = _parse_period_year_q(p)
+            if fy is None or fq is None:
+                continue
 
-        vals = [result.get(p) for _, p in q_list]
-        is_cumulative = False
+            extracted_val = None
+            for concept in concepts:
+                candidates = []
+                fy_cands = []
+                q3_cands = []
+                for f in facts:
+                    if f.period_type == "duration" and f.fiscal_year == fy and concept in str(f.concept).lower():
+                        if f.period_start and f.period_end:
+                            days = (f.period_end - f.period_start).days
+                            if f.fiscal_period == f"Q{fq}" and 70 <= days <= 110 and f.value is not None:
+                                candidates.append((f.period_end, getattr(f, "filing_date", None) or f.period_end, abs(float(f.value))))
+                            elif fq == 4 and f.fiscal_period == "FY" and 350 <= days <= 380 and f.value is not None:
+                                fy_cands.append((f.period_end, abs(float(f.value))))
+                            elif fq == 4 and f.fiscal_period == "Q3" and 260 <= days <= 290 and f.value is not None:
+                                q3_cands.append((f.period_end, abs(float(f.value))))
 
-        if all(v is not None and v > 0 for v in vals):
-            if len(vals) >= 2 and vals[0] > 0 and vals[1] >= 1.5 * vals[0]:
-                is_cumulative = True
-            elif len(vals) >= 3 and vals[1] > 0 and vals[2] >= 1.3 * vals[1]:
-                is_cumulative = True
+                if candidates:
+                    candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
+                    extracted_val = candidates[0][2]
+                    break
+                elif fq == 4 and fy_cands and q3_cands:
+                    fy_cands.sort(key=lambda x: x[0], reverse=True)
+                    q3_cands.sort(key=lambda x: x[0], reverse=True)
+                    best_fy = fy_cands[0][1]
+                    best_q3 = q3_cands[0][1]
+                    if best_fy >= best_q3:
+                        extracted_val = round(best_fy - best_q3, 2)
+                        break
 
-        if is_cumulative:
-            for idx in range(len(q_list) - 1, 0, -1):
-                cur_q, cur_p = q_list[idx]
-                prev_q, prev_p = q_list[idx - 1]
-                cur_val = result.get(cur_p)
-                prev_val = result.get(prev_p)
-                if cur_val is not None and prev_val is not None:
-                    discrete_val = round(cur_val - prev_val, 2)
-                    if discrete_val >= 0:
-                        result[cur_p] = discrete_val
+            if extracted_val is not None:
+                capex_by_period[p] = extracted_val
+    except Exception as exc:
+        logger.debug("Failed fact-level CapEx fallback: %s", exc)
 
-    return result
+    return capex_by_period
 
 
 def _get_company(ticker: str) -> Any:
@@ -435,7 +443,12 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4, as_of_date: str | None
             result["periods"] = period_cols[:periods]
             for col in result["periods"]:
                 result["revenue"][col] = _find_row_val(inc_stmt, ["Revenues", "Revenue", "SalesRevenueNet", "RevenueFromContractWithCustomerExcludingAssessedTax"], col)
-                result["gross_profit"][col] = _find_row_val(inc_stmt, ["GrossProfit", "GrossMargin"], col)
+                gp_val = _find_row_val(inc_stmt, ["GrossProfit", "GrossMargin"], col)
+                if gp_val is None and result["revenue"][col] is not None:
+                    cogs_val = _find_row_val(inc_stmt, ["CostOfGoodsAndServicesSold", "CostOfGoodsSold", "CostOfRevenue", "CostOfServices"], col)
+                    if cogs_val is not None:
+                        gp_val = round(result["revenue"][col] - cogs_val, 2)
+                result["gross_profit"][col] = gp_val
                 result["operating_income"][col] = _find_row_val(inc_stmt, ["OperatingIncomeLoss", "OperatingIncome"], col)
                 result["net_income"][col] = _find_row_val(inc_stmt, ["NetIncomeLoss", "NetIncome"], col)
                 result["sg_and_a"][col] = _find_row_val(inc_stmt, ["SellingGeneralAndAdministrativeExpense", "GeneralAndAdministrativeExpense", "SellingAndMarketingExpense", "SellingExpense", "AdministrativeExpense"], col)
@@ -514,18 +527,48 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4, as_of_date: str | None
         cf_stmt = company.cash_flow_statement(annual=False, periods=periods, as_dataframe=True)
         if cf_stmt is not None and hasattr(cf_stmt, "columns"):
             for col in result["periods"]:
-                result["cash_from_operations"][col] = _find_row_val(cf_stmt, ["NetCashProvidedByUsedInOperatingActivities", "NetCashProvidedByOperatingActivities", "OperatingCashFlow"], col)
-                result["capex"][col] = _find_row_val(cf_stmt, ["PaymentsToAcquirePropertyPlantAndEquipment", "PaymentsToAcquireProductiveAssets", "CapitalExpenditures"], col)
-                result["depreciation"][col] = _find_row_val(cf_stmt, ["DepreciationDepletionAndAmortization", "DepreciationAndAmortization", "Depreciation", "DepreciationAmortizationAndAccretionNet"], col)
-                result["stock_based_compensation"][col] = _find_row_val(cf_stmt, ["ShareBasedCompensation", "AllocatedShareBasedCompensationExpense", "StockOptionExpense", "ShareBasedPaymentArrangementNoncashExpense"], col)
+                result["cash_from_operations"][col] = _find_row_val(
+                    cf_stmt,
+                    ["NetCashProvidedByUsedInOperatingActivities", "NetCashProvidedByOperatingActivities", "OperatingCashFlow"],
+                    col,
+                )
+                result["capex"][col] = _find_row_val(
+                    cf_stmt,
+                    [
+                        "PaymentsToAcquirePropertyPlantAndEquipment",
+                        "PaymentsToAcquireProductiveAssets",
+                        "CapitalExpenditures",
+                        "PaymentsToAcquireOtherPropertyPlantAndEquipment",
+                        "PurchaseOfPropertyPlantAndEquipment",
+                        "PropertyPlantAndEquipmentAdditions",
+                    ],
+                    col,
+                )
+                result["depreciation"][col] = _find_row_val(
+                    cf_stmt,
+                    ["DepreciationDepletionAndAmortization", "DepreciationAndAmortization", "Depreciation", "DepreciationAmortizationAndAccretionNet"],
+                    col,
+                )
+                result["stock_based_compensation"][col] = _find_row_val(
+                    cf_stmt,
+                    ["ShareBasedCompensation", "AllocatedShareBasedCompensationExpense", "StockOptionExpense", "ShareBasedPaymentArrangementNoncashExpense"],
+                    col,
+                )
     except Exception as exc:
         logger.debug("Failed cash flow extraction via dataframe: %s", exc)
 
-    # De-cumulate cash flows if reported on cumulative YTD basis in 10-Q
-    result["cash_from_operations"] = _decumulate_cash_flows(result["periods"], result["cash_from_operations"])
-    result["capex"] = _decumulate_cash_flows(result["periods"], result["capex"])
-    result["depreciation"] = _decumulate_cash_flows(result["periods"], result["depreciation"])
-    result["stock_based_compensation"] = _decumulate_cash_flows(result["periods"], result["stock_based_compensation"])
+    # Check for missing CapEx (e.g. AMZN/NVDA tag switch to productive assets) and fall back to company facts
+    missing_capex_periods = [p for p in result["periods"] if result["capex"].get(p) is None]
+    if missing_capex_periods:
+        fact_capex = _extract_fact_quarterly_capex(company, missing_capex_periods)
+        for p, val in fact_capex.items():
+            if val is not None:
+                result["capex"][p] = val
+
+    # Enforce positive CapEx convention across all extracted periods
+    for p in result["periods"]:
+        if result["capex"].get(p) is not None:
+            result["capex"][p] = abs(result["capex"][p])
 
     if not result["periods"]:
         raise ValueError(f"No XBRL reporting periods found for ticker {ticker}")
@@ -633,11 +676,12 @@ def get_sec_financials(ticker: str, periods: int = 4, as_of_date: str | None = N
     fcf: dict[str, float | None] = {}
 
     for i, p in enumerate(period_list):
-        # Gross Margin %
+        # Gross Margin % (bounded to legitimate economic range [-1.0, 1.0])
         r_val = rev.get(p)
         gp_val = gp.get(p)
         if r_val and gp_val and r_val > 0:
-            gm_pct[p] = round(gp_val / r_val, 4)
+            calc_gm = round(gp_val / r_val, 4)
+            gm_pct[p] = calc_gm if -1.0 <= calc_gm <= 1.0 else None
         else:
             gm_pct[p] = None
 
@@ -656,7 +700,7 @@ def get_sec_financials(ticker: str, periods: int = 4, as_of_date: str | None = N
         else:
             net_cash[p] = None
 
-        # Free Cash Flow (CFO - CapEx)
+        # Free Cash Flow (CFO - CapEx) - Enforces deterministic identity
         cf_val = cfo.get(p)
         cx_val = capex.get(p)
         if cf_val is not None and cx_val is not None:
@@ -682,6 +726,7 @@ def get_sec_financials(ticker: str, periods: int = 4, as_of_date: str | None = N
     ttm_fcf = _compute_ttm_fcf(fcf, period_list)
 
     # Calculate deterministic DIO (Days Inventory Outstanding) and DSO (Days Sales Outstanding)
+    # Bounded to [0.0, 1000.0] days to prevent division-by-near-zero distortion
     dio: dict[str, float | None] = {}
     dso: dict[str, float | None] = {}
     for p in period_list:
@@ -694,14 +739,16 @@ def get_sec_financials(ticker: str, periods: int = 4, as_of_date: str | None = N
         if r_val is not None and gp_val is not None:
             cogs = r_val - gp_val
             if cogs > 0 and inv_val is not None:
-                dio[p] = round((inv_val / cogs) * days, 1)
+                calc_dio = round((inv_val / cogs) * days, 1)
+                dio[p] = calc_dio if 0.0 <= calc_dio <= 1000.0 else None
             else:
                 dio[p] = None
         else:
             dio[p] = None
 
         if r_val is not None and r_val > 0 and ar_val is not None:
-            dso[p] = round((ar_val / r_val) * days, 1)
+            calc_dso = round((ar_val / r_val) * days, 1)
+            dso[p] = calc_dso if 0.0 <= calc_dso <= 1000.0 else None
         else:
             dso[p] = None
 

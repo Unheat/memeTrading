@@ -69,36 +69,54 @@ def test_get_sec_financials_success():
     assert result.ttm_fcf == pytest.approx(2_650_000_000)
 
 
-def test_decumulate_cash_flows_unaccumulates_ytd():
-    """Verify cumulative YTD Form 10-Q figures are de-cumulated into discrete quarters."""
-    from app.sec.financials import _decumulate_cash_flows
+def test_discrete_cash_flows_preserved_without_double_decumulation():
+    """Verify discrete quarterly cash flows (like Google Q4 CFO or Meta Q2 CapEx) are not mangled."""
+    from app.sec.financials import _compute_ttm_fcf
 
-    periods = ["2026-Q3", "2026-Q2", "2026-Q1"]
-    cumulative_cfo = {
-        "2026-Q1": 1_000_000_000.0,
-        "2026-Q2": 2_100_000_000.0,  # 6M YTD
-        "2026-Q3": 3_250_000_000.0,  # 9M YTD
+    periods = ["Q2 2026", "Q1 2026", "Q4 2025", "Q3 2025"]
+    fcf = {
+        "Q2 2026": -5_855_000_000.0,
+        "Q1 2026": 10_116_000_000.0,
+        "Q4 2025": 24_551_000_000.0,  # Discrete Q4: 52.4B CFO - 27.85B CapEx
+        "Q3 2025": 24_461_000_000.0,  # Discrete Q3: 48.4B CFO - 23.95B CapEx
     }
-
-    discrete_cfo = _decumulate_cash_flows(periods, cumulative_cfo)
-    assert discrete_cfo["2026-Q1"] == pytest.approx(1_000_000_000.0)
-    assert discrete_cfo["2026-Q2"] == pytest.approx(1_100_000_000.0)  # 2100 - 1000
-    assert discrete_cfo["2026-Q3"] == pytest.approx(1_150_000_000.0)  # 3250 - 2100
+    ttm = _compute_ttm_fcf(fcf, periods)
+    assert ttm == pytest.approx(53_273_000_000.0)
 
 
-def test_decumulate_cash_flows_leaves_discrete_alone():
-    """Verify already-discrete figures are not subtracted."""
-    from app.sec.financials import _decumulate_cash_flows
+def test_gross_profit_derived_from_cogs_when_concept_absent():
+    """Verify single-step filers (like Amazon) have Gross Profit derived from Revenue - COGS."""
+    import pandas as pd
+    from app.sec.financials import _find_row_val
 
-    periods = ["2026-Q3", "2026-Q2", "2026-Q1"]
-    discrete_cfo = {
-        "2026-Q1": 1_000_000_000.0,
-        "2026-Q2": 1_050_000_000.0,
-        "2026-Q3": 1_100_000_000.0,
-    }
+    df = pd.DataFrame(
+        {
+            "Q2 2026": [200_000_000_000.0, 95_000_000_000.0],
+        },
+        index=["RevenueFromContractWithCustomerExcludingAssessedTax", "CostOfGoodsAndServicesSold"],
+    )
 
-    result = _decumulate_cash_flows(periods, discrete_cfo)
-    assert result == discrete_cfo
+    rev = _find_row_val(df, ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenue"], "Q2 2026")
+    gp = _find_row_val(df, ["GrossProfit", "GrossMargin"], "Q2 2026")
+    cogs = _find_row_val(df, ["CostOfGoodsAndServicesSold", "CostOfRevenue"], "Q2 2026")
+
+    assert rev == 200_000_000_000.0
+    assert gp is None
+    assert cogs == 95_000_000_000.0
+
+    derived_gp = round(rev - cogs, 2)
+    assert derived_gp == 105_000_000_000.0
+    gm_pct = round(derived_gp / rev, 4)
+    assert gm_pct == 0.525
+
+
+def test_sort_period_cols_handles_mixed_date_and_quarter_formats():
+    """Verify _sort_period_cols handles ISO dates without colliding with Q1 and without TypeErrors."""
+    from app.sec.financials import _sort_period_cols
+
+    cols = ["2024-12-31", "Q4 2024", "Q1 2025", "2025-Q2", "FY 2024", "2024-06-30", "Q3 2024"]
+    sorted_cols = _sort_period_cols(cols)
+    assert sorted_cols == ["2025-Q2", "Q1 2025", "2024-12-31", "Q4 2024", "Q3 2024", "2024-06-30", "FY 2024"]
 
 
 def test_get_sec_financials_unavailable_on_error():
