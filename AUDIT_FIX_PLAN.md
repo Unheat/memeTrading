@@ -145,8 +145,8 @@ supports it.
 ## Execution log
 
 - [x] Feature branch `feat/concurrent-diligence-and-tool-batching` merged to main (e2e validated)
-- [ ] Batch A merged
-- [ ] Batch B merged
-- [ ] Batch C merged
-- [ ] Batch D merged
-- [ ] Final GOOG e2e re-run comparison
+- [x] Batch A merged — `fix/valuation-single-source-truth` (Fixes 1, 2, 4, 8; 12 tests)
+- [x] Batch B merged — `fix/structured-output-validation` (Fixes 3, 6, 7, 10; 11 tests)
+- [x] Batch C merged — `fix/moat-and-reflection-completeness` (Fixes 5, 9 + hardening; 6 tests)
+- [x] Batch D merged — `feat/tiered-sizing-and-backtest` (P2 profitability architecture; 8 tests)
+- [x] Final GOOG e2e re-run comparison — see "Post-fix e2e results" below

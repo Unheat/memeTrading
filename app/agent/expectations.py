@@ -347,13 +347,19 @@ def run_expectations_analyst(state: InvestigationState, model: Any) -> dict[str,
     try:
         fcf = float(cfo) - float(capex) if cfo is not None and capex is not None else None
         ttm_fcf = sec.get("ttm_fcf") if isinstance(sec, Mapping) else None
-        effective_fcf = fcf
-        if ttm_fcf is not None and float(ttm_fcf) > 0:
-            effective_fcf = float(ttm_fcf)
-        elif rev is not None and capex is not None and float(rev) > 0 and (float(capex) / float(rev) > 0.25) and cfo is not None:
+        # Always use the same quarterly CapEx-spike normalization as run_quant_analysis
+        # (audit 2026-09-26 follow-up): the provider ttm_fcf was previously trusted here
+        # when positive, giving the prelim a different FCF base than the quant DCF and
+        # making the two reverse DCFs irreconcilable.
+        effective_fcf = None
+        if rev is not None and capex is not None and float(rev) > 0 and (float(capex) / float(rev) > 0.25) and cfo is not None:
             # Normalize CapEx spike to maintenance levels (~15% of revenue) for forward reverse DCF base
             maint = min(float(capex), float(rev) * 0.15)
             effective_fcf = (float(cfo) - maint) * (4 if "Q" in str(period) else 1)
+        elif ttm_fcf is not None and float(ttm_fcf) > 0:
+            effective_fcf = float(ttm_fcf)
+        elif fcf is not None and float(fcf) > 0:
+            effective_fcf = fcf
 
         net_cash = float(cash) - float(debt) if cash is not None and debt is not None else 0.0
         price_f = price

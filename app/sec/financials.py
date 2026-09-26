@@ -299,6 +299,27 @@ def _find_bs_metric(
     return None
 
 
+def _compute_ttm_fcf(fcf: dict[str, float | None], period_list: list[str]) -> float | None:
+    """Sum trailing-twelve-month free cash flow from the 4 most recent quarters.
+
+    A partial window (any quarter missing cfo or capex) is NOT a TTM. Annualizing a
+    single quarter or summing partial windows produced unstable values across fetches
+    and silently flipped downstream reverse-DCF bases (audit 2026-09-26 follow-up), so
+    None is reported whenever the full 4-quarter window is unavailable.
+
+    Args:
+        fcf: Per-period free cash flow map (may contain None values).
+        period_list: Period keys, newest first.
+
+    Returns:
+        TTM FCF rounded to 2 decimals, or None when the window is incomplete.
+    """
+    valid_fcfs = [fcf[p] for p in period_list[:4] if fcf.get(p) is not None]
+    if len(valid_fcfs) == 4:
+        return round(sum(valid_fcfs), 2)
+    return None
+
+
 def _decumulate_cash_flows(periods: list[str], series: dict[str, float | None]) -> dict[str, float | None]:
     """Convert cumulative YTD cash flow statement periods into discrete quarters if needed.
 
@@ -656,14 +677,9 @@ def get_sec_financials(ticker: str, periods: int = 4, as_of_date: str | None = N
         else:
             inv_qoq[p] = None
 
-    # Calculate TTM FCF: sum of up to 4 most recent discrete quarters
-    valid_fcfs = [fcf[p] for p in period_list[:4] if fcf.get(p) is not None]
-    if len(valid_fcfs) == 4:
-        ttm_fcf = round(sum(valid_fcfs), 2)
-    elif len(valid_fcfs) >= 1:
-        ttm_fcf = round(valid_fcfs[0] * 4.0, 2)
-    else:
-        ttm_fcf = None
+    # TTM FCF from the 4 most recent discrete quarters; None when the window is partial
+    # (see _compute_ttm_fcf for the stability rationale).
+    ttm_fcf = _compute_ttm_fcf(fcf, period_list)
 
     # Calculate deterministic DIO (Days Inventory Outstanding) and DSO (Days Sales Outstanding)
     dio: dict[str, float | None] = {}
