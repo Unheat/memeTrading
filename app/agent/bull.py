@@ -13,10 +13,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from app.agent.contracts import BullCase
+from app.agent.contracts import BullCase, parse_llm_json_block
 from app.agent.state import InvestigationState
 
 logger = logging.getLogger(__name__)
+
+# One structured retry with validation feedback before flagging the report degraded
+# (audit 2026-09-26, Fix 6).
+BULL_MAX_ATTEMPTS = 2
 
 BULL_SYSTEM_PROMPT = """You are the Senior Long Strategist and Head of the Bull Case unit at an institutional hedge fund.
 Your sole mission is to build the strongest, numbers-backed case that the market is materially mispricing this asset to the upside.
@@ -101,38 +105,38 @@ Audited Fundamental Facts & Consensus Data:
 
 Construct the institutional Bull Case. Identify the core upside mispricing, at least 3 distinct catalysts, operating leverage drivers, and a target price. Return strictly the required JSON."""
 
-    try:
-        response = model.invoke([
-            SystemMessage(content=BULL_SYSTEM_PROMPT),
-            HumanMessage(content=human_prompt),
-        ])
-        content = getattr(response, "content", "")
-        if isinstance(content, str):
-            clean_json = content.strip()
-            if "```json" in clean_json:
-                clean_json = clean_json.split("```json")[1].split("```")[0].strip()
-            elif "```" in clean_json:
-                clean_json = clean_json.split("```")[1].split("```")[0].strip()
-            data = json.loads(clean_json)
-        else:
-            data = {}
-
-        raw_price = data.get("bull_target_price")
+    # Fix 6 (audit 2026-09-26): the committee's asymmetry anchors are symmetric only if
+    # the bull side supplies a numeric target. One structured retry is allowed with the
+    # validation error fed back before the report is flagged degraded.
+    validation_feedback = (
+        "Your previous response was missing a valid numeric 'bull_target_price'. "
+        "Return the same JSON structure with a concrete numeric price target above the current market price."
+    )
+    data: dict[str, Any] | None = None
+    target_price: float | None = None
+    degradation_reasons: list[str] = []
+    for attempt in range(BULL_MAX_ATTEMPTS):
+        messages = [SystemMessage(content=BULL_SYSTEM_PROMPT), HumanMessage(content=human_prompt)]
+        if attempt > 0:
+            messages.append(HumanMessage(content=validation_feedback))
         try:
-            target_price = float(raw_price) if raw_price is not None else None
-        except (ValueError, TypeError):
+            response = model.invoke(messages)
+            data = parse_llm_json_block(getattr(response, "content", ""))
+        except Exception as exc:
+            logger.warning("Bull Advocate invocation failed for %s (attempt %s): %s", ticker, attempt + 1, exc)
+            data = None
+        if data is not None:
+            raw_price = data.get("bull_target_price")
+            try:
+                target_price = float(raw_price) if raw_price is not None else None
+            except (ValueError, TypeError):
+                target_price = None
+            if target_price is not None and target_price > 0:
+                break
+            degradation_reasons.append(f"attempt {attempt + 1}: bull_target_price missing or non-positive")
             target_price = None
 
-        report = BullReport(
-            ticker=ticker,
-            catalysts=tuple(data.get("catalysts") or []),
-            operating_leverage_drivers=tuple(data.get("operating_leverage_drivers") or []),
-            bull_target_price=target_price,
-            bull_thesis_summary=data.get("bull_thesis_summary") or "Bullish mispricing identified.",
-            invalidation_conditions=tuple(data.get("invalidation_conditions") or []),
-        )
-    except Exception as exc:
-        logger.warning("Bull Advocate invocation failed for %s: %s", ticker, exc)
+    if data is None:
         report = BullReport(
             ticker=ticker,
             catalysts=(),
@@ -140,6 +144,30 @@ Construct the institutional Bull Case. Identify the core upside mispricing, at l
             bull_target_price=None,
             bull_thesis_summary="Unavailable — bull analysis did not return valid JSON.",
             invalidation_conditions=(),
+            status="unavailable",
+            degradation_reasons=tuple(degradation_reasons) or ("model returned unparseable JSON after retry",),
+        )
+    elif target_price is None:
+        report = BullReport(
+            ticker=ticker,
+            catalysts=tuple(str(c) for c in (data.get("catalysts") or []) if str(c).strip()),
+            operating_leverage_drivers=tuple(str(d) for d in (data.get("operating_leverage_drivers") or []) if str(d).strip()),
+            bull_target_price=None,
+            bull_thesis_summary=data.get("bull_thesis_summary") or "Bullish mispricing identified.",
+            invalidation_conditions=tuple(str(c) for c in (data.get("invalidation_conditions") or []) if str(c).strip()),
+            status="degraded",
+            degradation_reasons=tuple(degradation_reasons),
+        )
+    else:
+        report = BullReport(
+            ticker=ticker,
+            catalysts=tuple(str(c) for c in (data.get("catalysts") or []) if str(c).strip()),
+            operating_leverage_drivers=tuple(str(d) for d in (data.get("operating_leverage_drivers") or []) if str(d).strip()),
+            bull_target_price=target_price,
+            bull_thesis_summary=data.get("bull_thesis_summary") or "Bullish mispricing identified.",
+            invalidation_conditions=tuple(str(c) for c in (data.get("invalidation_conditions") or []) if str(c).strip()),
+            status="available",
+            degradation_reasons=(),
         )
 
     return {"bull_report": report}

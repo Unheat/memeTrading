@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -19,6 +21,17 @@ from app.agent.state import InvestigationState
 from app.valuation.engine import run_calculator
 
 logger = logging.getLogger(__name__)
+
+# Deterministic expectation-gap classification margin (audit 2026-09-26, Fix 3):
+# the market is "already priced in" when implied growth exceeds the consensus growth
+# estimate by more than this fraction; a "hidden edge" when it undershoots by more.
+EXPECTATION_GAP_PRICED_IN_MARGIN = 0.05
+# A model-authored percent figure within this distance of the deterministic implied
+# growth is treated as consistent; anything else in the interpretation field is a
+# fabricated claim and the deterministic template replaces the narrative.
+IMPLIED_CLAIM_TOLERANCE = 0.01
+
+_PERCENT_FIGURE_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*%")
 
 EXPECTATIONS_SYSTEM_PROMPT = """# System Prompt: Quant & Deterministic Valuation Modeler (`valuation-modeler`)
 
@@ -79,7 +92,13 @@ Return strictly valid JSON matching this exact structure:
 
 @dataclass(frozen=True)
 class ExpectationGapAnalysis:
-    """Structured reverse-expectations analysis produced by the Valuation Modeler."""
+    """Structured reverse-expectations analysis produced by the Valuation Modeler.
+
+    Numeric fields that describe market-implied growth are deterministic: they come
+    from the calculator's reverse DCF, never from model-authored text (audit
+    2026-09-26, Fix 3). ``verdict`` is a deterministic classification of the
+    expectation edge; model-authored commentary is kept separately.
+    """
 
     verdict: str
     summary: str
@@ -92,6 +111,13 @@ class ExpectationGapAnalysis:
     base_case_discount: float
     high_case_growth: float
     high_case_discount: float
+    implied_fcf_growth_rate: float | None = None
+    consensus_growth_estimate: float | None = None
+    expectation_edge: float | None = None
+    model_verdict: str = ""
+    commentary: str = ""
+    status: str = "available"
+    degradation_reasons: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for state persistence."""
@@ -101,6 +127,13 @@ class ExpectationGapAnalysis:
             "implied_growth_interpretation": self.implied_growth_interpretation,
             "terminal_growth_rate": self.terminal_growth_rate,
             "projection_years": self.projection_years,
+            "implied_fcf_growth_rate": self.implied_fcf_growth_rate,
+            "consensus_growth_estimate": self.consensus_growth_estimate,
+            "expectation_edge": self.expectation_edge,
+            "model_verdict": self.model_verdict,
+            "commentary": self.commentary,
+            "status": self.status,
+            "degradation_reasons": list(self.degradation_reasons),
             "assumptions": {
                 "low": {"growth": self.low_case_growth, "discount": self.low_case_discount},
                 "base": {"growth": self.base_case_growth, "discount": self.base_case_discount},
@@ -149,6 +182,129 @@ def _run_preliminary_reverse_dcf(
     if calc_res.get("status") == "ok":
         return calc_res.get("result", {}).get("reverse_dcf")
     return None
+
+
+def _consensus_growth_estimate(consensus: Mapping[str, Any]) -> float | None:
+    """Extract a forward consensus growth estimate from analyst estimates.
+
+    Prefers the next-fiscal-year revenue growth, then next-year EPS growth, then any
+    row carrying a growth figure. Returns None when no finite estimate exists.
+
+    Args:
+        consensus: Consensus snapshot payload with estimates lists.
+
+    Returns:
+        Consensus growth as a fraction, or None.
+    """
+    for key in ("revenue_estimates", "eps_estimates"):
+        rows = consensus.get(key) if isinstance(consensus, Mapping) else None
+        if not isinstance(rows, list):
+            continue
+        fallback = None
+        for row in rows:
+            if not isinstance(row, Mapping) or row.get("growth") is None:
+                continue
+            try:
+                growth = float(row["growth"])
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(growth):
+                continue
+            if row.get("period") == "+1y":
+                return growth
+            if fallback is None:
+                fallback = growth
+        if fallback is not None:
+            return fallback
+    return None
+
+
+def _classify_expectation_gap(implied: float | None, consensus: float | None) -> str:
+    """Deterministically classify the expectation edge (audit 2026-09-26, Fix 3).
+
+    Args:
+        implied: Market-implied FCF growth from the deterministic reverse DCF.
+        consensus: Consensus forward growth estimate.
+
+    Returns:
+        One of ``ALREADY_PRICED_IN``, ``HIDDEN_EXPECTATIONS_EDGE``,
+        ``BALANCED_PRICING``, ``UNCERTAIN_DISPERSION``.
+    """
+    if implied is None or consensus is None or not math.isfinite(implied) or not math.isfinite(consensus):
+        return "UNCERTAIN_DISPERSION"
+    edge = consensus - implied
+    if edge < -EXPECTATION_GAP_PRICED_IN_MARGIN:
+        return "ALREADY_PRICED_IN"
+    if edge > EXPECTATION_GAP_PRICED_IN_MARGIN:
+        return "HIDDEN_EXPECTATIONS_EDGE"
+    return "BALANCED_PRICING"
+
+
+def _deterministic_gap_interpretation(
+    prelim: Mapping[str, Any] | None,
+    implied: float | None,
+    consensus: float | None,
+    verdict: str,
+) -> str:
+    """Author the implied-growth interpretation from deterministic values only.
+
+    Args:
+        prelim: Raw preliminary reverse-DCF result from the calculator.
+        implied: Deterministic implied FCF growth (fraction).
+        consensus: Consensus growth estimate (fraction) or None.
+        verdict: Deterministic expectation-gap verdict.
+
+    Returns:
+        Template sentence embedding only calculator-sourced numbers.
+    """
+    if implied is None:
+        return (
+            "Deterministic reverse DCF inapplicable: base FCF is non-positive or inputs "
+            "missing, so no market-implied growth rate can be solved."
+        )
+    discount = prelim.get("discount_rate_used") if isinstance(prelim, Mapping) else None
+    terminal = prelim.get("terminal_growth_used") if isinstance(prelim, Mapping) else None
+    parts = [
+        f"Deterministic reverse DCF: the current market price implies {implied * 100:.2f}% FCF CAGR"
+        f" over the projection horizon"
+        f" (discount rate {float(discount) * 100:.2f}%, terminal growth {float(terminal) * 100:.2f}%)"
+        if discount is not None and terminal is not None
+        else f"Deterministic reverse DCF: the current market price implies {implied * 100:.2f}% FCF CAGR."
+    ]
+    if consensus is not None:
+        edge = (consensus - implied) * 100
+        parts.append(
+            f"Consensus forward growth estimate is {consensus * 100:.2f}%, "
+            f"an expectation edge of {edge:+.2f} percentage points -> {verdict}."
+        )
+    return " ".join(parts)
+
+
+def _model_interpretation_conflicts(text: str, implied: float | None) -> bool:
+    """Validate model-authored interpretation against the deterministic implied growth.
+
+    This is numeric-claim verification (deterministic validation of a schema field),
+    not intent inference: any percent figure in the interpretation field that differs
+    from the calculator's implied growth by more than the tolerance marks the model
+    narrative as fabricated.
+
+    Args:
+        text: Model-authored implied_growth_interpretation text.
+        implied: Deterministic implied FCF growth (fraction), or None.
+
+    Returns:
+        True when a conflicting numeric claim is present.
+    """
+    if implied is None or not text:
+        return False
+    for match in _PERCENT_FIGURE_PATTERN.finditer(text):
+        try:
+            claim = float(match.group(1)) / 100.0
+        except ValueError:
+            continue
+        if abs(claim - implied) > IMPLIED_CLAIM_TOLERANCE:
+            return True
+    return False
 
 
 def run_expectations_analyst(state: InvestigationState, model: Any) -> dict[str, Any]:
@@ -211,6 +367,21 @@ def run_expectations_analyst(state: InvestigationState, model: Any) -> dict[str,
 
     prelim_reverse_dcf = _run_preliminary_reverse_dcf(price_f, shares_f, effective_fcf, net_cash)
 
+    # Deterministic layer (audit 2026-09-26, Fix 3): implied growth, consensus growth,
+    # the expectation edge, and the verdict come from code — never from model text.
+    raw_implied = (prelim_reverse_dcf or {}).get("implied_fcf_growth_rate") if isinstance(prelim_reverse_dcf, Mapping) else None
+    try:
+        implied_growth = float(raw_implied) if raw_implied is not None else None
+        if implied_growth is not None and not math.isfinite(implied_growth):
+            implied_growth = None
+    except (TypeError, ValueError):
+        implied_growth = None
+    consensus_growth = _consensus_growth_estimate(consensus if isinstance(consensus, Mapping) else {})
+    verdict = _classify_expectation_gap(implied_growth, consensus_growth)
+    deterministic_interpretation = _deterministic_gap_interpretation(
+        prelim_reverse_dcf, implied_growth, consensus_growth, verdict
+    )
+
     evidence_quotes = [
         item.get("quote") for item in state.get("evidence", [])
         if isinstance(item, Mapping) and item.get("quote")
@@ -238,6 +409,8 @@ Preliminary Deterministic Reverse DCF (from calculator.mjs):
 Verified Evidence Clues:
 {json.dumps(evidence_quotes, indent=2, default=str)}
 
+Writing rules: restate the deterministic implied growth figure from the Preliminary Deterministic Reverse DCF exactly in implied_growth_interpretation; keep expectation_gap_summary qualitative and do not invent statistics.
+
 Analyze what is priced in vs. consensus forecasts and formulate the 3-case DCF parameters in valid JSON."""
 
     try:
@@ -260,10 +433,19 @@ Analyze what is priced in vs. consensus forecasts and formulate the 3-case DCF p
         base_case = dcf_assump.get("base_case", {})
         high_case = dcf_assump.get("high_case", {})
 
+        # Numeric claims about implied growth are deterministic-only (Fix 3): the model
+        # narrative is kept as commentary and replaced when it contradicts the calculator.
+        model_interpretation = str(parsed.get("implied_growth_interpretation", ""))
+        degradation: list[str] = []
+        commentary = model_interpretation
+        if _model_interpretation_conflicts(model_interpretation, implied_growth):
+            degradation.append("model_implied_growth_claim_conflicted_with_calculator")
+            commentary = ""
+
         gap_analysis = ExpectationGapAnalysis(
-            verdict=str(parsed.get("expectation_gap_verdict", "UNCERTAIN_DISPERSION")),
+            verdict=verdict,
             summary=str(parsed.get("expectation_gap_summary", "Expectation gap analyzed.")),
-            implied_growth_interpretation=str(parsed.get("implied_growth_interpretation", "")),
+            implied_growth_interpretation=deterministic_interpretation,
             terminal_growth_rate=term_growth,
             projection_years=proj_years,
             low_case_growth=float(low_case.get("fcf_growth_rate", -0.05)),
@@ -272,6 +454,17 @@ Analyze what is priced in vs. consensus forecasts and formulate the 3-case DCF p
             base_case_discount=float(base_case.get("discount_rate", 0.10)),
             high_case_growth=float(high_case.get("fcf_growth_rate", 0.15)),
             high_case_discount=float(high_case.get("discount_rate", 0.09)),
+            implied_fcf_growth_rate=implied_growth,
+            consensus_growth_estimate=consensus_growth,
+            expectation_edge=(
+                consensus_growth - implied_growth
+                if implied_growth is not None and consensus_growth is not None
+                else None
+            ),
+            model_verdict=str(parsed.get("expectation_gap_verdict", "")),
+            commentary=commentary,
+            status="degraded" if degradation else "available",
+            degradation_reasons=tuple(degradation),
         )
         return {
             "expectation_gap": gap_analysis.to_dict(),
@@ -280,11 +473,22 @@ Analyze what is priced in vs. consensus forecasts and formulate the 3-case DCF p
     except Exception as exc:
         logger.warning("Expectations analyst model evaluation failed for %s: %s", ticker, exc)
         default_gap = {
-            "verdict": "UNCERTAIN_DISPERSION",
+            "verdict": verdict,
             "summary": f"Expectation gap analysis defaulted due to model error: {exc}",
-            "implied_growth_interpretation": "Model evaluation unavailable.",
+            "implied_growth_interpretation": deterministic_interpretation,
             "terminal_growth_rate": 0.025,
             "projection_years": 5,
+            "implied_fcf_growth_rate": implied_growth,
+            "consensus_growth_estimate": consensus_growth,
+            "expectation_edge": (
+                consensus_growth - implied_growth
+                if implied_growth is not None and consensus_growth is not None
+                else None
+            ),
+            "model_verdict": "",
+            "commentary": "",
+            "status": "degraded",
+            "degradation_reasons": [f"model evaluation failed: {exc}"],
             "assumptions": {
                 "low": {"growth": -0.05, "discount": 0.12},
                 "base": {"growth": 0.03, "discount": 0.10},
