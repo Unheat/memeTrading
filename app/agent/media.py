@@ -195,10 +195,21 @@ def build_source_registry(state: InvestigationState) -> list[CitationCard]:
             "market_context": state.get("market_context"),
         })
 
+    diligence_dossiers = (state.get("capability_outputs") or {}).get("diligence_dossiers") or {}
+
     # 1. Candidate Financials, Consensus, and Market Context Cards
     for c in candidate_entities:
         c_ticker = str(c.get("ticker") or "RESEARCH").upper()
-        sec_fin = c.get("sec_financials")
+        # Prefer audited diligence dossier financials over stale screening financials
+        sec_fin = None
+        dossier = c.get("diligence_dossier") or diligence_dossiers.get(c_ticker) or {}
+        if isinstance(dossier, Mapping) and dossier.get("sec_financials"):
+            sec_fin = dossier.get("sec_financials")
+        if not sec_fin:
+            sec_fin = c.get("sec_financials")
+        if not sec_fin and c_ticker == str(state.get("ticker") or "").upper():
+            sec_fin = state.get("sec_financials")
+
         if sec_fin and isinstance(sec_fin, Mapping) and sec_fin.get("status") in {"ok", "ok_foreign_issuer_unstructured"}:
             periods = sec_fin.get("periods") or ()
             sec_facts = []
@@ -244,7 +255,11 @@ def build_source_registry(state: InvestigationState) -> list[CitationCard]:
                 card_idx += 1
 
         # Consensus Card for this candidate
-        consensus = c.get("consensus_snapshot")
+        consensus = (
+            (dossier.get("consensus_snapshot") if isinstance(dossier, Mapping) else None)
+            or c.get("consensus_snapshot")
+            or (state.get("consensus_snapshot") if c_ticker == str(state.get("ticker") or "").upper() else None)
+        )
         if consensus and isinstance(consensus, Mapping):
             con_facts = []
             ratings = consensus.get("ratings") or {}
@@ -301,7 +316,11 @@ def build_source_registry(state: InvestigationState) -> list[CitationCard]:
                 card_idx += 1
 
         # Market Data Card for this candidate
-        market = c.get("market_context")
+        market = (
+            (dossier.get("market_context") if isinstance(dossier, Mapping) else None)
+            or c.get("market_context")
+            or (state.get("market_context") if c_ticker == str(state.get("ticker") or "").upper() else None)
+        )
         if market and isinstance(market, Mapping) and market.get("quote"):
             q = market.get("quote") or {}
             m_facts = []

@@ -532,10 +532,14 @@ def _route_candidate_tool(
         candidate.setdefault("sec_evidence_excerpts", []).append(dict(payload))
     elif tool_name == "conduct_candidate_diligence":
         candidate["diligence_dossier"] = dict(payload)
-        if not candidate.get("market_context") and payload.get("market_context"):
+        if payload.get("market_context"):
             candidate["market_context"] = dict(payload["market_context"])
-        if not candidate.get("sec_financials") and payload.get("sec_financials"):
+        if payload.get("sec_financials"):
             candidate["sec_financials"] = dict(payload["sec_financials"])
+        if payload.get("valuation"):
+            candidate["valuation"] = dict(payload["valuation"])
+        if payload.get("expectation_gap"):
+            candidate["expectation_gap"] = dict(payload["expectation_gap"])
     elif tool_name == "evaluate_valuation":
         candidate["quant_report"] = payload.get("quant_report")
         if payload.get("valuation"):
