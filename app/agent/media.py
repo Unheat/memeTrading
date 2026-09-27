@@ -13,6 +13,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agent.gate import evaluate_publication_readiness
+from app.agent.memo import extract_terminal_model_decision
 from app.agent.state import InvestigationState
 
 logger = logging.getLogger(__name__)
@@ -670,6 +671,11 @@ def generate_article_markdown(
             if isinstance(c, Mapping) and c.get("ticker")
         ]
         cohort_str = ", ".join(f"${t}" for t in cand_tickers) if cand_tickers else "the evaluated candidate cohort"
+        executive_decision = extract_terminal_model_decision(state)
+        decision_block = ""
+        if executive_decision and executive_decision not in memo_markdown:
+            decision_block = f"\n## Executive Allocation & Model Decision\n{executive_decision}\n"
+
         article_prompt = f"""Write an institutional, deeply cited comparative research article addressing the research mandate:
 "{query}"
 
@@ -678,14 +684,14 @@ def generate_article_markdown(
 
 ## Verified Primary Source Registry (Cite using the exact tags like [1], [2] next to claims)
 {registry_text}
-
+{decision_block}
 ## Audited Research Memo (Deterministic Facts & Gate Outcomes — cite only from this content)
 ```markdown
 {memo_markdown}
 ```
 
 Instructions:
-1. Synthesize the findings across the candidate cohort, focusing on the Top Ranked allocations established in the Audited Research Memo.
+1. Synthesize the findings across the candidate cohort, explicitly focusing on the Top Ranked winners (e.g. #1 and #2) and portfolio allocations established in the Audited Research Memo and Executive Allocation Decision.
 2. Compare the winners' economic moats, SEC XBRL margin trajectories, and expectation gaps against the excluded or passed peers.
 3. Every factual statement, financial metric, market quote, or consensus target MUST cite its source from the registry above using [1], [2], etc.
 4. Do not invent or extrapolate numbers, dates, or claims not present in the source registry or audited memo.

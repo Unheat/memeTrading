@@ -307,6 +307,55 @@ def test_generate_article_markdown_multi_candidate():
     assert "Top Ranked" in model.captured_prompt
 
 
+def test_generate_article_markdown_multi_candidate_with_executive_decision():
+    """Verify generate_article_markdown explicitly includes executive decision in prompt."""
+    class CapturePromptModel:
+        def __init__(self):
+            self.captured_prompt = ""
+        def invoke(self, messages):
+            self.captured_prompt = messages[-1].content
+            return AIMessage(content="# Top Tech Allocations: NVDA and GOOGL\nRank 1 is NVDA [1] and Rank 2 is GOOGL [2].")
+
+    req = ResearchRequest(query="Find 2 best tech stocks", requested_ranking_count=2)
+    state = create_initial_state(req, case_id="multi_art_dec")
+    state["status"] = "completed"
+    state["candidates"] = {
+        "cand_nvda": {
+            "candidate_id": "cand_nvda",
+            "ticker": "NVDA",
+            "company": "NVIDIA Corp",
+            "sec_financials": {
+                "status": "ok",
+                "provider": "0001045810-26-000045",
+                "periods": ["2026Q3"],
+                "revenue": {"2026Q3": 35000000000.0},
+            },
+        },
+        "cand_googl": {
+            "candidate_id": "cand_googl",
+            "ticker": "GOOGL",
+            "company": "Alphabet Inc",
+            "sec_financials": {
+                "status": "ok",
+                "provider": "0001652044-26-000048",
+                "periods": ["2026Q2"],
+                "revenue": {"2026Q2": 95000000000.0},
+            },
+        },
+    }
+    decision_text = "Executive Allocation: Rank #1 NVDA (60%), Rank #2 GOOGL (40%)."
+    state["diagnostic_terminal_model_text"] = decision_text
+    memo_md = "# Deep Research Report\nTop candidate evaluation."
+
+    model = CapturePromptModel()
+    article = generate_article_markdown(memo_md, state, model=model)
+
+    assert "## Executive Allocation & Model Decision" in model.captured_prompt
+    assert "Executive Allocation: Rank #1 NVDA (60%), Rank #2 GOOGL (40%)." in model.captured_prompt
+    assert "[1]" in article
+    assert "[2]" in article
+
+
 def test_generate_reel_script_alternating_dialogue():
     """Verify generate_reel_script produces alternating Peter/Stewie dialogue."""
     article = "# Test Article\nSome content about stocks."

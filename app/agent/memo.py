@@ -418,6 +418,33 @@ def _format_comparison_val(metric: str, cand_val: Any) -> str:
     return formatted
 
 
+def extract_terminal_model_decision(state: InvestigationState, final_text: str = "") -> str:
+    """Extract substantive executive decision and allocation synthesis from model output.
+
+    Inspects:
+    1. Explicit final_text parameter if non-empty.
+    2. State's diagnostic_terminal_model_text.
+    3. Last AIMessage in state['messages'] with non-empty content.
+
+    Args:
+        state: Universal investigation state.
+        final_text: Optional terminal text passed from runner.
+
+    Returns:
+        Cleaned model synthesis text or empty string.
+    """
+    candidate_text = str(final_text or "").strip()
+    if not candidate_text:
+        candidate_text = str(state.get("diagnostic_terminal_model_text") or "").strip()
+    if not candidate_text and state.get("messages"):
+        from langchain_core.messages import AIMessage
+        for msg in reversed(state["messages"]):
+            if isinstance(msg, AIMessage) and msg.content:
+                candidate_text = str(msg.content).strip()
+                break
+    return candidate_text
+
+
 def render_research_report(state: InvestigationState, final_text: str) -> str:
     """Render one prompt-directed report without profile or mode conclusions.
 
@@ -437,6 +464,15 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
     ] or ["| None | No registered candidates | no | no |"]
     ranking = "Not requested" if not requested_count else f"Requested ranking count: {requested_count}; registered candidates: {len(candidates)}"
     ranking_line = f"**Ranking Requirement**: {ranking}\n" if requested_count else ""
+
+    # 0. Executive allocation and research synthesis from deep model
+    synthesis_section = ""
+    decision_text = extract_terminal_model_decision(state, final_text)
+    if decision_text:
+        synthesis_section = f"""
+## Executive Allocation & Research Synthesis
+{decision_text}
+"""
 
     # 1. Normalized candidate comparisons
     comparison_section = ""
@@ -558,8 +594,7 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
 
     readiness = state.get("publication_readiness") or {}
     findings = (
-        "This report intentionally includes deterministic metrics, admitted evidence, and recorded validation outcomes only. "
-        "Raw terminal model prose is retained for internal diagnostics and excluded from published findings."
+        "This report includes deterministic metrics, admitted evidence, and recorded validation outcomes paired with the model's executive research synthesis."
     )
     if readiness.get("status") == "blocked":
         findings += " Publication-facing artifacts are blocked: " + "; ".join(str(item) for item in readiness.get("reasons") or ()) + "."
@@ -574,7 +609,7 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
 
 ## Findings
 {findings}
-{comparison_section}{specialist_section}{evidence_section}{coverage_section}
+{synthesis_section}{comparison_section}{specialist_section}{evidence_section}{coverage_section}
 ## Sources Consulted
 | Source | Status | URL |
 | :--- | :--- | :--- |

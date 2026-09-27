@@ -141,3 +141,28 @@ def test_render_research_report_formats_candidate_comparisons():
     assert "$MSFT: $64.73B (Q4 2026), $AAPL: $85.78B (Q3 2026)" in report
     # Ensure no raw Python dict representation appears
     assert "{'value':" not in report
+
+
+def test_render_research_report_includes_executive_allocation_decision():
+    """Verify render_research_report includes the model's executive allocation decision."""
+    from langchain_core.messages import AIMessage
+    from app.agent.memo import extract_terminal_model_decision, render_research_report
+
+    state = create_initial_state(ResearchRequest(query="Best 2 tech stocks", requested_ranking_count=2), case_id="test_alloc")
+    decision = "Rank #1 NVDA (55% allocation, 3.2:1 asymmetry), Rank #2 TSM (45% allocation, 2.6:1 asymmetry)"
+    state["diagnostic_terminal_model_text"] = decision
+
+    # Test extract_terminal_model_decision directly
+    assert extract_terminal_model_decision(state) == decision
+
+    # Test with messages fallback
+    state_msg = create_initial_state(ResearchRequest(query="Best 2 tech stocks"), case_id="test_msg")
+    state_msg["messages"] = [AIMessage(content="Rank #1 MSFT, Rank #2 GOOGL")]
+    assert extract_terminal_model_decision(state_msg) == "Rank #1 MSFT, Rank #2 GOOGL"
+
+    # Test rendering in memo
+    report = render_research_report(state, final_text="")
+    assert "## Executive Allocation & Research Synthesis" in report
+    assert "Rank #1 NVDA (55% allocation, 3.2:1 asymmetry)" in report
+    assert "Rank #2 TSM (45% allocation, 2.6:1 asymmetry)" in report
+
