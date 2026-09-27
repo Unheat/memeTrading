@@ -1,20 +1,92 @@
-"""Production SEC claim assessor with OpenAI-compatible endpoint and offline fallback.
+"""Production SEC claim assessor with an OpenAI-compatible structured-output boundary.
 
-Uses OpenAI-compatible endpoint (OpenAI / OpenRouter) when credentials exist;
-falls back to deterministic grounded keyword assessor in keyless/offline environments.
+Uses the configured hosted model when credentials exist. When the provider is unavailable,
+the fallback fails closed with an insufficient-evidence assessment; deterministic code never
+infers claim support from natural-language keywords.
 """
 from __future__ import annotations
 
 import logging
 import os
-import re
-from typing import Any, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any
+
 from app.sec.retrieval import RetrievedSecChunk
+from app.sec.verifier import AssessorUnavailableError
 
 logger = logging.getLogger(__name__)
 
-def get_default_sec_assessor():
-    """Return an Assessor callable for verify_sec_claim."""
+
+def _gateway_model_name(model: str) -> str:
+    """Remove the LiteLLM OpenAI transport prefix for direct SDK gateway calls.
+
+    Args:
+        model: Model identifier from ordered LiteLLM endpoint configuration.
+
+    Returns:
+        Gateway-native model identifier suitable for the OpenAI-compatible SDK.
+    """
+    return model.removeprefix("openai/")
+
+
+def _insufficient_evidence_assessment(_: str, __: Sequence[RetrievedSecChunk]) -> dict[str, Any]:
+    """Return a conservative result when no structured SEC assessment is available.
+
+    Args:
+        _: Claim intentionally not interpreted by deterministic code.
+        __: Retrieved chunks intentionally not interpreted by deterministic code.
+
+    Returns:
+        Schema-valid insufficient-evidence assessment with no asserted citations.
+    """
+    return {
+        "verdict": "INSUFFICIENT_EVIDENCE",
+        "confidence": 0.0,
+        "explanation": "No approved structured SEC assessment is available for this claim.",
+        "evidence_for_chunk_ids": [],
+        "evidence_against_chunk_ids": [],
+        "material_sec_facts": {},
+        "missing_evidence": ["A structured assessment of the retrieved primary filing excerpts."],
+        "suggested_document_types": [],
+    }
+
+
+def _fallback_on_unavailable(
+    assessor: Callable[[str, Sequence[RetrievedSecChunk]], Mapping[str, Any]],
+) -> Callable[[str, Sequence[RetrievedSecChunk]], Mapping[str, Any]]:
+    """Wrap a hosted assessor so provider outages fail closed without language heuristics.
+
+    Args:
+        assessor: Structured remote assessor callable.
+
+    Returns:
+        Callable that returns insufficient evidence if the provider is unavailable.
+    """
+    def assess(claim: str, chunks: Sequence[RetrievedSecChunk]) -> Mapping[str, Any]:
+        """Assess one claim or fail closed if the provider cannot respond.
+
+        Args:
+            claim: SEC claim to assess.
+            chunks: Retrieved local SEC excerpts.
+
+        Returns:
+            Hosted structured assessment or conservative insufficient-evidence result.
+        """
+        try:
+            return assessor(claim, chunks)
+        except AssessorUnavailableError:
+            logger.warning("SEC assessor unavailable; returning insufficient evidence without deterministic language inference")
+            return _insufficient_evidence_assessment(claim, chunks)
+
+    return assess
+
+
+def get_default_sec_assessor() -> Callable[[str, Sequence[RetrievedSecChunk]], Mapping[str, Any]]:
+    """Return a structured SEC assessor or conservative offline fallback.
+
+    Returns:
+        Callable satisfying the SEC verifier assessment contract.
+    """
     from app.config import load_config
 
     try:
@@ -29,7 +101,7 @@ def get_default_sec_assessor():
         api_key = os.environ.get("OPENAI_API_KEY")
 
     base_url = (configured_base_url or "https://api.openai.com/v1").strip().rstrip("/")
-    model = configured_model
+    model = _gateway_model_name(configured_model)
 
     if api_key:
         try:
@@ -43,72 +115,8 @@ def get_default_sec_assessor():
                 api_key=api_key.strip(),
                 model=model,
             )
-            return create_openai_compatible_sec_assessor(config)
+            return _fallback_on_unavailable(create_openai_compatible_sec_assessor(config))
         except Exception as exc:
-            logger.warning("Failed to initialize remote OpenAI-compatible assessor: %s; using deterministic fallback", exc)
+            logger.warning("Failed to initialize remote OpenAI-compatible assessor: %s; returning insufficient evidence", exc)
 
-    # Deterministic fallback for offline / keyless testing
-    def _deterministic_assessor(claim: str, chunks: Sequence[RetrievedSecChunk]) -> dict[str, Any]:
-        if not chunks:
-            return {
-                "verdict": "INSUFFICIENT_EVIDENCE",
-                "confidence": 0.20,
-                "explanation": "No local filing excerpts were retrieved for this claim.",
-                "evidence_for_chunk_ids": [],
-                "evidence_against_chunk_ids": [],
-                "material_sec_facts": {},
-                "missing_evidence": ["Relevant SEC 8-K, 10-K, or 10-Q filing documents."],
-                "suggested_document_types": ["8-K", "10-Q"],
-            }
-
-        claim_lower = claim.lower()
-        claim_terms = set(re.findall(r"\b\w{4,}\b", claim_lower))
-
-        for_ids: list[str] = []
-        against_ids: list[str] = []
-
-        contradiction_markers = ["non-binding", "subject to", "letter of intent", "loi", "terminated", "no agreement", "declined"]
-
-        for item in chunks:
-            text_lower = item.chunk.text.lower()
-            # Check for explicit contradictions
-            if any(m in text_lower for m in contradiction_markers) and any(kw in claim_lower for kw in ["binding", "definitive", "signed deal", "acquired"]):
-                against_ids.append(item.chunk.chunk_id)
-            elif claim_lower in text_lower or (len(claim_terms) >= 3 and all(t in text_lower for t in claim_terms)):
-                for_ids.append(item.chunk.chunk_id)
-
-        if against_ids:
-            return {
-                "verdict": "CONTRADICTED",
-                "confidence": 0.85,
-                "explanation": f"Filing excerpt explicitly contradicts claim: {claim}.",
-                "evidence_for_chunk_ids": [],
-                "evidence_against_chunk_ids": against_ids[:2],
-                "material_sec_facts": {"contradiction_detected": True},
-                "missing_evidence": [],
-                "suggested_document_types": [],
-            }
-        elif for_ids:
-            return {
-                "verdict": "CONFIRMED",
-                "confidence": 0.80,
-                "explanation": f"Filing evidence supports claim: {claim}.",
-                "evidence_for_chunk_ids": for_ids[:2],
-                "evidence_against_chunk_ids": [],
-                "material_sec_facts": {"support_detected": True},
-                "missing_evidence": [],
-                "suggested_document_types": [],
-            }
-        else:
-            return {
-                "verdict": "INSUFFICIENT_EVIDENCE",
-                "confidence": 0.0,
-                "explanation": "Retrieved excerpts do not conclusively confirm or contradict the claim.",
-                "evidence_for_chunk_ids": [],
-                "evidence_against_chunk_ids": [],
-                "material_sec_facts": {},
-                "missing_evidence": ["Direct contractual confirmation in primary agreement exhibit."],
-                "suggested_document_types": ["EX-10.1", "8-K"],
-            }
-
-    return _deterministic_assessor
+    return _insufficient_evidence_assessment

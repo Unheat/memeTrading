@@ -62,6 +62,31 @@ class ResearchReflectionSchema(BaseModel):
     )
 
 
+class PlannerScoutQuery(BaseModel):
+    """Targeted search query targeting a specific discovery tool."""
+
+    tool_name: Literal["search_web", "search_articles", "search_social"] = Field(
+        default="search_web",
+        description="The discovery tool to invoke: 'search_web' for general web/catalysts, 'search_articles' for news/earnings/regulatory articles, or 'search_social' for retail/sentiment trends.",
+    )
+    query: str = Field(
+        description="Concise, keyword-optimized search query (NOT conversational phrases or questions). E.g. 'top enterprise tech free cash flow growth 2026'.",
+    )
+
+
+class PlannerScoutAssessment(BaseModel):
+    """Initial assessment of the user prompt to determine if live preliminary discovery is required."""
+
+    needs_scouting: bool = Field(
+        default=False,
+        description="True if the request is an open-ended screening or thematic inquiry where candidate tickers or recent catalysts need discovery.",
+    )
+    scout_queries: List[PlannerScoutQuery] = Field(
+        default_factory=list,
+        description="Up to 2 targeted discovery queries. Empty if explicit companies or tickers were already provided.",
+    )
+
+
 def _invoke_structured(model: Any, messages: list[Any], schema: type[BaseModel]) -> BaseModel:
     """Invoke model with structured output, supporting UniversalChatModel, LangChain, and test doubles."""
     if hasattr(model, "with_structured_output"):
@@ -104,7 +129,68 @@ def _invoke_structured(model: Any, messages: list[Any], schema: type[BaseModel])
     except Exception as exc:
         logger.warning("Failed to parse structured output from model: %s. Raw: %s", exc, raw_content[:200])
         # Return fallback default instance if model failed
-        return schema(brief=str(getattr(last_msg, "content", ""))) if schema is ResearchPlanSchema else schema(is_research_complete=True)
+        if schema is ResearchPlanSchema:
+            return schema(brief=str(getattr(last_msg, "content", "")))
+        if schema is PlannerScoutAssessment:
+            return schema(needs_scouting=False, scout_queries=[])
+        return schema(is_research_complete=True)
+
+
+def assess_scout_need(
+    model: Any,
+    query: str,
+    ticker: Optional[str] = None,
+    company: Optional[str] = None,
+) -> PlannerScoutAssessment:
+    """Assess whether a research prompt requires preliminary discovery scouting and generate targeted queries.
+
+    Args:
+        model: Language model runtime.
+        query: Free-form user research prompt.
+        ticker: Optional explicit single ticker if already provided.
+        company: Optional explicit company name if already provided.
+
+    Returns:
+        Validated PlannerScoutAssessment instance.
+    """
+    # Fast path: if the user already provided an explicit ticker or company, scouting is unnecessary
+    if ticker or company:
+        return PlannerScoutAssessment(needs_scouting=False, scout_queries=[])
+
+    if not hasattr(model, "with_structured_output"):
+        # Fallback for models without structured output: assume scouting is needed only if prompt is non-empty
+        return PlannerScoutAssessment(
+            needs_scouting=bool(str(query).strip()),
+            scout_queries=[PlannerScoutQuery(tool_name="search_web", query=str(query)[:120])] if str(query).strip() else [],
+        )
+
+    system_prompt = SystemMessage(
+        content=(
+            "You are a Senior Investment Research Architect.\n"
+            "Evaluate the user's research request to determine whether preliminary discovery scouting is needed.\n"
+            "Rules:\n"
+            "1. If the user names specific target companies/tickers (e.g., 'Analyze AAPL' or 'Compare MSFT and GOOGL'), scouting is NOT needed (needs_scouting=False).\n"
+            "2. If the user request is open-ended, thematic, or asks for screening/recommendations (e.g., 'find best 2 stocks in tech', 'top defense stocks 2026', 'trending AI hardware plays'), set needs_scouting=True.\n"
+            "3. When scouting is needed, formulate 1 to 2 concise, keyword-optimized search queries (NOT conversational sentences).\n"
+            "4. Choose the best tool for each query:\n"
+            "   - 'search_web': for general industry rankings, analyst commentary, or sector leaders.\n"
+            "   - 'search_articles': for recent news, earnings announcements, M&A, or regulatory catalysts.\n"
+            "   - 'search_social': for retail buzz, meme stocks, or sentiment spikes on Reddit/ApeWisdom/StockTwits.\n"
+            "5. Maximum 2 queries total."
+        )
+    )
+    user_text = f"Research Request: {query}"
+    messages = [system_prompt, HumanMessage(content=user_text)]
+    try:
+        result = _invoke_structured(model, messages, PlannerScoutAssessment)
+        if isinstance(result, PlannerScoutAssessment):
+            return result
+        if isinstance(result, dict):
+            return PlannerScoutAssessment.model_validate(result)
+    except Exception as exc:
+        logger.warning("assess_scout_need failed (%s); proceeding without scouting", exc)
+
+    return PlannerScoutAssessment(needs_scouting=False, scout_queries=[])
 
 
 def generate_research_plan(
@@ -179,12 +265,19 @@ def reflect_on_research_gaps(
         if isinstance(c, dict):
             sec_fin = c.get("sec_financials") or {}
             fin_status = sec_fin.get("status") if isinstance(sec_fin, dict) else "missing"
+            sec_corpora = c.get("sec_corpora") or []
+            sec_investigations = c.get("sec_investigations") or []
+            dossier = c.get("diligence_dossier") or {}
             candidate_summary[cid] = {
                 "ticker": c.get("ticker"),
                 "company": c.get("company"),
                 "has_market_data": bool(c.get("market_context")),
                 "sec_financials_status": fin_status,
                 "sec_filings_count": len(c.get("sec_filings") or []),
+                "sec_corpora_count": len(sec_corpora),
+                "sec_investigations_count": len(sec_investigations),
+                "has_sec_evidence": bool(sec_corpora or sec_investigations or c.get("evidence")),
+                "diligence_status": dossier.get("status") if isinstance(dossier, dict) else "missing",
             }
 
     state_summary = {
@@ -205,10 +298,11 @@ def reflect_on_research_gaps(
         "Review the current state of gathered evidence against the original research plan.\n"
         "Check:\n"
         "1. Did we gather market data and financial evidence for all requested candidates?\n"
-        "2. If a foreign issuer (e.g. Form 20-F/6-K filers) lacks standard US-GAAP XBRL facts, note that and verify whether market fundamentals or 20-F filing searches were used.\n"
-        "3. Is the cross-candidate comparison matrix populated?\n"
-        "4. If significant gaps exist, specify them in evidence_gaps and set is_research_complete to False.\n"
-        "5. If all essential questions have sufficient cited evidence, set is_research_complete to True."
+        "2. Treat has_sec_evidence=True, sec_corpora_count>0, or sec_investigations_count>0 as verified SEC coverage even when sec_filings_count is zero; do not request another filing pull merely because the discovery list was not routed into state.\n"
+        "3. If a foreign issuer (e.g. Form 20-F/6-K filers) lacks standard US-GAAP XBRL facts, note that and verify whether market fundamentals or 20-F filing searches were used.\n"
+        "4. Is the cross-candidate comparison matrix populated?\n"
+        "5. If significant gaps exist, specify them in evidence_gaps and set is_research_complete to False.\n"
+        "6. If all essential questions have sufficient cited evidence, set is_research_complete to True."
     ))
 
     user_text = f"Current Research Evidence State:\n{json.dumps(state_summary, indent=2)}"

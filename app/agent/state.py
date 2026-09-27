@@ -158,6 +158,7 @@ class InvestigationState(TypedDict):
     research_plan: list[dict[str, Any]]
     source_records: list[dict[str, Any]]
     claim_records: list[dict[str, Any]]
+    evidence_links: list[dict[str, Any]]
     capability_outputs: dict[str, Any]
     ticker: str
     company: str | None
@@ -213,7 +214,7 @@ def create_initial_state(request: ResearchRequest, case_id: str) -> Investigatio
         "messages": [HumanMessage(content=request.query)], "case_id": case_id,
         "as_of_date": request.as_of_date,
         "depth": request.depth, "research_intent": intent.to_dict(),
-        "research_plan": [], "source_records": [], "claim_records": [], "capability_outputs": {},
+        "research_plan": [], "source_records": [], "claim_records": [], "evidence_links": [], "capability_outputs": {},
         "ticker": request.ticker or "", "company": request.company, "cik": None,
         "candidates": {}, "candidate_leads": [], "comparisons": [],
         "trigger": {"query": request.query, "theme": request.theme, "mandate": request.mandate},

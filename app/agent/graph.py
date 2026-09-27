@@ -28,9 +28,15 @@ from app.agent.gate import (
     evaluate_asymmetry_gate,
     evaluate_research_completeness,
     evaluate_valuation_gate,
+    has_candidate_sec_evidence,
 )
 from app.agent.ledger import ResearchWorkItem
-from app.agent.planning import generate_research_plan, reflect_on_research_gaps, ResearchPlanSchema
+from app.agent.planning import (
+    assess_scout_need,
+    generate_research_plan,
+    reflect_on_research_gaps,
+    ResearchPlanSchema,
+)
 from app.agent.prompts import build_research_system_prompt
 from app.agent.state import InvestigationState, ResearchIntent
 from app.agent.tool_result_ingestion import ingest_tool_results
@@ -76,25 +82,22 @@ def _has_evidence_gaps(state: InvestigationState) -> bool:
         for cand in active_candidates:
             if not cand.get("market_context"):
                 return True
-            sec_fin = cand.get("sec_financials") or {}
-            fin_status = sec_fin.get("status")
-            has_financial_coverage = (
-                fin_status in {"ok", "ok_foreign_issuer_unstructured"}
-                or bool(sec_fin.get("periods"))
-                or bool(cand.get("sec_corpora"))
-                or bool(cand.get("evidence"))
-                or (fin_status == "unavailable" and bool(cand.get("fact_cards") or cand.get("market_context")))
-            )
-            if not has_financial_coverage:
+            if not has_candidate_sec_evidence(cand):
                 return True
             if not (cand.get("diligence_dossier") or cand.get("valuation") or cand.get("quant_report")):
                 return True
 
     sources = state.get("source_records") or []
+    active_candidate_ids = {
+        str(candidate_id)
+        for candidate_id, candidate in candidates.items()
+        if isinstance(candidate, Mapping)
+        and candidate.get("status") not in {"vetoed", "rejected", "screened_out"}
+        and not candidate.get("veto_reason")
+    }
     unread_pdfs = [
-        s for s in sources
-        if isinstance(s, Mapping) and s.get("status") == "discovered"
-        and str(s.get("url") or "").lower().endswith(".pdf")
+        source for source in sources
+        if isinstance(source, Mapping) and _is_issuer_pdf(source, active_candidate_ids)
     ]
     if unread_pdfs:
         return True
@@ -193,31 +196,46 @@ def create_research_graph(
         intent_dict = state.get("research_intent") or {}
         as_of = state.get("as_of_date")
 
-        # Preliminary scout search to discover real-world entities, tickers, and recent catalysts
+        # Stage 1a: Model-driven preliminary discovery scouting
         scout_context = ""
         tool_map = {getattr(t, "name", ""): t for t in tools}
-        web_tool = tool_map.get("search_web")
-        article_tool = tool_map.get("search_articles")
-        if str(query).strip() and (web_tool or article_tool):
+        if str(query).strip() and not ticker and not company:
             try:
-                raw_scout = None
-                if web_tool:
-                    raw_scout = web_tool.invoke({"query": str(query)[:180], "limit": 5})
-                elif article_tool:
-                    raw_scout = article_tool.invoke({"query": str(query)[:180], "limit": 5})
-                if raw_scout:
-                    scout_data = json.loads(raw_scout) if isinstance(raw_scout, str) else raw_scout
+                assessment = assess_scout_need(model, str(query), ticker=ticker, company=company)
+                if assessment.needs_scouting and assessment.scout_queries:
                     lines = []
-                    for item in (scout_data.get("records", []) or scout_data.get("articles", [])):
-                        t_str = item.get("title") or ""
-                        s_str = item.get("snippet") or item.get("summary") or ""
-                        if t_str or s_str:
-                            lines.append(f"- {t_str}: {s_str}")
+                    for sq in assessment.scout_queries[:2]:
+                        tool_to_use = (
+                            tool_map.get(sq.tool_name)
+                            or tool_map.get("search_web")
+                            or tool_map.get("search_articles")
+                        )
+                        if not tool_to_use:
+                            continue
+                        try:
+                            raw_out = tool_to_use.invoke({"query": sq.query[:180], "limit": 5})
+                            if not raw_out:
+                                continue
+                            data = json.loads(raw_out) if isinstance(raw_out, str) else raw_out
+                            items = (
+                                data.get("records", [])
+                                or data.get("articles", [])
+                                or data.get("results", [])
+                                or data.get("posts", [])
+                            )
+                            for item in items:
+                                if isinstance(item, dict):
+                                    t_str = item.get("title") or item.get("ticker") or ""
+                                    s_str = item.get("snippet") or item.get("summary") or item.get("text") or ""
+                                    if t_str or s_str:
+                                        lines.append(f"- {t_str}: {s_str}")
+                        except Exception as sub_exc:
+                            logger.debug("Scout tool %s query '%s' failed: %s", sq.tool_name, sq.query, sub_exc)
                     if lines:
                         scout_context = "\n".join(lines[:5])
                         logger.info("pipeline.planner_scout_obtained count=%s", len(lines[:5]))
             except Exception as exc:
-                logger.debug("Preliminary scout search failed (%s); proceeding with ungrounded planning", exc)
+                logger.debug("Preliminary scout assessment failed (%s); proceeding with ungrounded planning", exc)
 
         if not hasattr(model, "with_structured_output"):
             plan = ResearchPlanSchema(

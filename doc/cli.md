@@ -73,6 +73,11 @@ python main.py --query "Is there a cloud GPU wait time bottleneck for NVDA and h
 | `--video-script-only` | | `flag` | `False` | Generate cited article and dialogue script (`faceless/dialogue.json`) based on the article, but skip MP4 video rendering. |
 | `--article-video`<br/>`--media` | | `flag` | `False` | Generate both the cited forensic article and the rendered viral video reel. |
 | `--character-pair` | | `choice` | `config` | Character duo for viral dialogue. Choices: `peter_stewie` (Peter & Stewie Griffin), `rick_morty` (Rick Sanchez & Morty Smith). |
+| `--publish` | | `flag` | `False` | Automatically publish the generated research case to the Cloudflare website after completion. |
+| `--publish-case` | | `str` | `None` | Fast-path: publish a specific existing case ID (or `'latest'`) to the Cloudflare website. |
+| `--video-for-case` | | `str` | `None` | Fast-path: render a Faceless video reel for an existing reviewed case ID (or `'latest'`). |
+| `--deploy` | | `flag` | `False` | When publishing, immediately execute static build and deploy to Cloudflare Edge. |
+| `--studio` | | `flag` | `False` | Launch the local browser-based Operator Studio GUI (`http://127.0.0.1:3000`). |
 | `--verbose` | `-v` | `flag` | `False` | Enable detailed terminal debug logs showing tool calls, state transitions, and raw JSON payloads. |
 
 ---
@@ -440,7 +445,7 @@ python -m app.cli.publish MU-2026-09-20-001 --deploy
 
 ## 7. Local Studio GUI (`app/studio/`)
 
-A browser-based operator dashboard for running investigations, reviewing formatted articles with interactive citations, watching rendered vertical reels in-browser, and 1-click publishing to Cloudflare:
+The Local Studio is a browser-based operator dashboard for running investigations, reviewing formatted articles with interactive citations, watching rendered vertical reels in-browser, and 1-click publishing to Cloudflare.
 
 ```bash
 # Launch the Local Studio on http://127.0.0.1:3000
@@ -449,4 +454,61 @@ python -m app.studio
 # Or via main.py
 python main.py --studio
 ```
+
+Navigate to **[http://127.0.0.1:3000](http://127.0.0.1:3000)** in any modern web browser.
+
+---
+
+### Key Capabilities & Interface Overview
+
+The Studio runs on Python's standard library `ThreadingHTTPServer` with an Obsidian Dark theme, meaning **zero external Node or Python server framework dependencies** are required to operate it.
+
+#### 1. Interactive Research Dispatcher
+Instead of remembering CLI flags, launch new investigations from an intuitive form:
+- **Research Prompt:** The thesis or question to investigate (e.g. `"HBM3E margin compression and supply bottlenecks"`).
+- **Target Ticker & Narrative Theme:** Optional scoping fields (e.g. `MU` or `"DRAM Supercycle"`).
+- **Depth Policy:** Toggle between `Standard` (15–25 tool calls) and `Deep` (35–50 tool calls).
+- **Character Pair:** Choose between `peter_stewie` or `rick_morty` for scripted banter.
+- **Deliverable Checkboxes:** Opt into generating a cited Substack article and/or rendering a vertical MP4 reel.
+
+#### 2. Real-Time Job Monitor & Console
+Submitting an investigation or video render dispatches a background worker thread:
+- The UI polls `/api/job` every 2 seconds.
+- Status badges reflect live state (`idle`, `running_investigation`, `rendering_video`, `completed`, `failed`).
+- An embedded console stream displays execution progress, tool calls, and state transitions in real time.
+
+#### 3. Case Archive & Strict Publication Guard
+The left sidebar lists all past investigations from `cases/`, sorted chronologically:
+- **Artifact Pills:** Quick badges indicate whether a case has an institutional `memo.md`, a cited `article.md`, or a rendered `video`.
+- **Publication Readiness Badge:**
+  - 🟢 **Publishable:** The case passed evidence integrity verification, has valid canonical citation cards, and cleared committee valuation gates.
+  - 🟠 **Blocked:** Indicates publication is prevented by the governance gate. Hovering or clicking reveals the exact blocking reasons (e.g., unverified claims, missing citation cards, or accounting gate failure).
+
+#### 4. Split-Pane Case Inspector & Citation Card Popovers
+Selecting any case from the list opens a preview pane:
+- **Dual Deliverable Tabs:** Seamlessly toggle between the Substack forensic article (`article.md`) and the Institutional Committee Memorandum (`memo.md`).
+- **Interactive Citations:** Numerical citations (`[1]`, `[2]`) in the article link directly to canonical source records, showing the exact SEC accession number, table row, filing date, or web URL.
+- **Embedded 9:16 Video Player:** Watch rendered vertical reels (`final-faceless-reel.mp4`) with custom HTML5 video controls and seek capability.
+
+#### 5. 1-Click Operational Actions
+- **Render Video:** Trigger Stage 2 Faceless video generation for a reviewed case directly from the UI.
+- **Publish & Deploy:** Sync the case into `web/src/content/articles/`, compress video to satisfy Cloudflare's 25 MiB cap, and push live to Cloudflare Edge.
+
+---
+
+### Studio REST API Endpoints
+
+The Studio server exposes a clean REST API that can also be scripted or queried externally:
+
+| Endpoint | Method | Description |
+| :--- | :---: | :--- |
+| `/` | `GET` | Serves the single-page application (SPA) HTML and JavaScript interface. |
+| `/api/cases` | `GET` | Lists all local research cases with artifact status and publication readiness. |
+| `/api/cases/<case_id>` | `GET` | Returns complete details, raw/rendered Markdown, video URL, and citation cards for a case. |
+| `/api/job` | `GET` | Returns active background job status (`idle`, `running`, `completed`, `failed`) and log buffer. |
+| `/api/run` | `POST` | Dispatches a new research investigation (`{ query, ticker, theme, depth, article, video, character_pair }`). |
+| `/api/cases/<case_id>/video` | `POST` | Dispatches standalone video rendering for an existing reviewed case (`{ character_pair }`). |
+| `/api/publish` | `POST` | Dispatches web synchronization and optional Cloudflare deployment (`{ case_id, deploy, youtube_upload, youtube_id }`). |
+| `/cases/<path>` | `GET` | Serves static video reels and media assets from local `cases/` directory. |
+
 

@@ -493,6 +493,24 @@ def test_multi_candidate_ranking_preserves_workspaces_without_arbitrary_promotio
     assert "cand_nvda" in final_state["candidates"]
 
 
+def test_candidate_sec_evidence_requires_primary_provenance():
+    """Treat corpus or SEC investigations as coverage, but not a valuation-only dossier."""
+    from app.agent.gate import has_candidate_sec_evidence
+
+    market_only_dossier = {
+        "market_context": {"quote": {"value": 120.0}},
+        "diligence_dossier": {"status": "ok", "valuation": {"fair_value": 140.0}},
+    }
+    assert has_candidate_sec_evidence(market_only_dossier) is False
+
+    market_only_dossier["sec_corpora"] = ["case/candidates/cand_nvda"]
+    assert has_candidate_sec_evidence(market_only_dossier) is True
+
+    del market_only_dossier["sec_corpora"]
+    market_only_dossier["sec_investigations"] = [{"status": "ok", "evidence": []}]
+    assert has_candidate_sec_evidence(market_only_dossier) is True
+
+
 def test_evidence_gaps_identifies_missing_candidate_diligence():
     """Prove supervisor reflection catches candidates lacking diligence or valuation."""
     from app.agent.graph import _has_evidence_gaps

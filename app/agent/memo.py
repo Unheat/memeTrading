@@ -18,10 +18,14 @@ BOTTOM_LINE_SENTENCES = 2
 
 
 def _investor_note_opening(state: InvestigationState, final_text: str) -> str:
-    """Render the investor-note opening: headline, bottom line, drivers, risks.
+    """Render the investor-note opening from deterministic state only.
 
-    Format adapted from reference/financial-research-workshop investor-note skill.
-    Deterministic: derived only from state fields and the model's synthesis text.
+    Args:
+        state: Final investigation state.
+        final_text: Retained for caller compatibility and intentionally excluded from public output.
+
+    Returns:
+        Deterministic headline, bottom line, drivers, and risks.
     """
     trigger = state.get("trigger", {})
     query = str(trigger.get("query") or "").strip()
@@ -35,9 +39,14 @@ def _investor_note_opening(state: InvestigationState, final_text: str) -> str:
     else:
         headline = f"Forensic review of ${ticker} attention signal"
 
-    # Bottom line: first sentences of the model synthesis.
-    sentences = re.split(r"(?<=[.!?])\s+", final_text.strip())
-    bottom_line = " ".join(sentences[:BOTTOM_LINE_SENTENCES]).strip() or "See forensic conclusion."
+    evidence_gate = state.get("evidence_gate") or {}
+    research_status = str(state.get("status") or "in_progress")
+    if research_status in {"insufficient_evidence", "research_incomplete", "validation_required"}:
+        bottom_line = "Research is not actionable until the recorded evidence and validation gaps are resolved."
+    elif evidence_gate.get("passed"):
+        bottom_line = "This report presents deterministic metrics and source-backed evidence only; unlinked model prose is excluded."
+    else:
+        bottom_line = "Research remains a non-actionable evidence review; no unsupported narrative conclusion is published."
 
     root_claims = state.get("root_claims", [])
     drivers = [f"- {c}" for c in root_claims] or [f"- Attention signal on ${ticker} under investigation."]
@@ -368,7 +377,7 @@ Research validation incomplete — no position and no target.
 ---
 
 ## 8. Forensic Conclusion
-{final_text}
+This artifact intentionally renders only deterministic calculations and source-backed evidence recorded in the case. Model-authored narrative claims without an explicit evidence link are excluded from publication.
 """
     return memo
 
@@ -547,6 +556,14 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
 {chr(10).join(rows)}
 """
 
+    readiness = state.get("publication_readiness") or {}
+    findings = (
+        "This report intentionally includes deterministic metrics, admitted evidence, and recorded validation outcomes only. "
+        "Raw terminal model prose is retained for internal diagnostics and excluded from published findings."
+    )
+    if readiness.get("status") == "blocked":
+        findings += " Publication-facing artifacts are blocked: " + "; ".join(str(item) for item in readiness.get("reasons") or ()) + "."
+
     return f"""# Deep Research Report
 
 **Case Reference**: `{state.get('case_id') or 'N/A'}`
@@ -556,7 +573,7 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
 {state.get('trigger', {}).get('query') or 'User research request'}
 
 ## Findings
-{final_text or 'Research completed without a model synthesis.'}
+{findings}
 {comparison_section}{specialist_section}{evidence_section}{coverage_section}
 ## Sources Consulted
 | Source | Status | URL |
@@ -587,8 +604,23 @@ def _to_json_safe(val: Any) -> Any:
     return val
 
 
-def serialize_investigation_json(state: InvestigationState, memo_md: str) -> dict[str, Any]:
-    """Serialize the full investigation into an atomic audit artifact."""
+def serialize_investigation_json(
+    state: InvestigationState,
+    memo_md: str,
+    citation_cards: list[dict[str, Any]] | None = None,
+    publication_readiness: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Serialize the full investigation into an atomic audit artifact.
+
+    Args:
+        state: Final investigation state.
+        memo_md: Deterministically rendered research memo.
+        citation_cards: Canonical server-owned citation cards for downstream publication.
+        publication_readiness: Deterministic eligibility result for external artifacts.
+
+    Returns:
+        JSON-safe durable case artifact.
+    """
     now_utc = datetime.now(timezone.utc).isoformat()
     return {
         "case_id": state.get("case_id"),
@@ -597,6 +629,7 @@ def serialize_investigation_json(state: InvestigationState, memo_md: str) -> dic
         "research_plan": state.get("research_plan", []),
         "source_records": state.get("source_records", []),
         "claim_records": state.get("claim_records", []),
+        "evidence_links": _to_json_safe(state.get("evidence_links", [])),
         "capability_outputs": state.get("capability_outputs", {}),
         "ticker": state.get("ticker"),
         "company": state.get("company"),
@@ -633,5 +666,8 @@ def serialize_investigation_json(state: InvestigationState, memo_md: str) -> dic
         "sector_report": _to_json_safe(state.get("sector_report")),
         "moat_report": _to_json_safe(state.get("moat_report")),
         "quant_report": _to_json_safe(state.get("quant_report")),
+        "citation_cards": list(citation_cards or ()),
+        "publication_readiness": dict(publication_readiness or {}),
+        "diagnostic_terminal_model_text": str(getattr((state.get("messages") or [None])[-1], "content", "")),
         "memo_markdown": memo_md,
     }

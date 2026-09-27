@@ -15,6 +15,7 @@ interface Props {
 }
 
 const { citations = [] } = Astro.props;
+const hasCitations = citations.length > 0;
 ---
 
 <section class="mt-16 pt-10 border-t border-journal-border dark:border-night-border" id="primary-sources">
@@ -27,9 +28,15 @@ const { citations = [] } = Astro.props;
     </span>
   </div>
 
-  <p class="text-xs text-journal-secondary dark:text-night-secondary mb-8 font-sans max-w-2xl leading-relaxed">
-    Every assertion in this report is anchored to verifiable regulatory filings on SEC EDGAR, consensus databases, or market execution venues.
-  </p>
+  {hasCitations ? (
+    <p class="text-xs text-journal-secondary dark:text-night-secondary mb-8 font-sans max-w-2xl leading-relaxed">
+      Every assertion in this report is anchored to verifiable regulatory filings on SEC EDGAR, consensus databases, or market execution venues.
+    </p>
+  ) : (
+    <p class="text-xs text-journal-muted dark:text-night-muted mb-8 font-sans max-w-2xl leading-relaxed">
+      No verified primary source citations were recorded for this case.
+    </p>
+  )}
 
   <ol class="space-y-4 font-sans text-xs">
     {citations.map((cite) => (

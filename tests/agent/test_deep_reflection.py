@@ -16,7 +16,7 @@ def fake_discovery(query: str) -> str:
     """Return a discovery result with a linked PDF."""
     return json.dumps({
         "status": "ok",
-        "results": [{"title": "Cloud PDF", "url": "https://example.test/cloud-report.pdf"}],
+        "results": [{"title": "Cloud PDF", "url": "https://www.sec.gov/Archives/cloud-report.pdf"}],
     })
 
 
@@ -57,14 +57,14 @@ class ReflectiveModel:
             assert "DEEP RESEARCH GAP REFLECTION" in str(getattr(last_msg, "content", ""))
             return AIMessage(
                 content="",
-                tool_calls=[{"name": "fake_read_doc", "args": {"url": "https://example.test/cloud-report.pdf"}, "id": "call-read", "type": "tool_call"}],
+                tool_calls=[{"name": "fake_read_doc", "args": {"url": "https://www.sec.gov/Archives/cloud-report.pdf"}, "id": "call-read", "type": "tool_call"}],
             )
         # Turn 4: Final synthesis after deep reading
         return AIMessage(content="Final deep research synthesis: primary cloud report verified.")
 
 
-def test_has_evidence_gaps_detects_unread_discovered_documents() -> None:
-    """Verify _has_evidence_gaps identifies unread PDF documents."""
+def test_has_evidence_gaps_only_detects_issuer_relevant_unread_documents() -> None:
+    """Ignore unrelated PDFs but deepen research for an unread SEC filing PDF."""
     state = create_initial_state(ResearchRequest(query="Research cloud"), "test-gap-1")
     assert _has_evidence_gaps(state) is False
 
@@ -73,9 +73,16 @@ def test_has_evidence_gaps_detects_unread_discovered_documents() -> None:
         "url": "https://example.com/deck.pdf",
         "status": "discovered",
     })
+    assert _has_evidence_gaps(state) is False
+
+    state["source_records"].append({
+        "tool": "search_web",
+        "url": "https://www.sec.gov/Archives/company-report.pdf",
+        "status": "discovered",
+    })
     assert _has_evidence_gaps(state) is True
 
-    state["source_records"][0]["status"] = "read"
+    state["source_records"][1]["status"] = "read"
     assert _has_evidence_gaps(state) is False
 
 
@@ -104,7 +111,7 @@ def test_reflection_node_prompts_model_to_deepen_evidence() -> None:
     initial = create_initial_state(ResearchRequest(query="Research AI Capex"), "reflection-case")
     initial["source_records"].append({
         "tool": "search_web",
-        "url": "https://example.test/cloud-report.pdf",
+        "url": "https://www.sec.gov/Archives/cloud-report.pdf",
         "status": "discovered",
     })
 

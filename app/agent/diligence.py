@@ -53,6 +53,8 @@ def run_candidate_diligence(
         "market_context": ws.get("market_context"),
         "sec_financials": ws.get("sec_financials"),
         "consensus_snapshot": ws.get("consensus_snapshot"),
+        "expectation_gap": ws.get("expectation_gap"),
+        "macro_series": ws.get("macro_series"),
         "sec_corpora": ws.get("sec_corpora", []),
         "evidence": ws.get("evidence", []),
         "trigger": {"query": f"Deep diligence on {clean_ticker}", "theme": "Enterprise AI & Cloud"},

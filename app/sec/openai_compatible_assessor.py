@@ -172,7 +172,14 @@ def _response_content(response: Any) -> str:
         raise ValueError("model response is invalid") from error
     if not isinstance(content, str) or not content.strip():
         raise ValueError("model response is invalid")
-    return content
+    normalized = content.strip()
+    if normalized.startswith("```json"):
+        normalized = normalized[7:]
+    elif normalized.startswith("```"):
+        normalized = normalized[3:]
+    if normalized.endswith("```"):
+        normalized = normalized[:-3]
+    return normalized.strip()
 
 
 def _client_from_config(config: OpenAICompatibleAssessorConfig) -> Any:

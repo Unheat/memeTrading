@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.agent.media import validate_article_body_citations
 from app.media.youtube_uploader import (
     check_youtube_auth,
     extract_youtube_metadata,
@@ -110,23 +111,36 @@ def publish_case(
     case_path = Path(case_dir)
     web_path = Path(web_root)
 
+    # Load investigation.json and enforce non-bypassable publication readiness first
+    inv_file = case_path / "investigation.json"
+    if not inv_file.exists():
+        raise FileNotFoundError(f"investigation.json not found in {case_path}; cannot verify publication readiness.")
+    try:
+        inv_data: dict[str, Any] = json.loads(inv_file.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ValueError(f"Failed parsing {inv_file}: {exc}") from exc
+
+    case_id = case_path.name
+    pub_readiness = inv_data.get("publication_readiness") or {}
+    if pub_readiness.get("status") != "publishable" or not pub_readiness.get("passed"):
+        reasons = pub_readiness.get("reasons") or ["case publication readiness is not publishable"]
+        raise ValueError(f"Case {case_id} is blocked from publication: {'; '.join(reasons)}")
+
     article_file = case_path / "article.md"
     if not article_file.exists():
         raise FileNotFoundError(f"article.md not found in {case_path}")
 
     raw_article = article_file.read_text(encoding="utf-8")
 
-    # Load investigation.json if present
-    inv_file = case_path / "investigation.json"
-    inv_data: dict[str, Any] = {}
-    if inv_file.exists():
-        try:
-            inv_data = json.loads(inv_file.read_text(encoding="utf-8"))
-        except Exception as exc:
-            logger.warning("Failed reading %s: %s", inv_file, exc)
+    citation_cards = inv_data.get("citation_cards") or []
+    if not citation_cards:
+        raise ValueError(f"Case {case_id} lacks persisted canonical citation_cards; publication blocked.")
 
-    # Extract metadata
-    case_id = case_path.name
+    article_validation = validate_article_body_citations(raw_article, citation_cards)
+    if not article_validation["passed"]:
+        raise ValueError(
+            f"Case {case_id} article failed citation validation: {'; '.join(article_validation['errors'])}"
+        )
     ticker = inv_data.get("ticker") or ""
     if not ticker:
         # Infer ticker from case_id (e.g. MU-2026-09-18-001 -> MU)
@@ -245,45 +259,20 @@ def publish_case(
             "title": f"{ticker} Faceless Video Reel",
         }
 
-    # Extract Citations
-    citations: list[dict[str, Any]] = []
-    if "citation_cards" in inv_data and inv_data["citation_cards"]:
-        citations = inv_data["citation_cards"]
-    else:
-        try:
-            from app.agent.media import build_source_registry
-            cards = build_source_registry(inv_data)
-            if cards:
-                citations = [
-                    {
-                        "index": c.index,
-                        "sourceType": c.source_type,
-                        "title": c.title,
-                        "url": c.url,
-                        "accession": c.accession,
-                        "filingDate": c.filing_date,
-                        "facts": list(c.facts),
-                        "quotes": list(c.quotes),
-                    }
-                    for c in cards
-                ]
-        except Exception as exc:
-            logger.debug("build_source_registry fallback failed: %s", exc)
-
-    if not citations and "evidence" in inv_data:
-        for idx, ev in enumerate(inv_data["evidence"][:10], start=1):
-            citations.append({
-                "index": idx,
-                "sourceType": "SEC Filing",
-                "title": f"{ev.get('form', 'Form 10-K')} - {ticker}",
-                "url": ev.get("source_url") or "https://www.sec.gov",
-                "accession": ev.get("accession"),
-                "filingDate": ev.get("filing_date"),
-                "facts": [ev.get("quote", "")] if ev.get("quote") else [],
-            })
-
-    if not citations:
-        citations = parse_citations_from_article(raw_article)
+    # Build citations directly from the validated canonical cards
+    citations: list[dict[str, Any]] = [
+        {
+            "index": c["index"],
+            "sourceType": c.get("source_type") or c.get("sourceType", "SEC Filing"),
+            "title": c["title"],
+            "url": c["url"],
+            "accession": c.get("accession"),
+            "filingDate": c.get("filing_date") or c.get("filingDate"),
+            "facts": list(c.get("facts") or ()),
+            "quotes": list(c.get("quotes") or ()),
+        }
+        for c in citation_cards
+    ]
 
     # Format destination MD path
     articles_dir = web_path / "src" / "content" / "articles"

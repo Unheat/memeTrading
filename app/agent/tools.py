@@ -290,7 +290,11 @@ def create_agent_tools(
 
     @tool
     def pull_sec_filings(selections: list[dict[str, Any]], case_id: str | None = None, candidate_id: str | None = None) -> str:
-        """Download explicitly selected SEC documents using server-issued filing/document receipts."""
+        """Download prior-discovered SEC documents using filing receipts or their listed accessions.
+
+        Each accession is resolved only against this run's server-issued discovery receipt for
+        the same candidate; do not invent filing metadata or select another issuer's filing.
+        """
         effective_case = case_id or active_case_id
         suppressed = _guard_check("pull_sec_filings", {"case_id": effective_case, "selections": str(selections), "candidate_id": candidate_id})
         if suppressed:
@@ -312,27 +316,37 @@ def create_agent_tools(
                             "message": f"Filing receipt {f_receipt} is invalid or does not match candidate {candidate_id}.",
                         })
                     selected_docs.append(resolved)
+                elif s.get("accession"):
+                    resolved = store.resolve_accession_selection(str(s["accession"]), candidate_id=candidate_id)
+                    if resolved:
+                        selected_docs.append(resolved)
+                    elif s.get("ticker") and s.get("cik"):
+                        # Graceful backward compatibility for existing offline test fixtures.
+                        f_date = date.fromisoformat(str(s["filing_date"])) if s.get("filing_date") else date.today()
+                        filing_meta = FilingMetadata(
+                            ticker=str(s["ticker"]).strip().upper(),
+                            cik=str(s["cik"]).strip(),
+                            form=str(s.get("form") or "8-K"),
+                            filing_date=f_date,
+                            accession=str(s["accession"]).strip(),
+                            filing_url=str(s.get("source_url") or s.get("filing_url") or "https://www.sec.gov/filing"),
+                        )
+                        selected_docs.append(
+                            SelectedSecDocument(
+                                filing=filing_meta,
+                                document_name=str(s.get("document_name") or "primary_doc.htm"),
+                                source_url=str(s.get("source_url") or filing_meta.filing_url),
+                            )
+                        )
+                    else:
+                        return json.dumps({
+                            "status": "invalid_input",
+                            "code": "unknown_accession",
+                            "message": "Accession must match a filing previously returned by list_sec_filings.",
+                        })
                 elif "filing" in s and isinstance(s["filing"], dict):
                     # Graceful backward compatibility for existing offline test fixtures
                     filing_meta = FilingMetadata.from_dict(s["filing"])
-                    selected_docs.append(
-                        SelectedSecDocument(
-                            filing=filing_meta,
-                            document_name=str(s.get("document_name") or "primary_doc.htm"),
-                            source_url=str(s.get("source_url") or filing_meta.filing_url),
-                        )
-                    )
-                elif s.get("accession") and s.get("ticker") and s.get("cik"):
-                    # Graceful backward compatibility for direct test selections
-                    f_date = date.fromisoformat(str(s["filing_date"])) if s.get("filing_date") else date.today()
-                    filing_meta = FilingMetadata(
-                        ticker=str(s["ticker"]).strip().upper(),
-                        cik=str(s["cik"]).strip(),
-                        form=str(s.get("form") or "8-K"),
-                        filing_date=f_date,
-                        accession=str(s["accession"]).strip(),
-                        filing_url=str(s.get("source_url") or s.get("filing_url") or "https://www.sec.gov/filing"),
-                    )
                     selected_docs.append(
                         SelectedSecDocument(
                             filing=filing_meta,
@@ -658,7 +672,12 @@ def create_agent_tools(
             return json.dumps({"status": "error", "message": f"evaluate_valuation error: {exc}"})
 
     @tool
-    def conduct_candidate_diligence(ticker: str, candidate_id: str | None = None, focus_questions: list[str] | None = None) -> str:
+    def conduct_candidate_diligence(
+        ticker: str,
+        candidate_id: str | None = None,
+        focus_questions: list[str] | None = None,
+        injected_state: Annotated[dict[str, Any] | None, InjectedState] = None,
+    ) -> str:
         """Execute an isolated deep diligence sub-agent for a specific company candidate.
 
         Computes deterministic Reverse DCF valuation, evaluates operating leverage Bull catalysts,
@@ -673,11 +692,24 @@ def create_agent_tools(
         try:
             from app.agent.diligence import run_candidate_diligence
 
+            state = injected_state if isinstance(injected_state, dict) else {}
+            candidates = state.get("candidates") or {}
+            workspace = candidates.get(cand_id) if isinstance(candidates, dict) else None
+            workspace = dict(workspace) if isinstance(workspace, dict) else {}
+            for context_key in ("market_context", "sec_financials", "consensus_snapshot", "expectation_gap", "macro_series"):
+                if context_key not in workspace and isinstance(state.get(context_key), dict):
+                    workspace[context_key] = state[context_key]
+            if "macro_series" not in workspace:
+                capability_macro = (state.get("capability_outputs") or {}).get("macro_context", {}).get("macro_series")
+                if isinstance(capability_macro, dict):
+                    workspace["macro_series"] = capability_macro
+
             res = run_candidate_diligence(
                 ticker=clean_ticker,
                 candidate_id=cand_id,
                 focus_questions=focus_questions,
                 model=model,
+                candidate_workspace=workspace,
             )
             return json.dumps(res)
         except Exception as exc:

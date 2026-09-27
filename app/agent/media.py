@@ -7,11 +7,12 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.agent.gate import evaluate_publication_readiness
 from app.agent.state import InvestigationState
 
 logger = logging.getLogger(__name__)
@@ -105,6 +106,24 @@ class CitationCard:
     filing_date: str | None = None
     facts: tuple[str, ...] = ()
     quotes: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize this server-owned citation card for durable case artifacts.
+
+        Returns:
+            JSON-safe citation card fields, preserving the assigned citation index.
+        """
+        return {
+            "index": self.index,
+            "tag": self.tag,
+            "source_type": self.source_type,
+            "title": self.title,
+            "url": self.url,
+            "accession": self.accession,
+            "filing_date": self.filing_date,
+            "facts": list(self.facts),
+            "quotes": list(self.quotes),
+        }
 
     def format_prompt_block(self) -> str:
         """Render this card as a concise reference entry for the LLM prompt."""
@@ -451,6 +470,159 @@ def validate_dialogue_json(lines: list[dict[str, Any]], character_pair: str = "p
     return True
 
 
+CITATION_TAG_PATTERN = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\](?![(\:])")
+
+
+def validate_article_body_citations(
+    article_body: str,
+    cards: Sequence[Any],
+) -> dict[str, Any]:
+    """Deterministically validate citation tags and factual statements prior to publication.
+
+    Enforces that:
+    1. The verified source registry is non-empty.
+    2. Every numeric citation tag references an existing server-owned card index.
+    3. Factual paragraphs and table data rows carry at least one valid citation tag.
+    4. Headings, deck text, horizontal separators, blockquotes, and code fences are exempted.
+
+    Args:
+        article_body: Article markdown text prior to the trailing bibliography.
+        cards: Server-owned citation cards or serializable card mappings.
+
+    Returns:
+        Dictionary with:
+            - passed (bool): True if all citation and grounding invariants hold.
+            - errors (list[str]): Detailed explanations of any validation failures.
+            - valid_indices (set[int]): Set of available source card indices.
+    """
+    errors: list[str] = []
+    if not cards:
+        return {
+            "passed": False,
+            "errors": ["Source registry is empty; cannot validate citations."],
+            "valid_indices": set(),
+        }
+
+    valid_indices: set[int] = set()
+    for c in cards:
+        if isinstance(c, Mapping):
+            idx = c.get("index")
+        else:
+            idx = getattr(c, "index", None)
+        if idx is not None:
+            try:
+                valid_indices.add(int(idx))
+            except (ValueError, TypeError):
+                pass
+
+    if not valid_indices:
+        return {
+            "passed": False,
+            "errors": ["No valid card indices found in source registry."],
+            "valid_indices": set(),
+        }
+
+    # Extract all citation tags like [1], [2], [1, 2]
+    all_raw_tags = CITATION_TAG_PATTERN.findall(article_body)
+    used_indices: set[int] = set()
+
+    for raw_tag in all_raw_tags:
+        for part in raw_tag.split(","):
+            part_clean = part.strip()
+            if part_clean:
+                try:
+                    num = int(part_clean)
+                    used_indices.add(num)
+                    if num not in valid_indices:
+                        errors.append(
+                            f"Citation tag [{num}] references non-existent source index (available: {sorted(valid_indices)})"
+                        )
+                except ValueError:
+                    errors.append(f"Invalid numeric citation format: [{raw_tag}]")
+
+    if not used_indices:
+        errors.append("Article body contains no numeric citation tags.")
+
+    # Split body into blocks separated by blank lines
+    blocks = [b.strip() for b in article_body.split("\n\n") if b.strip()]
+    for block in blocks:
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        if not lines:
+            continue
+
+        # 1. Heading exemption (if all lines are headings)
+        if all(line.startswith("#") for line in lines):
+            continue
+
+        # 2. Separators exemption (e.g. ---, ***, ___)
+        if len(lines) == 1 and lines[0] in {"---", "***", "___"}:
+            continue
+
+        # 3. Code block exemption
+        if block.startswith("```") and block.endswith("```"):
+            continue
+
+        # 4. Blockquote exemption
+        if all(line.startswith(">") for line in lines):
+            continue
+
+        # 5. Metadata / deck text exemption (e.g. *By ...*, *Published ...*, *Disclaimer: ...*)
+        if len(lines) == 1 and (
+            (lines[0].startswith("*") and lines[0].endswith("*"))
+            or (lines[0].startswith("_") and lines[0].endswith("_"))
+            or any(lines[0].lower().startswith(pfx) for pfx in ("by:", "author:", "date:", "published:", "disclaimer:", "*disclaimer:", "**disclaimer:"))
+        ):
+            continue
+
+        # 6. Markdown table handling
+        if all(line.startswith("|") for line in lines) and len(lines) >= 2:
+            data_rows = lines[2:]
+            for row in data_rows:
+                cells = [c.strip() for c in row.split("|")[1:-1]]
+                if not any(cells) or all(set(c) <= {"-", ":", " "} for c in cells):
+                    continue
+                row_tags = CITATION_TAG_PATTERN.findall(row)
+                row_nums = {
+                    int(p.strip())
+                    for tag in row_tags
+                    for p in tag.split(",")
+                    if p.strip().isdigit()
+                }
+                if not any(num in valid_indices for num in row_nums):
+                    errors.append(f"Table row lacks a valid citation tag: '{row[:60]}'")
+            continue
+
+        # 7. Substantive prose paragraphs (strip any leading heading if attached)
+        prose_lines = [l for l in lines if not l.startswith("#")]
+        if not prose_lines:
+            continue
+        prose_text = " ".join(prose_lines).strip()
+        if (
+            (prose_text.startswith("*") and prose_text.endswith("*"))
+            or (prose_text.startswith("_") and prose_text.endswith("_"))
+            or any(prose_text.lower().startswith(pfx) for pfx in ("by:", "author:", "date:", "published:", "disclaimer:", "*disclaimer:", "**disclaimer:"))
+        ):
+            continue
+
+        # Check if this prose has at least one valid citation
+        para_tags = CITATION_TAG_PATTERN.findall(prose_text)
+        para_nums = {
+            int(p.strip())
+            for tag in para_tags
+            for p in tag.split(",")
+            if p.strip().isdigit()
+        }
+        if not any(num in valid_indices for num in para_nums):
+            errors.append(f"Factual paragraph lacks a valid citation tag: '{prose_text[:80]}...'")
+
+    passed = len(errors) == 0
+    return {
+        "passed": passed,
+        "errors": errors,
+        "valid_indices": valid_indices,
+    }
+
+
 def generate_article_markdown(
     memo_markdown: str,
     state: InvestigationState,
@@ -459,9 +631,9 @@ def generate_article_markdown(
     """Generate a publication-grade cited Substack article with pre-indexed citation cards.
 
     The article writer receives:
-    1. The fully rendered memo_markdown (ground truth analysis).
+    1. The fully rendered memo_markdown (deterministic analysis and gate outcomes).
     2. The pre-indexed Citation Cards ([1], [2], [3]...) explicitly binding each source to its facts.
-    Python then attaches the deterministic bibliography at the bottom.
+    Python validates citation tags and attaches the deterministic bibliography at the bottom.
 
     Args:
         memo_markdown: The finalized forensic research memo text.
@@ -470,7 +642,18 @@ def generate_article_markdown(
 
     Returns:
         Article markdown string with verified citations and regulatory receipts.
+
+    Raises:
+        ValueError: If publication readiness is blocked or citation validation fails.
     """
+    cards = build_source_registry(state)
+    readiness = state.get("publication_readiness")
+    if readiness is None:
+        readiness = evaluate_publication_readiness(state, cards)
+    if not readiness.get("passed"):
+        reasons_str = "; ".join(readiness.get("reasons") or ())
+        raise ValueError(f"Cannot generate article for blocked case: {reasons_str}")
+
     intent = state.get("research_intent") or {}
     candidates = state.get("candidates") or {}
     is_multi_candidate = bool(intent.get("requires_candidate_workspaces")) or len(candidates) > 1
@@ -478,7 +661,6 @@ def generate_article_markdown(
     ticker = state.get("ticker")
     company = state.get("company") or ""
 
-    cards = build_source_registry(state)
     registry_text = format_source_registry_for_prompt(cards)
 
     if is_multi_candidate or not ticker or ticker in {"RESEARCH", "UNKNOWN"}:
@@ -497,7 +679,7 @@ def generate_article_markdown(
 ## Verified Primary Source Registry (Cite using the exact tags like [1], [2] next to claims)
 {registry_text}
 
-## Audited Research Memo (Ground Truth — cite only from this content)
+## Audited Research Memo (Deterministic Facts & Gate Outcomes — cite only from this content)
 ```markdown
 {memo_markdown}
 ```
@@ -505,7 +687,8 @@ def generate_article_markdown(
 Instructions:
 1. Synthesize the findings across the candidate cohort, focusing on the Top Ranked allocations established in the Audited Research Memo.
 2. Compare the winners' economic moats, SEC XBRL margin trajectories, and expectation gaps against the excluded or passed peers.
-3. Every factual statement, financial metric, or consensus target MUST cite its source from the registry above using [1], [2], etc.
+3. Every factual statement, financial metric, market quote, or consensus target MUST cite its source from the registry above using [1], [2], etc.
+4. Do not invent or extrapolate numbers, dates, or claims not present in the source registry or audited memo.
 """
     else:
         article_prompt = f"""Write an institutional, deeply cited forensic research article for ${ticker} ({company}).
@@ -513,10 +696,15 @@ Instructions:
 ## Verified Primary Source Registry (Cite using the exact tags like [1], [2] next to claims)
 {registry_text}
 
-## Audited Research Memo (Ground Truth — cite only from this content)
+## Audited Research Memo (Deterministic Facts & Gate Outcomes — cite only from this content)
 ```markdown
 {memo_markdown}
 ```
+
+Instructions:
+1. Write an institutional research article strictly anchored to the verified source registry and audited memo.
+2. Every factual statement, financial metric, market quote, or consensus target MUST cite its source from the registry using [1], [2], etc.
+3. Do not invent or extrapolate numbers, dates, or claims not present in the source registry or audited memo.
 """
     response = model.invoke([
         SystemMessage(content=MEDIA_ARTICLE_SYSTEM_PROMPT),
@@ -530,6 +718,12 @@ Instructions:
         article_raw,
         flags=re.IGNORECASE,
     )[0].strip()
+
+    # Deterministically validate article body citations
+    validation = validate_article_body_citations(clean_article, cards)
+    if not validation["passed"]:
+        reasons_str = "; ".join(validation["errors"])
+        raise ValueError(f"Article failed citation validation: {reasons_str}")
 
     # Deterministically append the authoritative bibliography from the verified Python cards
     bibliography = format_bibliography_markdown(cards)

@@ -5,10 +5,42 @@ Only local evidence checks are implemented; no donor signal architecture is used
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 REQUIRED_RECEIPT_TOOLS = frozenset({"get_market_data", "pull_sec_filings"})
+SEC_FINANCIAL_STATUSES = frozenset({"ok", "ok_foreign_issuer_unstructured"})
+SEC_FORMS = frozenset({"10-K", "10-Q", "20-F", "6-K", "8-K", "S-1", "F-1"})
+
+
+def has_candidate_sec_evidence(candidate: Mapping[str, Any]) -> bool:
+    """Return whether a candidate has deterministic, candidate-scoped SEC coverage.
+
+    Args:
+        candidate: Candidate-isolated workspace.
+
+    Returns:
+        True when SEC financial extraction, a local corpus, or SEC-attributed evidence exists.
+    """
+    sec_financials = candidate.get("sec_financials")
+    if isinstance(sec_financials, Mapping):
+        status = str(sec_financials.get("status") or "")
+        if status in SEC_FINANCIAL_STATUSES or bool(sec_financials.get("periods")):
+            return True
+    if candidate.get("sec_corpora"):
+        return True
+    for investigation in candidate.get("sec_investigations") or ():
+        if isinstance(investigation, Mapping) and str(investigation.get("status") or "") == "ok":
+            return True
+    for item in candidate.get("evidence") or ():
+        if not isinstance(item, Mapping):
+            continue
+        form = str(item.get("form") or "").upper()
+        source = str(item.get("source") or "").upper()
+        source_url = str(item.get("source_url") or "").lower()
+        if form in SEC_FORMS or source == "SEC" or "sec.gov" in source_url:
+            return True
+    return False
 
 
 def _candidate_is_evidence_backed(candidate: Mapping[str, Any]) -> bool:
@@ -22,26 +54,7 @@ def _candidate_is_evidence_backed(candidate: Mapping[str, Any]) -> bool:
     """
     if candidate.get("status") in {"vetoed", "rejected", "screened_out"} or candidate.get("veto_reason"):
         return True
-    if candidate.get("diligence_dossier") and isinstance(candidate.get("diligence_dossier"), Mapping):
-        return True
-    has_market = bool(candidate.get("market_context"))
-    sec_fin = candidate.get("sec_financials")
-    has_fin = False
-    if isinstance(sec_fin, Mapping):
-        status = sec_fin.get("status")
-        if status in {"ok", "ok_foreign_issuer_unstructured"}:
-            has_fin = True
-        elif status != "unavailable" and len(sec_fin.get("periods", [])) > 0:
-            has_fin = True
-    has_sec = bool(
-        has_fin
-        or candidate.get("sec_corpora")
-        or candidate.get("evidence")
-        or candidate.get("sec_filings")
-        or candidate.get("fact_cards")
-        or (candidate.get("status") == "discovered" and (candidate.get("quant_report") or candidate.get("valuation")))
-    )
-    return has_market and has_sec
+    return bool(candidate.get("market_context")) and has_candidate_sec_evidence(candidate)
 
 
 def evaluate_research_completeness(state: Mapping[str, Any]) -> dict[str, Any]:
@@ -149,3 +162,52 @@ def evaluate_asymmetry_gate(state: Mapping[str, Any]) -> dict[str, Any]:
     risk = valuation.get("asymmetric_risk_reward") or {}
     passed = bool(risk.get("qualifies_3_to_1"))
     return {"passed": passed, "status": "ready_for_committee" if passed else "validation_required", "reason": None if passed else "source-backed low/base valuation does not clear 3:1"}
+
+
+PUBLICATION_BLOCKED_RESEARCH_STATUSES = frozenset({
+    "in_progress", "research_incomplete", "insufficient_evidence", "validation_required", "failed",
+})
+
+
+def evaluate_publication_readiness(
+    state: Mapping[str, Any],
+    citation_cards: Sequence[Any] | None = None,
+) -> dict[str, Any]:
+    """Determine whether a case may create outward-facing article or video artifacts.
+
+    Args:
+        state: Completed investigation state with deterministic gate outcomes.
+        citation_cards: Server-owned citation cards created from admitted state evidence.
+
+    Returns:
+        JSON-safe readiness result with allowed artifact kinds and blocking reasons.
+    """
+    reasons: list[str] = []
+    research_status = str(state.get("status") or "in_progress")
+    if research_status in PUBLICATION_BLOCKED_RESEARCH_STATUSES:
+        reasons.append(f"research status is {research_status}")
+
+    cards = list(citation_cards or ())
+    if not cards:
+        reasons.append("no server-owned citation cards are available")
+
+    intent = state.get("research_intent") or {}
+    if intent.get("requested_position_decision"):
+        for gate_name in ("evidence_gate", "accounting_gate", "valuation_gate", "asymmetry_gate"):
+            gate = state.get(gate_name) or {}
+            if not isinstance(gate, Mapping) or not gate.get("passed", False):
+                reasons.append(f"{gate_name} did not pass")
+
+    for report_name in ("bull_report", "adversarial_report"):
+        report = state.get(report_name)
+        status = report.get("status") if isinstance(report, Mapping) else getattr(report, "status", None)
+        if status and status != "available":
+            reasons.append(f"{report_name} is {status}")
+
+    passed = not reasons
+    return {
+        "passed": passed,
+        "status": "publishable" if passed else "blocked",
+        "reasons": reasons,
+        "allowed_artifacts": ["article", "video", "publish"] if passed else [],
+    }

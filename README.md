@@ -234,8 +234,9 @@ python main.py --ticker TSLA --query "Robotaxi regulatory path and auto gross ma
 | `python main.py -q "<THEME>" --depth deep` | Thematic discovery & automatic candidate registration. |
 | `python main.py -t <TICKER> --article` | Generates cited Substack forensic article (`article.md`). |
 | `python main.py -t <TICKER> --video` | Generates cited article, character script based on the article, and renders MP4 video. |
-| `python main.py --studio` | Launch browser-based Operator Studio GUI (`http://127.0.0.1:3000`). |
+| `python main.py --studio` / `python -m app.studio` | Launch browser-based Operator Studio GUI (`http://127.0.0.1:3000`). |
 | `python -m app.cli.publish <CASE> --deploy` | Syncs article, citations, and video to Cloudflare Astro website (`web/`) and deploys to edge. |
+| `python main.py --publish-case <CASE> --deploy` | Direct fast-path to publish and deploy a specific case via `main.py`. |
 | `python -m app.cli.publish --list` | Lists all published articles, case IDs, and video URLs on the website. |
 | `python -m app.cli.publish --delete <SLUG> --deploy` | Deletes article and companion video asset, then redeploys live to Cloudflare. |
 | `python -m app.media.cli video --case-id <CASE>` | Standalone video reel rendering for an existing reviewed case. |

@@ -27,6 +27,7 @@ def test_render_forensic_memo_includes_required_sections():
         "returns": {"1m": {"value": 0.45}},
         "volume_ratio_20d": {"value": 3.2},
     }
+    state["evidence_gate"] = {"passed": True}
 
     final_text = "The buyout hype is speculative and contradicted by official 8-K filings."
     memo_md = render_forensic_memo(state, final_text)
@@ -34,7 +35,8 @@ def test_render_forensic_memo_includes_required_sections():
     # Investor-note opening (from financial-research-workshop format)
     assert "**Headline**:" in memo_md
     assert "**Bottom Line**:" in memo_md
-    assert "The buyout hype is speculative" in memo_md  # bottom line = first sentence(s)
+    assert "The buyout hype is speculative" not in memo_md
+    assert "unlinked model prose is excluded" in memo_md
     assert "**Drivers**:" in memo_md
     assert "**Risks / What we're watching**:" in memo_md
 
@@ -59,7 +61,8 @@ def test_render_forensic_memo_includes_required_sections():
     assert "## 7. Adversarial Red Team Invalidation" in memo_md
     assert "Unavailable — no source-backed kill trigger was produced." in memo_md
     assert "## 8. Forensic Conclusion" in memo_md
-    assert final_text in memo_md
+    assert final_text not in memo_md
+    assert "Model-authored narrative claims without an explicit evidence link are excluded from publication." in memo_md
 
 
 def test_render_forensic_memo_with_consensus_and_gap():

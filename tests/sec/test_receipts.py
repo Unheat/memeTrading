@@ -41,5 +41,12 @@ def test_receipt_store_registers_filings_and_resolves_selection():
     cross_cand = store.resolve_selection(rec.filing_receipt_id, candidate_id="cand_nvda")
     assert cross_cand is None
 
+    # Resolve an accession only when it maps to this store's prior discovery.
+    accession_selection = store.resolve_accession_selection("0000789019-26-000001", candidate_id="cand_msft")
+    assert accession_selection is not None
+    assert accession_selection.document_name == "msft-20260630.htm"
+    assert store.resolve_accession_selection("0000789019-26-000001", candidate_id="cand_nvda") is None
+    assert store.resolve_accession_selection("0000000000-00-000000", candidate_id="cand_msft") is None
+
     # Reject non-existent receipt
     assert store.resolve_selection("frec_unknown") is None

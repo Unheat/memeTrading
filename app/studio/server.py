@@ -54,10 +54,15 @@ def get_all_cases(cases_root: str = "cases") -> list[dict[str, Any]]:
 
         ticker = ""
         title = ""
+        publication_status = "blocked"
+        publication_reasons: list[str] = []
         if has_json:
             try:
                 data = json.loads((d / "investigation.json").read_text(encoding="utf-8"))
                 ticker = data.get("ticker", "")
+                pub = data.get("publication_readiness") or {}
+                publication_status = pub.get("status", "blocked")
+                publication_reasons = list(pub.get("reasons") or [])
             except Exception:
                 pass
 
@@ -78,6 +83,9 @@ def get_all_cases(cases_root: str = "cases") -> list[dict[str, Any]]:
             "has_article": has_article,
             "has_memo": has_memo,
             "has_video": has_video,
+            "publication_status": publication_status,
+            "publication_reasons": publication_reasons,
+            "is_publishable": publication_status == "publishable",
             "mtime": d.stat().st_mtime,
         })
 
@@ -140,11 +148,21 @@ class StudioHandler(BaseHTTPRequestHandler):
                 vids = list(video_dir.glob("*/final-faceless-reel.mp4")) if video_dir.exists() else []
                 has_video = bool(vids)
 
+                inv_path = case_dir / "investigation.json"
+                pub_readiness: dict[str, Any] = {}
+                if inv_path.exists():
+                    try:
+                        inv_data = json.loads(inv_path.read_text(encoding="utf-8"))
+                        pub_readiness = dict(inv_data.get("publication_readiness") or {})
+                    except Exception:
+                        pass
+
                 self._send_json({
                     "case_id": case_dir.name,
                     "article": article_text,
                     "caption": caption_text,
                     "has_video": has_video,
+                    "publication_readiness": pub_readiness,
                 })
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=404)
@@ -237,12 +255,44 @@ class StudioHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "case_id is required"}, status=400)
                 return
 
+            try:
+                case_path = find_case_dir(case_id)
+            except Exception as e:
+                self._send_json({"error": f"Case not found: {e}"}, status=404)
+                return
+
+            inv_path = case_path / "investigation.json"
+            if not inv_path.exists():
+                self._send_json({"error": f"Case {case_id} lacks investigation.json audit record."}, status=400)
+                return
+
+            try:
+                inv_data = json.loads(inv_path.read_text(encoding="utf-8"))
+            except Exception as e:
+                self._send_json({"error": f"Invalid investigation.json for {case_id}: {e}"}, status=400)
+                return
+
+            pub = inv_data.get("publication_readiness") or {}
+            if pub.get("status") != "publishable" or not pub.get("passed"):
+                reasons = pub.get("reasons") or ["Case publication readiness is not publishable"]
+                self._send_json(
+                    {
+                        "error": f"Case {case_id} is blocked from video generation: {'; '.join(reasons)}",
+                        "publication_readiness": pub,
+                    },
+                    status=400,
+                )
+                return
+
+            if not (case_path / "article.md").exists():
+                self._send_json({"error": f"Case {case_id} lacks a verified article.md"}, status=400)
+                return
+
             def _video_worker():
                 with _JOB_LOCK:
                     _ACTIVE_JOB["status"] = "rendering_video"
                     _ACTIVE_JOB["log"] = [f"Rendering video reel for {case_id}..."]
                 try:
-                    case_path = find_case_dir(case_id)
                     rendered = generate_video_for_case(case_path, character_pair=character_pair)
                     with _JOB_LOCK:
                         _ACTIVE_JOB["status"] = "completed"
@@ -265,6 +315,34 @@ class StudioHandler(BaseHTTPRequestHandler):
 
             try:
                 case_path = find_case_dir(case_id)
+            except Exception as e:
+                self._send_json({"error": f"Case not found: {e}"}, status=404)
+                return
+
+            inv_path = case_path / "investigation.json"
+            if not inv_path.exists():
+                self._send_json({"error": f"Case {case_id} lacks investigation.json audit record."}, status=400)
+                return
+
+            try:
+                inv_data = json.loads(inv_path.read_text(encoding="utf-8"))
+            except Exception as e:
+                self._send_json({"error": f"Invalid investigation.json for {case_id}: {e}"}, status=400)
+                return
+
+            pub = inv_data.get("publication_readiness") or {}
+            if pub.get("status") != "publishable" or not pub.get("passed"):
+                reasons = pub.get("reasons") or ["Case publication readiness is not publishable"]
+                self._send_json(
+                    {
+                        "error": f"Case {case_id} is blocked from publication: {'; '.join(reasons)}",
+                        "publication_readiness": pub,
+                    },
+                    status=400,
+                )
+                return
+
+            try:
                 res = publish_case(
                     case_dir=case_path,
                     youtube_upload=youtube_upload,

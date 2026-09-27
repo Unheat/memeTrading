@@ -200,6 +200,11 @@ def test_generate_article_markdown():
             "filing_date": "2026-09-01",
         }
     ]
+    state["status"] = "completed"
+    state["evidence_gate"] = {"passed": True}
+    state["accounting_gate"] = {"passed": True}
+    state["valuation_gate"] = {"passed": True}
+    state["asymmetry_gate"] = {"passed": True}
     memo_md = "# Research Memo\nGross margin expanded to 36.2% [SEC 10-Q]."
 
     article = generate_article_markdown(memo_md, state, model=FakeArticleModel())
@@ -266,9 +271,30 @@ def test_generate_article_markdown_multi_candidate():
 
     req = ResearchRequest(query="Find 2 best tech stocks", ticker=None, requested_ranking_count=2)
     state = create_initial_state(req, case_id="multi_art")
+    state["status"] = "completed"
     state["candidates"] = {
-        "cand_nvda": {"candidate_id": "cand_nvda", "ticker": "NVDA", "sec_financials": {"status": "ok", "periods": ["2026Q3"]}},
-        "cand_googl": {"candidate_id": "cand_googl", "ticker": "GOOGL", "sec_financials": {"status": "ok", "periods": ["2026Q2"]}},
+        "cand_nvda": {
+            "candidate_id": "cand_nvda",
+            "ticker": "NVDA",
+            "company": "NVIDIA Corp",
+            "sec_financials": {
+                "status": "ok",
+                "provider": "0001045810-26-000045",
+                "periods": ["2026Q3"],
+                "revenue": {"2026Q3": 35000000000.0},
+            },
+        },
+        "cand_googl": {
+            "candidate_id": "cand_googl",
+            "ticker": "GOOGL",
+            "company": "Alphabet Inc",
+            "sec_financials": {
+                "status": "ok",
+                "provider": "0001652044-26-000048",
+                "periods": ["2026Q2"],
+                "revenue": {"2026Q2": 95000000000.0},
+            },
+        },
     }
     memo_md = "# Deep Research Report\nTop 2: NVDA and GOOGL."
 
@@ -312,6 +338,25 @@ def test_generate_reel_script_safe_fallback():
 def test_generate_media_package_success():
     req = ResearchRequest(query="Investigate MU DDR5 boom", ticker="MU", company="Micron")
     state = create_initial_state(req, case_id="case_mu_media")
+    state["status"] = "completed"
+    state["evidence_gate"] = {"passed": True}
+    state["accounting_gate"] = {"passed": True}
+    state["valuation_gate"] = {"passed": True}
+    state["asymmetry_gate"] = {"passed": True}
+    state["sec_financials"] = {
+        "status": "ok",
+        "provider": "0001193125-26-123456",
+        "periods": ["2026Q3"],
+        "revenue": {"2026Q3": 34800000000.0},
+        "gross_margin_pct": {"2026Q3": 0.362},
+    }
+    state["consensus_snapshot"] = {
+        "target_mean_price": 1513.11,
+        "ratings": {"buy": 36, "hold": 4},
+    }
+    state["market_context"] = {
+        "quote": {"price": 927.60, "market_cap": 1048000000000.0},
+    }
     state["evidence"] = [
         {
             "form": "10-Q",
@@ -344,11 +389,12 @@ def test_generate_media_package_safe_fallback_on_parse_error():
         def invoke(self, messages):
             self.call_count += 1
             if self.call_count == 1:
-                return AIMessage(content="# Article\nNo claims.")
+                return AIMessage(content="# Article\nPrimary filing excerpt confirmed [1].")
             return AIMessage(content="Not valid json or dialogue format.")
 
-    req = ResearchRequest(query="Investigate XYZ", ticker="XYZ")
+    req = ResearchRequest(query="Investigate XYZ", ticker="XYZ", requested_position_decision=False)
     state = create_initial_state(req, case_id="case_xyz_fallback")
+    state["status"] = "completed"
     state["evidence"] = [{"source_url": "https://www.sec.gov/example", "quote": "Primary filing excerpt."}]
     pkg = generate_media_package(state, model=BrokenDialogueModel())
 
@@ -356,3 +402,83 @@ def test_generate_media_package_safe_fallback_on_parse_error():
     full_text = " ".join(line["text"] for line in pkg.dialogue_json)
     assert "gross margin expansion" not in full_text.lower()
     assert "consumer demand surged" not in full_text.lower()
+
+
+def test_validate_article_body_citations_valid():
+    """Valid in-text citations matching available cards pass validation."""
+    from app.agent.media import CitationCard, validate_article_body_citations
+
+    cards = [
+        CitationCard(index=1, tag="[1]", source_type="SEC Filing", title="10-K", url="https://sec.gov/1"),
+        CitationCard(index=2, tag="[2]", source_type="Consensus", title="Target", url="https://analyst.com/2"),
+    ]
+    article = """# Research Headline
+*Analytical deck explaining the situation.*
+
+> ### Executive Briefing
+> Summary callout box.
+
+Official filings confirm 15% revenue growth [1].
+
+| Metric | Value |
+| :--- | :--- |
+| Growth | 15% [1] |
+| Target | $100 [2] |
+
+Analyst consensus remains confident [2].
+"""
+    result = validate_article_body_citations(article, cards)
+    assert result["passed"] is True
+    assert result["errors"] == []
+
+
+def test_validate_article_body_citations_dangling_tag():
+    """Dangling citation tag referencing non-existent index fails validation."""
+    from app.agent.media import CitationCard, validate_article_body_citations
+
+    cards = [
+        CitationCard(index=1, tag="[1]", source_type="SEC Filing", title="10-K", url="https://sec.gov/1"),
+    ]
+    article = """# Research Headline
+Revenue grew [1], but margin reached 40% [99].
+"""
+    result = validate_article_body_citations(article, cards)
+    assert result["passed"] is False
+    assert any("[99]" in err for err in result["errors"])
+
+
+def test_validate_article_body_citations_uncited_paragraph():
+    """Uncited factual paragraph fails validation."""
+    from app.agent.media import CitationCard, validate_article_body_citations
+
+    cards = [
+        CitationCard(index=1, tag="[1]", source_type="SEC Filing", title="10-K", url="https://sec.gov/1"),
+    ]
+    article = """# Research Headline
+Revenue grew by 15% [1].
+
+Google secretly launched a new chip architecture without announcement.
+"""
+    result = validate_article_body_citations(article, cards)
+    assert result["passed"] is False
+    assert any("Factual paragraph lacks a valid citation tag" in err for err in result["errors"])
+
+
+def test_validate_article_body_citations_uncited_table_row():
+    """Table data row lacking citation tag fails validation."""
+    from app.agent.media import CitationCard, validate_article_body_citations
+
+    cards = [
+        CitationCard(index=1, tag="[1]", source_type="SEC Filing", title="10-K", url="https://sec.gov/1"),
+    ]
+    article = """# Research Headline
+Revenue grew by 15% [1].
+
+| Metric | Value |
+| :--- | :--- |
+| Revenue | $30B [1] |
+| Operating Margin | 25% |
+"""
+    result = validate_article_body_citations(article, cards)
+    assert result["passed"] is False
+    assert any("Table row lacks a valid citation tag" in err for err in result["errors"])

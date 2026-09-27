@@ -39,7 +39,8 @@ def _keyless_config() -> AppConfig:
     )
 
 
-def test_default_assessor_offline_fallback():
+def test_default_assessor_offline_fallback_fails_closed_without_language_inference():
+    """Return no inferred support or contradiction when structured assessment is unavailable."""
     with patch.dict("os.environ", {}, clear=True), patch(
         "app.config.load_config", return_value=_keyless_config()
     ):
@@ -50,14 +51,15 @@ def test_default_assessor_offline_fallback():
             _make_retrieved_chunk("c1", "The agreement is a non-binding letter of intent."),
             _make_retrieved_chunk("c2", "Gross margin expanded to 36 percent."),
         ]
+        result = assessor("Company signed a binding definitive agreement", chunks)
 
-        # Contradiction check
-        res = assessor("Company signed a binding definitive agreement", chunks)
-        assert res["verdict"] in ("CONFIRMED", "CONTRADICTED", "PARTIALLY_CONFIRMED", "INSUFFICIENT_EVIDENCE")
-        assert "c1" in res["evidence_against_chunk_ids"] or "c1" in res["evidence_for_chunk_ids"] or res["verdict"] == "INSUFFICIENT_EVIDENCE"
+    assert result["verdict"] == "INSUFFICIENT_EVIDENCE"
+    assert result["evidence_for_chunk_ids"] == []
+    assert result["evidence_against_chunk_ids"] == []
 
 
 def test_default_assessor_insufficient_evidence():
+    """Return insufficient evidence when no structured assessment can be made."""
     with patch.dict("os.environ", {}, clear=True), patch(
         "app.config.load_config", return_value=_keyless_config()
     ):
@@ -65,3 +67,38 @@ def test_default_assessor_insufficient_evidence():
         res = assessor("Unrelated aerospace satellite launch", [])
         assert res["verdict"] == "INSUFFICIENT_EVIDENCE"
         assert len(res["missing_evidence"]) > 0
+
+
+def test_default_assessor_normalizes_openai_gateway_model_and_fails_closed(monkeypatch):
+    """Use gateway-native model IDs and degrade safely on a provider outage."""
+    from app.config import AppConfig, LLMConfig, ModelEndpointConfig
+    from app.sec.verifier import AssessorUnavailableError
+
+    captured: dict[str, object] = {}
+
+    def unavailable_assessor(_config):
+        """Capture configuration and simulate a temporary provider failure."""
+        captured["model"] = _config.model
+
+        def assess(_: str, __):
+            """Raise the provider error supplied by the test."""
+            raise AssessorUnavailableError()
+
+        return assess
+
+    config = AppConfig(
+        llm=LLMConfig(models=[ModelEndpointConfig(model="openai/fastg", api_key_env="TEST_ASSESSOR_KEY", base_url="http://localhost:20128/v1")])
+    )
+    monkeypatch.setenv("TEST_ASSESSOR_KEY", "test-key")
+    monkeypatch.setattr("app.config.load_config", lambda: config)
+    monkeypatch.setattr(
+        "app.sec.openai_compatible_assessor.create_openai_compatible_sec_assessor",
+        unavailable_assessor,
+    )
+
+    assessor = get_default_sec_assessor()
+    result = assessor("Revenue increased", [_make_retrieved_chunk("c1", "Revenue increased")])
+
+    assert captured["model"] == "fastg"
+    assert result["verdict"] == "INSUFFICIENT_EVIDENCE"
+    assert result["evidence_for_chunk_ids"] == []

@@ -16,8 +16,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.agent.gate import evaluate_publication_readiness
 from app.agent.graph import create_research_graph
-from app.agent.media import generate_article_markdown, generate_reel_script
+from app.agent.grounded_synthesis import materialize_evidence_records
+from app.agent.media import build_source_registry, generate_article_markdown, generate_reel_script
 from app.agent.model_runtime import ModelRuntime, create_default_model_runtime
 from app.agent.memo import render_forensic_memo, render_research_report, serialize_investigation_json
 from app.agent.state import BudgetLimits, ResearchRequest, create_initial_state
@@ -164,22 +166,40 @@ def run_investigation(
         messages = final_state.get("messages", [])
         last_message = messages[-1] if messages else None
         final_text = getattr(last_message, "content", "") if last_message else ""
+        materialize_evidence_records(final_state)
+        citation_cards = build_source_registry(final_state)
+        publication_readiness = evaluate_publication_readiness(final_state, citation_cards)
+        final_state["publication_readiness"] = publication_readiness
         explicit_position_request = bool((final_state.get("research_intent") or {}).get("requested_position_decision"))
         memo_md = (
             render_forensic_memo(final_state, final_text)
             if explicit_position_request and final_state.get("ticker")
             else render_research_report(final_state, final_text)
         )
-        _write_json(target_case_dir / "investigation.json", serialize_investigation_json(final_state, memo_md))
+        _write_json(
+            target_case_dir / "investigation.json",
+            serialize_investigation_json(
+                final_state,
+                memo_md,
+                citation_cards=[card.to_dict() for card in citation_cards],
+                publication_readiness=publication_readiness,
+            ),
+        )
         (target_case_dir / "memo.md").write_text(memo_md, encoding="utf-8")
-        logger.info("pipeline.artifacts_written case_id=%s memo_kind=%s", case_id, "forensic" if explicit_position_request else "research")
+        logger.info(
+            "pipeline.artifacts_written case_id=%s memo_kind=%s publication=%s",
+            case_id,
+            "forensic" if explicit_position_request else "research",
+            publication_readiness["status"],
+        )
 
         # --- Post-Graph Media Stages (opt-in) ---
         article_md: str | None = None
         artifacts_list = ["memo.md", "investigation.json"]
+        publication_allowed = publication_readiness["passed"]
 
         # Stage A: Article generation
-        if effective_article:
+        if effective_article and publication_allowed:
             try:
                 article_md = generate_article_markdown(memo_md, final_state, model=runtime.model)
                 (target_case_dir / "article.md").write_text(article_md, encoding="utf-8")
@@ -187,9 +207,11 @@ def run_investigation(
                 logger.info("pipeline.article_written case_id=%s", case_id)
             except Exception as exc:
                 logger.warning("Article generation failed for %s: %s", case_id, exc)
+        elif effective_article:
+            logger.info("pipeline.article_blocked case_id=%s reasons=%s", case_id, publication_readiness["reasons"])
 
         # Stage B: Video script generation
-        if effective_video:
+        if effective_video and publication_allowed:
             try:
                 source_text = article_md or memo_md
                 dialogue_json, reel_script_text, caption_text = generate_reel_script(
@@ -253,6 +275,7 @@ def run_investigation(
         manifest.update({
             "status": "completed", "finished_at": datetime.now(timezone.utc).isoformat(),
             "last_stage": "rendered", "research_status": final_state["status"],
+            "publication_readiness": dict(publication_readiness or {}),
             "artifacts": artifacts_list,
             "receipt_summary": final_state.get("searches_performed", []),
             "source_count": total_sources,

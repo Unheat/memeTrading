@@ -162,6 +162,39 @@ class SecReceiptStore:
                 source_url=doc.source_url,
             )
 
+    def resolve_accession_selection(
+        self,
+        accession: str,
+        candidate_id: str | None = None,
+    ) -> SelectedSecDocument | None:
+        """Resolve a previously discovered accession without trusting model-supplied metadata.
+
+        Args:
+            accession: SEC accession selected from a prior discovery receipt.
+            candidate_id: Optional candidate scope that must own the discovery.
+
+        Returns:
+            Server-resolved selected document, or None when no scoped discovery matches.
+        """
+        normalized = accession.strip()
+        if not normalized:
+            return None
+        with self._lock:
+            for filing in self._filings.values():
+                if filing.accession != normalized:
+                    continue
+                if candidate_id and filing.candidate_id and filing.candidate_id != candidate_id:
+                    continue
+                if not filing.filing_metadata or not filing.documents:
+                    return None
+                document = filing.documents[0]
+                return SelectedSecDocument(
+                    filing=filing.filing_metadata,
+                    document_name=document.document_name,
+                    source_url=document.source_url,
+                )
+        return None
+
 
 # Global process receipt registry
 _GLOBAL_RECEIPT_STORE = SecReceiptStore()

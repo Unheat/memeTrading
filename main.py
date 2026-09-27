@@ -252,15 +252,18 @@ def main() -> int:
     theme = args.theme
 
     if not query:
-        print("\n[Interactive Mode]\n")
-        try:
-            query = input("Deep research request: ").strip()
-            while not query:
-                print("A research request is required.")
+        if ticker:
+            query = f"Comprehensive research and investment diligence on {ticker}"
+        else:
+            print("\n[Interactive Mode]\n")
+            try:
                 query = input("Deep research request: ").strip()
-        except (KeyboardInterrupt, EOFError):
-            print("\nAborted.")
-            return 1
+                while not query:
+                    print("A research request is required.")
+                    query = input("Deep research request: ").strip()
+            except (KeyboardInterrupt, EOFError):
+                print("\nAborted.")
+                return 1
 
     gen_article, gen_video, render = _resolve_media_flags(args)
 

@@ -23,6 +23,7 @@ from app.agent.media import (
     RICK_VOICE_ID,
     MORTY_VOICE_ID,
     generate_reel_script,
+    validate_article_body_citations,
 )
 from app.agent.model_runtime import create_default_model_runtime
 from app.config import load_config
@@ -48,16 +49,35 @@ def generate_video_for_case(
         Path to rendered MP4 video, or None if script_only or failure.
     """
     case_path = Path(case_dir)
-    article_file = case_path / "article.md"
-    memo_file = case_path / "memo.md"
+    inv_file = case_path / "investigation.json"
+    if not inv_file.exists():
+        raise FileNotFoundError(f"investigation.json not found in {case_path}; cannot verify publication readiness.")
+    try:
+        inv_data: dict[str, Any] = json.loads(inv_file.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ValueError(f"Failed parsing {inv_file}: {exc}") from exc
 
-    source_text = ""
-    if article_file.exists():
-        source_text = article_file.read_text(encoding="utf-8")
-    elif memo_file.exists():
-        source_text = memo_file.read_text(encoding="utf-8")
-    else:
-        raise FileNotFoundError(f"Neither article.md nor memo.md found in {case_path}")
+    pub_readiness = inv_data.get("publication_readiness") or {}
+    if pub_readiness.get("status") != "publishable" or not pub_readiness.get("passed"):
+        reasons = pub_readiness.get("reasons") or ["case publication readiness is not publishable"]
+        raise ValueError(f"Case {case_path.name} is blocked from video generation: {'; '.join(reasons)}")
+
+    article_file = case_path / "article.md"
+    if not article_file.exists():
+        raise FileNotFoundError(
+            f"article.md not found in {case_path}; standalone video requires a publishable cited article and cannot fall back to memo.md"
+        )
+
+    canonical_cards = inv_data.get("citation_cards") or []
+    if not canonical_cards:
+        raise ValueError(f"Case {case_path.name} has no persisted canonical citation_cards.")
+
+    source_text = article_file.read_text(encoding="utf-8")
+    validation = validate_article_body_citations(source_text, canonical_cards)
+    if not validation["passed"]:
+        raise ValueError(
+            f"Case {case_path.name} article failed citation validation: {'; '.join(validation['errors'])}"
+        )
 
     cfg = load_config()
 

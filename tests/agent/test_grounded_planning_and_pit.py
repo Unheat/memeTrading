@@ -6,7 +6,13 @@ import pytest
 from app.agent.contracts import ToolResultEnvelope
 from app.agent.gate import evaluate_research_completeness
 from app.agent.graph import create_research_graph, _has_evidence_gaps
-from app.agent.planning import generate_research_plan, ResearchPlanSchema
+from app.agent.planning import (
+    assess_scout_need,
+    generate_research_plan,
+    PlannerScoutAssessment,
+    PlannerScoutQuery,
+    ResearchPlanSchema,
+)
 from app.agent.screening import build_candidate_comparisons
 from app.agent.state import ResearchRequest, create_initial_state
 from app.agent.tool_result_ingestion import ingest_tool_results
@@ -233,3 +239,121 @@ def test_screening_comparisons_unwraps_market_cap_dict():
     cards = build_candidate_comparisons(candidates, ["cand_nvda"], ["market_cap"])
     assert len(cards) == 1
     assert cards[0]["candidate_values"]["NVDA"]["value"] == 3000000000000.0
+
+
+def test_assess_scout_need_fast_path_when_ticker_or_company_provided():
+    """Explicit ticker or company bypasses LLM scout call entirely (zero searches, needs_scouting=False)."""
+    mock_model = MagicMock()
+    # 1. With explicit ticker
+    res_ticker = assess_scout_need(mock_model, "Analyze balance sheet and 10-K", ticker="AAPL")
+    assert res_ticker.needs_scouting is False
+    assert res_ticker.scout_queries == []
+    mock_model.invoke.assert_not_called()
+
+    # 2. With explicit company
+    res_company = assess_scout_need(mock_model, "Deep dive valuation", company="Microsoft")
+    assert res_company.needs_scouting is False
+    assert res_company.scout_queries == []
+    mock_model.invoke.assert_not_called()
+
+
+def test_assess_scout_need_open_ended_queries():
+    """Open-ended screening generates targeted keyword queries for web discovery."""
+    class MockStructuredModel:
+        def with_structured_output(self, schema):
+            mock_runnable = MagicMock()
+            if schema is PlannerScoutAssessment:
+                mock_runnable.invoke.return_value = PlannerScoutAssessment(
+                    needs_scouting=True,
+                    scout_queries=[
+                        PlannerScoutQuery(
+                            tool_name="search_web",
+                            query="top enterprise tech free cash flow growth 2026",
+                        ),
+                    ],
+                )
+            return mock_runnable
+
+    res = assess_scout_need(MockStructuredModel(), "find best 2 stock in tech to invest right now")
+    assert res.needs_scouting is True
+    assert len(res.scout_queries) == 1
+    assert res.scout_queries[0].tool_name == "search_web"
+    assert "free cash flow" in res.scout_queries[0].query
+
+
+def test_assess_scout_need_routes_social_trend():
+    """Social sentiment queries route to search_social rather than raw search_web."""
+    class MockSocialModel:
+        def with_structured_output(self, schema):
+            mock_runnable = MagicMock()
+            if schema is PlannerScoutAssessment:
+                mock_runnable.invoke.return_value = PlannerScoutAssessment(
+                    needs_scouting=True,
+                    scout_queries=[
+                        PlannerScoutQuery(
+                            tool_name="search_social",
+                            query="trending tech stocks ApeWisdom Reddit",
+                        ),
+                    ],
+                )
+            return mock_runnable
+
+    res = assess_scout_need(MockSocialModel(), "what tech stocks are trending on Reddit and ApeWisdom?")
+    assert res.needs_scouting is True
+    assert res.scout_queries[0].tool_name == "search_social"
+    assert "ApeWisdom" in res.scout_queries[0].query
+
+
+def test_planner_node_executes_model_driven_scout_search():
+    """planner_node runs only the model's targeted queries, not raw user conversational prompt."""
+    executed_queries = []
+
+    class MockUnifiedModel:
+        def with_structured_output(self, schema):
+            mock_runnable = MagicMock()
+            if schema is PlannerScoutAssessment:
+                mock_runnable.invoke.return_value = PlannerScoutAssessment(
+                    needs_scouting=True,
+                    scout_queries=[
+                        PlannerScoutQuery(
+                            tool_name="search_web",
+                            query="leading AI semiconductor hardware 2026",
+                        ),
+                    ],
+                )
+            elif schema is ResearchPlanSchema:
+                mock_runnable.invoke.return_value = ResearchPlanSchema(
+                    brief="Analyze AI semiconductor leaders",
+                    research_type="multi_candidate_ranking",
+                    ranking_count=2,
+                    candidate_entities=["NVDA", "AMD"],
+                    primary_questions=["Compare data center revenue", "Assess margin trajectory"],
+                    requires_candidate_workspaces=True,
+                )
+            return mock_runnable
+
+    # Custom mock tool tracking invoked queries
+    from langchain_core.tools import tool
+
+    @tool
+    def search_web(query: str, limit: int = 5) -> str:
+        """Mock web search."""
+        executed_queries.append(query)
+        return json.dumps({
+            "status": "ok",
+            "records": [{"title": "NVDA and AMD AI chips", "snippet": "Strong data center demand in 2026."}],
+        })
+
+    req = ResearchRequest(query="find best 2 stock in tech to invest right now", requested_ranking_count=2)
+    state = create_initial_state(req, case_id="test_scout_case")
+    graph = create_research_graph(MockUnifiedModel(), [search_web])
+
+    plan_out = graph.nodes["planner"].invoke(state)
+
+    # Verify that the executed query was the model-formulated keyword query, NOT the raw prompt
+    assert executed_queries == ["leading AI semiconductor hardware 2026"]
+    assert "find best 2 stock in tech" not in executed_queries
+    # Verify candidate workspaces were auto-seeded
+    assert "cand_nvda" in plan_out["candidates"]
+    assert "cand_amd" in plan_out["candidates"]
+

@@ -51,16 +51,55 @@ def test_run_investigation_default_no_media(tmp_path):
     assert not (case_dir / "faceless" / "dialogue.json").exists()
 
 
-def test_run_investigation_with_article_flag(tmp_path):
-    """Passing generate_article=True writes article.md using decoupled generator."""
+def test_run_investigation_with_article_flag_blocked_when_insufficient_evidence(tmp_path):
+    """Passing generate_article=True does not write article.md when publication readiness is blocked."""
+    class ArticleModel:
+        def bind_tools(self, tools):
+            return self
+        def invoke(self, messages):
+            return AIMessage(content="Final forensic conclusion.")
+
+    req = ResearchRequest(query="Investigate ART", ticker="ART")
+    result = run_investigation(
+        request=req, model=ArticleModel(), cases_root=tmp_path, generate_article=True,
+    )
+
+    case_dir = tmp_path / result.case_id
+    assert not (case_dir / "article.md").exists()
+    assert result.article_markdown is None
+    assert result.final_state["publication_readiness"]["status"] == "blocked"
+
+
+def test_run_investigation_with_article_flag_publishable(tmp_path, monkeypatch):
+    """Passing generate_article=True writes article.md when publication readiness passes."""
     class ArticleModel:
         def bind_tools(self, tools):
             return self
         def invoke(self, messages):
             content = str(getattr(messages[-1], "content", "")) if messages else ""
             if "Write an institutional" in content:
-                return AIMessage(content="# Cited Article\nFacts with [1] citations.")
+                return AIMessage(content="# Cited Article\nOfficial filings confirm revenue growth [1].")
             return AIMessage(content="Final forensic conclusion.")
+
+    from langgraph.graph.state import CompiledStateGraph
+
+    orig_invoke = CompiledStateGraph.invoke
+    def mock_invoke(self, state, config=None):
+        out = dict(orig_invoke(self, state, config=config))
+        out["status"] = "completed"
+        out["evidence"] = [{
+            "form": "10-K",
+            "accession": "0000000000-26-000001",
+            "source_url": "https://www.sec.gov/Archives/edgar/data/123/000000000026000001/doc.htm",
+            "quote": "Revenue grew 15% year-over-year.",
+        }]
+        out["evidence_gate"] = {"passed": True}
+        out["accounting_gate"] = {"passed": True}
+        out["valuation_gate"] = {"passed": True}
+        out["asymmetry_gate"] = {"passed": True}
+        return out
+
+    monkeypatch.setattr(CompiledStateGraph, "invoke", mock_invoke)
 
     req = ResearchRequest(query="Investigate ART", ticker="ART")
     result = run_investigation(
@@ -72,6 +111,7 @@ def test_run_investigation_with_article_flag(tmp_path):
     article_content = (case_dir / "article.md").read_text(encoding="utf-8")
     assert "[1]" in article_content
     assert result.article_markdown is not None
+    assert result.final_state["publication_readiness"]["status"] == "publishable"
 
 
 def test_run_investigation_with_rick_morty_character_pair(tmp_path):

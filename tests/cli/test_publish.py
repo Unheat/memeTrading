@@ -71,6 +71,24 @@ Micron is reporting recovering margins [1].
         "as_of": "2026-09-18",
         "thesis": "Forensic Accounting Warning",
         "valuation": {"implied_growth_rate": 0.142, "fair_value": 78.50},
+        "publication_readiness": {
+            "passed": True,
+            "status": "publishable",
+            "reasons": [],
+            "allowed_artifacts": ["article", "video", "publish"],
+        },
+        "citation_cards": [
+            {
+                "index": 1,
+                "source_type": "SEC Filing",
+                "title": "Form 10-K FY2024",
+                "url": "https://www.sec.gov",
+                "accession": "0000723125-24-000075",
+                "filing_date": "2024-10-04",
+                "facts": ["Recovering margins"],
+                "quotes": [],
+            }
+        ],
     }
     (case_dir / "investigation.json").write_text(json.dumps(inv_data), encoding="utf-8")
 
@@ -88,3 +106,46 @@ Micron is reporting recovering margins [1].
     assert "reverseDcfImpliedGrowth: '14.2%'" in content or 'reverseDcfImpliedGrowth: "14.2%"' in content or "14.2%" in content
     assert "targetValuation: '$78.50'" in content or 'targetValuation: "$78.50"' in content or "$78.50" in content
     assert "## Primary Sources & Regulatory Receipts" in content
+
+
+def test_publish_case_blocked_without_readiness(tmp_path: Path) -> None:
+    """Cases with blocked or missing publication readiness are rejected before writing."""
+    case_dir = tmp_path / "cases" / "BLOCKED-2026-09-18-001"
+    case_dir.mkdir(parents=True)
+    web_dir = tmp_path / "web"
+    web_dir.mkdir(parents=True)
+
+    (case_dir / "article.md").write_text("# Title\nSome content [1].", encoding="utf-8")
+    inv_data = {
+        "ticker": "BLK",
+        "publication_readiness": {
+            "passed": False,
+            "status": "blocked",
+            "reasons": ["accounting_gate did not pass"],
+        },
+        "citation_cards": [{"index": 1, "title": "SEC 10-K", "url": "https://sec.gov"}],
+    }
+    (case_dir / "investigation.json").write_text(json.dumps(inv_data), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="blocked from publication"):
+        publish_case(case_dir=case_dir, web_root=web_dir, youtube_upload=False, deploy=False)
+
+
+def test_publish_case_blocked_with_invalid_citations(tmp_path: Path) -> None:
+    """Cases with dangling or uncited claims in article.md are rejected."""
+    case_dir = tmp_path / "cases" / "INVALID-2026-09-18-001"
+    case_dir.mkdir(parents=True)
+    web_dir = tmp_path / "web"
+    web_dir.mkdir(parents=True)
+
+    # Article cites [99] which is not in citation_cards
+    (case_dir / "article.md").write_text("# Title\nDangling claim [99].", encoding="utf-8")
+    inv_data = {
+        "ticker": "INV",
+        "publication_readiness": {"passed": True, "status": "publishable", "reasons": []},
+        "citation_cards": [{"index": 1, "title": "SEC 10-K", "url": "https://sec.gov"}],
+    }
+    (case_dir / "investigation.json").write_text(json.dumps(inv_data), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="article failed citation validation"):
+        publish_case(case_dir=case_dir, web_root=web_dir, youtube_upload=False, deploy=False)

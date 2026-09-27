@@ -92,8 +92,8 @@ def test_verify_sec_claim_tool_wires_embedder_and_assessor(tmp_path):
     tools = create_agent_tools(cases_root=tmp_path)
     verify_tool = next(t for t in tools if t.name == "verify_sec_claim")
 
-    # Invoking verify_sec_claim should automatically prepare, index, and verify.
-    # Force the deterministic assessor so this unit test never reads local secrets or calls a network.
+    # Invoking verify_sec_claim should automatically prepare and index the local corpus.
+    # The keyless assessor fails closed rather than inferring a language verdict.
     from app.sec.default_assessor import get_default_sec_assessor
     from app.config import AppConfig, LLMConfig, ModelEndpointConfig
     keyless_config = AppConfig(
@@ -107,7 +107,9 @@ def test_verify_sec_claim_tool_wires_embedder_and_assessor(tmp_path):
     data = json.loads(output_str)
     assert data.get("status") == "ok"
     assert data.get("verification") is not None
-    assert data["verification"]["verdict"] == "CONFIRMED"
+    assert data["verification"]["verdict"] == "INSUFFICIENT_EVIDENCE"
+    assert data["verification"]["evidence_for"] == []
+    assert data["verification"]["evidence_against"] == []
 
 
 def test_pull_sec_filings_tool_invocation(tmp_path, monkeypatch):

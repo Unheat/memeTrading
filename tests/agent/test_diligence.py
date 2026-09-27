@@ -42,6 +42,82 @@ def test_conduct_candidate_diligence_tool_registration(tmp_path):
     assert "conduct_candidate_diligence" in tool_names
 
 
+def test_conduct_candidate_diligence_inherits_supervisor_context(monkeypatch, tmp_path):
+    """Pass candidate-owned values first and global valuation context as deterministic fallbacks."""
+    captured: dict[str, object] = {}
+
+    def fake_diligence(**kwargs):
+        """Capture the workspace the tool gives to the isolated diligence run."""
+        captured.update(kwargs["candidate_workspace"])
+        return {"status": "ok", "ticker": "MSFT", "candidate_id": "cand_msft"}
+
+    monkeypatch.setattr("app.agent.diligence.run_candidate_diligence", fake_diligence)
+    tool = next(item for item in create_agent_tools(cases_root=tmp_path) if item.name == "conduct_candidate_diligence")
+    state = {
+        "candidates": {
+            "cand_msft": {
+                "market_context": {"quote": {"price": 450.0}},
+                "sec_financials": {"periods": ["2026-Q2"]},
+                "consensus_snapshot": {"price_targets": {"mean": {"value": 500.0}}},
+            }
+        },
+        "market_context": {"quote": {"price": 1.0}},
+        "sec_financials": {"periods": ["1900-Q1"]},
+        "expectation_gap": {"assumptions": {"base": {"growth": 0.08}}},
+        "macro_series": {"DGS10": {"latest_value": 4.5}},
+    }
+
+    result = json.loads(tool.invoke({"ticker": "MSFT", "candidate_id": "cand_msft", "injected_state": state}))
+
+    assert result["status"] == "ok"
+    assert captured["market_context"] == {"quote": {"price": 450.0}}
+    assert captured["sec_financials"] == {"periods": ["2026-Q2"]}
+    assert captured["consensus_snapshot"]["price_targets"]["mean"]["value"] == 500.0
+    assert captured["expectation_gap"]["assumptions"]["base"]["growth"] == 0.08
+    assert captured["macro_series"]["DGS10"]["latest_value"] == 4.5
+
+
+def test_run_candidate_diligence_preserves_workspace_valuation_context(monkeypatch):
+    """Pass supervisor-collected consensus and macro inputs into deterministic quant analysis."""
+    def mock_forensic(cand_state, model):
+        """Return minimal forensic output without external analysis."""
+        return {"forensic_report": {"verdict": "CLEAN"}}
+
+    def mock_moat(cand_state, model):
+        """Return minimal moat output without external analysis."""
+        return {"moat_report": {"analysis": {"moat_rating": "WIDE"}}}
+
+    def mock_quant(cand_state):
+        """Assert the isolated candidate state retains supervisor-owned valuation inputs."""
+        assert cand_state["consensus_snapshot"]["price_targets"]["mean"]["value"] == 500.0
+        assert cand_state["macro_series"]["DGS10"]["latest_value"] == 4.5
+        return {
+            "quant_report": {
+                "valuation": {
+                    "fair_value_range": {"base": 500.0},
+                    "asymmetric_risk_reward": {"reward_to_risk_ratio": 3.5},
+                },
+                "reproducibility": {"verdict": "pass"},
+            }
+        }
+
+    monkeypatch.setattr("app.agent.diligence.run_forensic_analysis", mock_forensic)
+    monkeypatch.setattr("app.agent.diligence.run_moat_analysis", mock_moat)
+    monkeypatch.setattr("app.agent.diligence.run_quant_analysis", mock_quant)
+
+    workspace = {
+        "market_context": {"quote": {"price": 450.0}},
+        "sec_financials": {"status": "ok", "periods": ["2026-Q2"]},
+        "consensus_snapshot": {"price_targets": {"mean": {"value": 500.0}}},
+        "macro_series": {"DGS10": {"latest_value": 4.5}},
+    }
+
+    dossier = run_candidate_diligence("MSFT", candidate_workspace=workspace)
+
+    assert dossier["valuation"]["fair_value_range"]["base"] == 500.0
+    assert dossier["valuation"]["reward_to_risk_ratio"] == 3.5
+
+
 def test_run_candidate_diligence_staged_concurrency_execution(monkeypatch):
     """Verify Stage 1 (Exp/For/Moat) and Stage 3 (Bull/Bear) run concurrently with Stage 2 receiving assumptions."""
     call_order = []
