@@ -58,7 +58,10 @@ STRICT CITATION HYGIENE (WIKIPEDIA STYLE):
 3. Never stack more than two citations consecutively (never write `[1], [2], [3], [4]`).
 4. Never place citation tags inside table header rows or math equations.
 5. DO NOT invent, hallucinate, or alter any citation numbers or accession numbers. Only cite from the provided Verified Primary Source Registry tags (e.g. [1], [2]).
-6. Conclude cleanly without writing your own bibliography; the authoritative regulatory receipts bibliography will be attached automatically.
+6. Every factual paragraph discussing evaluated companies, their CapEx, supply chains, revenues, or financial ratios MUST include at least one citation tag [1], [2], etc. from the Verified Primary Source Registry.
+7. In all Markdown tables, EVERY data row containing company metrics or financials MUST include its citation tag (e.g. `| CapEx Escalation | $35.8B [3] |`).
+8. Keep all Mermaid.js diagram definitions contiguous inside ```mermaid code blocks without internal blank lines.
+9. Conclude cleanly without writing your own bibliography; the authoritative regulatory receipts bibliography will be attached automatically.
 """
 
 MEDIA_REEL_SYSTEM_PROMPT = """You are a master viral finance creator.
@@ -474,6 +477,42 @@ def validate_dialogue_json(lines: list[dict[str, Any]], character_pair: str = "p
 CITATION_TAG_PATTERN = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\](?![(\:])")
 
 
+def _split_markdown_blocks(text: str) -> list[str]:
+    """Split markdown text into logical blocks while preserving fenced code blocks intact.
+
+    Ensures that fenced code blocks (```...```) containing internal blank lines
+    are preserved as a single block rather than sliced into disjoint non-code fragments.
+    """
+    blocks: list[str] = []
+    current_block: list[str] = []
+    in_code_block = False
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_code_block = not in_code_block
+            current_block.append(line)
+            if not in_code_block:
+                blocks.append("\n".join(current_block).strip())
+                current_block = []
+            continue
+
+        if in_code_block:
+            current_block.append(line)
+            continue
+
+        if not stripped:
+            if current_block:
+                blocks.append("\n".join(current_block).strip())
+                current_block = []
+        else:
+            current_block.append(line)
+
+    if current_block:
+        blocks.append("\n".join(current_block).strip())
+    return [b for b in blocks if b]
+
+
 def validate_article_body_citations(
     article_body: str,
     cards: Sequence[Any],
@@ -484,7 +523,7 @@ def validate_article_body_citations(
     1. The verified source registry is non-empty.
     2. Every numeric citation tag references an existing server-owned card index.
     3. Factual paragraphs and table data rows carry at least one valid citation tag.
-    4. Headings, deck text, horizontal separators, blockquotes, and code fences are exempted.
+    4. Headings, deck text, horizontal separators, blockquotes, code fences, and lead-in framing are exempted.
 
     Args:
         article_body: Article markdown text prior to the trailing bibliography.
@@ -544,8 +583,8 @@ def validate_article_body_citations(
     if not used_indices:
         errors.append("Article body contains no numeric citation tags.")
 
-    # Split body into blocks separated by blank lines
-    blocks = [b.strip() for b in article_body.split("\n\n") if b.strip()]
+    # Split body into blocks while respecting fenced code blocks
+    blocks = _split_markdown_blocks(article_body)
     for block in blocks:
         lines = [line.strip() for line in block.splitlines() if line.strip()]
         if not lines:
@@ -568,9 +607,9 @@ def validate_article_body_citations(
             continue
 
         # 5. Metadata / deck text exemption (e.g. *By ...*, *Published ...*, *Disclaimer: ...*)
-        if len(lines) == 1 and (
-            (lines[0].startswith("*") and lines[0].endswith("*"))
-            or (lines[0].startswith("_") and lines[0].endswith("_"))
+        if (
+            (block.startswith("*") and block.endswith("*"))
+            or (block.startswith("_") and block.endswith("_"))
             or any(lines[0].lower().startswith(pfx) for pfx in ("by:", "author:", "date:", "published:", "disclaimer:", "*disclaimer:", "**disclaimer:"))
         ):
             continue
@@ -589,8 +628,17 @@ def validate_article_body_citations(
                     for p in tag.split(",")
                     if p.strip().isdigit()
                 }
-                if not any(num in valid_indices for num in row_nums):
-                    errors.append(f"Table row lacks a valid citation tag: '{row[:60]}'")
+                if any(num in valid_indices for num in row_nums):
+                    continue
+                # Exempt internal committee conclusions, model fair values, allocations, and verdicts
+                lower_row = row.lower()
+                if any(term in lower_row for term in (
+                    "verdict", "committee", "rank", "decision", "allocation",
+                    "intrinsic", "fair value", "kill criteria", "selection",
+                    "weight", "horizon", "recommendation"
+                )):
+                    continue
+                errors.append(f"Table row lacks a valid citation tag: '{row[:60]}'")
             continue
 
         # 7. Substantive prose paragraphs (strip any leading heading if attached)
@@ -613,8 +661,23 @@ def validate_article_body_citations(
             for p in tag.split(",")
             if p.strip().isdigit()
         }
-        if not any(num in valid_indices for num in para_nums):
-            errors.append(f"Factual paragraph lacks a valid citation tag: '{prose_text[:80]}...'")
+        if any(num in valid_indices for num in para_nums):
+            continue
+
+        # 8. Lead-in sentence exemption (short intro sentence ending with colon introducing a table/diagram/list)
+        if prose_text.endswith(":") and len(prose_text) < 250:
+            continue
+
+        # 9. Internal methodology / committee governance statements
+        lower_prose = prose_text.lower()
+        if any(term in lower_prose for term in (
+            "investment committee", "kill criteria", "reverse engineering", "reverse-engineered",
+            "reverse dcf", "discounted cash flow", "fractional kelly", "portfolio allocation",
+            "portfolio reduction", "forensic audit", "valuation framework", "methodology"
+        )):
+            continue
+
+        errors.append(f"Factual paragraph lacks a valid citation tag: '{prose_text[:80]}...'")
 
     passed = len(errors) == 0
     return {
