@@ -357,3 +357,61 @@ def test_planner_node_executes_model_driven_scout_search():
     assert "cand_nvda" in plan_out["candidates"]
     assert "cand_amd" in plan_out["candidates"]
 
+
+def test_planner_node_executes_model_driven_screen_stocks():
+    """planner_node invokes screen_stocks when chosen by model and grounds the plan on returned candidates."""
+    screen_calls = []
+
+    class MockScreeningPlannerModel:
+        def with_structured_output(self, schema):
+            mock_runnable = MagicMock()
+            if schema is PlannerScoutAssessment:
+                mock_runnable.invoke.return_value = PlannerScoutAssessment(
+                    needs_scouting=True,
+                    scout_queries=[
+                        PlannerScoutQuery(
+                            tool_name="screen_stocks",
+                            sector="Technology",
+                            preset="growth_technology_stocks",
+                        ),
+                    ],
+                )
+            elif schema is ResearchPlanSchema:
+                mock_runnable.invoke.return_value = ResearchPlanSchema(
+                    brief="Analyze top growth tech candidates",
+                    research_type="multi_candidate_ranking",
+                    ranking_count=2,
+                    candidate_entities=["NVDA", "SMCI"],
+                    primary_questions=["Audit free cash flow conversion", "Verify customer concentration"],
+                    requires_candidate_workspaces=True,
+                )
+            return mock_runnable
+
+    from langchain_core.tools import tool
+
+    @tool
+    def screen_stocks(preset: str = None, sector: str = None, limit: int = 5) -> str:
+        """Mock screen_stocks tool."""
+        screen_calls.append({"preset": preset, "sector": sector, "limit": limit})
+        return json.dumps({
+            "status": "ok",
+            "count": 2,
+            "records": [
+                {"ticker": "NVDA", "company": "NVIDIA Corporation", "market_cap": 3000000000000.0, "summary": "NVIDIA (NVDA): Leading AI GPU chips."},
+                {"ticker": "SMCI", "company": "Super Micro Computer", "market_cap": 25000000000.0, "summary": "Super Micro (SMCI): AI server infrastructure."},
+            ],
+        })
+
+    req = ResearchRequest(query="find best 2 stock in tech to invest right now", requested_ranking_count=2)
+    state = create_initial_state(req, case_id="test_screen_scout_case")
+    graph = create_research_graph(MockScreeningPlannerModel(), [screen_stocks])
+
+    plan_out = graph.nodes["planner"].invoke(state)
+
+    assert len(screen_calls) == 1
+    assert screen_calls[0]["preset"] == "growth_technology_stocks"
+    assert screen_calls[0]["sector"] == "Technology"
+    assert "cand_nvda" in plan_out["candidates"]
+    assert "cand_smci" in plan_out["candidates"]
+
+

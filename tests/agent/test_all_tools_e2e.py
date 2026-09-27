@@ -32,6 +32,7 @@ class ToolCoverageModel:
                 ("search_social", {"query": "MSFT cloud demand"}),
                 ("search_articles", {"query": "MSFT cloud demand"}),
                 ("search_web", {"query": "MSFT investor relations", "file_type": "pdf"}),
+                ("screen_stocks", {"sector": "Technology", "min_market_cap": 100000000000.0}),
                 ("read_article", {"url": "https://example.test/msft"}),
                 ("register_candidate", {"ticker": "MSFT", "company": "Microsoft", "candidate_id": "cand_msft"}),
                 ("read_document", {"url": "https://example.test/msft-deck.pdf", "candidate_id": "cand_msft"}),
@@ -75,6 +76,7 @@ def test_e2e_every_registered_tool_persists_owned_receipts(monkeypatch, tmp_path
     monkeypatch.setattr(tools_module, "_search_social", lambda **_: _result({"status": "ok", "posts": [{"url": "https://example.test/social", "title": "Social signal"}]}))
     monkeypatch.setattr(tools_module, "_search_articles", lambda **_: _result({"status": "ok", "articles": [{"url": "https://example.test/article", "title": "Article"}]}))
     monkeypatch.setattr(tools_module, "_search_web", lambda **_: _result({"status": "ok", "results": [{"url": "https://example.test/web", "title": "Web"}]}))
+    monkeypatch.setattr(tools_module, "_execute_equity_screen", lambda **_: {"status": "ok", "count": 1, "records": [{"ticker": "MSFT", "company": "Microsoft", "market_cap": 3000000000000.0}]})
     monkeypatch.setattr(tools_module, "_read_article", lambda **_: _result({"status": "ok", "url": "https://example.test/msft", "title": "Read article"}))
     monkeypatch.setattr(tools_module, "_read_document", lambda **_: {"status": "ok", "url": "https://example.test/msft-deck.pdf", "text": "Read document text", "discovered_documents": []})
     monkeypatch.setattr(tools_module, "_get_market_data", lambda **_: _result({"status": "ok", "ticker": "MSFT", "quote": {"price": 450.0}, "currency": "USD", "as_of": "2026-09-16", "addv_20d": {"value": 1_000_000}}))

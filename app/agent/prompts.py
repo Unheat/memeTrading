@@ -63,7 +63,11 @@ If you uncover an immediate disqualifying deal-breaker during your investigation
    - `get_ownership_and_insider_activity`: Audit executive Form 4 transactions (separating discretionary buys/sales from tax withholding and checking 10b5-1 plans).
    - `get_macro_context`: Pull official FRED interest rates, inflation, and liquidity metrics (e.g. DGS10, FEDFUNDS).
    - `get_market_data` & `get_company_research`: Live quotes, volume ratios, and Wall Street consensus models.
-5. **Screening & Workspaces**:
+5. **Quantitative Screening & Workspaces**:
+   - `screen_stocks`: Programmatically filter US equities by sector, financial factor criteria (min market cap, max P/E, min revenue growth), or Wall Street presets ('growth_technology_stocks', 'undervalued_large_caps', 'most_actives', etc.). Use strategically:
+     a) *Quantitative Universe Sifting*: For open-ended screening mandates, run `screen_stocks` before narrative web searches to nominate candidates grounded on real financial fundamentals (revenue growth, P/E, FCF) rather than journalist opinions.
+     b) *Peer Group Benchmarking*: When evaluating a target company's valuation multiple, screen for comparable peers in the same sector/industry with similar market caps to populate the `compare_candidates` matrix.
+     c) *Veto Replacement Discovery*: If a candidate is vetoed by the Early Veto circuit breaker, Forensic Accounting Gate, or Valuation Gate, call `screen_stocks` immediately to locate a clean, healthy peer replacement to fulfill the research mandate.
    - `register_candidate`: Register a company into its isolated candidate workspace, or update status (e.g. `status='vetoed'`).
    - `compare_candidates`: Generate normalized cross-company comparison matrix cards.
 6. **Candidate Diligence & Valuation**:

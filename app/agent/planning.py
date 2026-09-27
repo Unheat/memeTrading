@@ -65,12 +65,21 @@ class ResearchReflectionSchema(BaseModel):
 class PlannerScoutQuery(BaseModel):
     """Targeted search query targeting a specific discovery tool."""
 
-    tool_name: Literal["search_web", "search_articles", "search_social"] = Field(
+    tool_name: Literal["search_web", "search_articles", "search_social", "screen_stocks"] = Field(
         default="search_web",
-        description="The discovery tool to invoke: 'search_web' for general web/catalysts, 'search_articles' for news/earnings/regulatory articles, or 'search_social' for retail/sentiment trends.",
+        description="The discovery tool to invoke: 'screen_stocks' for quantitative factor/preset screening, 'search_web' for general web/catalysts, 'search_articles' for news/earnings/regulatory articles, or 'search_social' for retail/sentiment trends.",
     )
     query: str = Field(
+        default="",
         description="Concise, keyword-optimized search query (NOT conversational phrases or questions). E.g. 'top enterprise tech free cash flow growth 2026'.",
+    )
+    sector: Optional[str] = Field(
+        default=None,
+        description="Optional GICS sector filter when tool_name is 'screen_stocks' (e.g. 'Technology', 'Healthcare', 'Financial Services').",
+    )
+    preset: Optional[str] = Field(
+        default=None,
+        description="Optional preset when tool_name is 'screen_stocks' (e.g. 'growth_technology_stocks', 'undervalued_large_caps', 'most_actives').",
     )
 
 
@@ -173,6 +182,7 @@ def assess_scout_need(
             "2. If the user request is open-ended, thematic, or asks for screening/recommendations (e.g., 'find best 2 stocks in tech', 'top defense stocks 2026', 'trending AI hardware plays'), set needs_scouting=True.\n"
             "3. When scouting is needed, formulate 1 to 2 concise, keyword-optimized search queries (NOT conversational sentences).\n"
             "4. Choose the best tool for each query:\n"
+            "   - 'screen_stocks': for quantitative screening by sector or preset (e.g. sector='Technology', or preset='growth_technology_stocks' / 'undervalued_large_caps'). Prioritize this when looking for stocks in a sector or category.\n"
             "   - 'search_web': for general industry rankings, analyst commentary, or sector leaders.\n"
             "   - 'search_articles': for recent news, earnings announcements, M&A, or regulatory catalysts.\n"
             "   - 'search_social': for retail buzz, meme stocks, or sentiment spikes on Reddit/ApeWisdom/StockTwits.\n"

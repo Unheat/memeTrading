@@ -25,6 +25,7 @@ def test_tool_registry_contains_all_10_tools():
         "get_ownership_and_insider_activity",
         "get_macro_context",
         "register_candidate",
+        "screen_stocks",
         "compare_candidates",
         "conduct_candidate_diligence",
         "evaluate_valuation",

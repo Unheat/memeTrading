@@ -207,13 +207,23 @@ def create_research_graph(
                     for sq in assessment.scout_queries[:2]:
                         tool_to_use = (
                             tool_map.get(sq.tool_name)
+                            or tool_map.get("screen_stocks")
                             or tool_map.get("search_web")
                             or tool_map.get("search_articles")
                         )
                         if not tool_to_use:
                             continue
                         try:
-                            raw_out = tool_to_use.invoke({"query": sq.query[:180], "limit": 5})
+                            if getattr(sq, "tool_name", "") == "screen_stocks" and hasattr(tool_to_use, "invoke"):
+                                tool_args = {
+                                    "preset": getattr(sq, "preset", None),
+                                    "sector": getattr(sq, "sector", None) or (getattr(sq, "query", None) if not getattr(sq, "preset", None) else None),
+                                    "limit": 5,
+                                }
+                            else:
+                                tool_args = {"query": str(getattr(sq, "query", ""))[:180], "limit": 5}
+
+                            raw_out = tool_to_use.invoke(tool_args)
                             if not raw_out:
                                 continue
                             data = json.loads(raw_out) if isinstance(raw_out, str) else raw_out
@@ -226,7 +236,9 @@ def create_research_graph(
                             for item in items:
                                 if isinstance(item, dict):
                                     t_str = item.get("title") or item.get("ticker") or ""
-                                    s_str = item.get("snippet") or item.get("summary") or item.get("text") or ""
+                                    s_str = item.get("summary") or item.get("snippet") or item.get("text") or ""
+                                    if not s_str and item.get("company"):
+                                        s_str = f"{item.get('company')} - Market Cap: {item.get('market_cap')}"
                                     if t_str or s_str:
                                         lines.append(f"- {t_str}: {s_str}")
                         except Exception as sub_exc:

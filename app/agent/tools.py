@@ -27,6 +27,7 @@ from app.articles.document_reader import read_document as _read_document
 from app.websearch.search import search_web as _search_web
 from app.market.market_data import get_market_data as _get_market_data
 from app.market.company_research import get_company_research as _get_company_research
+from app.market.screener import execute_equity_screen as _execute_equity_screen
 from app.market.providers.fred import get_macro_context as _get_macro_context
 from app.sec.acquisition import list_sec_filings as _list_sec_filings
 from app.sec.pull import pull_sec_filings as _pull_sec_filings, SelectedSecDocument
@@ -228,7 +229,6 @@ def create_agent_tools(
             # In normal flow (run_as_of is None): never block data, even if undated
             return json.dumps(sanitize_payload(d))
         except Exception as exc:
-            return json.dumps({"status": "error", "message": f"search_web error: {exc}"})
             return json.dumps({"status": "error", "message": f"search_web error: {exc}"})
 
     @tool
@@ -555,6 +555,57 @@ def create_agent_tools(
         })
 
     @tool
+    def screen_stocks(
+        preset: str | None = None,
+        sector: str | None = None,
+        min_market_cap: float | None = None,
+        max_market_cap: float | None = None,
+        max_pe_ratio: float | None = None,
+        min_revenue_growth_pct: float | None = None,
+        limit: int = 5,
+        candidate_id: str | None = None,
+    ) -> str:
+        """Screen US stocks quantitatively using institutional factor criteria or Wall Street presets.
+
+        Use this tool strategically to:
+        1. Discover candidates on open-ended screening requests based on real financial metrics (growth, P/E, cap).
+        2. Identify legitimate industry peers for relative valuation multiples and comparison matrices.
+        3. Find clean replacement candidates when an existing stock is vetoed by the Forensic Accounting Gate.
+
+        Supported presets: 'growth_technology_stocks', 'undervalued_growth_stocks', 'undervalued_large_caps',
+        'most_actives', 'day_gainers', 'day_losers', 'most_shorted_stocks'.
+        """
+        suppressed = _guard_check(
+            "screen_stocks",
+            {
+                "preset": preset,
+                "sector": sector,
+                "min_market_cap": min_market_cap,
+                "max_market_cap": max_market_cap,
+                "max_pe_ratio": max_pe_ratio,
+                "min_revenue_growth_pct": min_revenue_growth_pct,
+                "limit": limit,
+            },
+        )
+        if suppressed:
+            return suppressed
+        try:
+            res = _execute_equity_screen(
+                preset=preset,
+                sector=sector,
+                min_market_cap=min_market_cap,
+                max_market_cap=max_market_cap,
+                max_pe_ratio=max_pe_ratio,
+                min_revenue_growth_pct=min_revenue_growth_pct,
+                limit=limit,
+            )
+            if candidate_id:
+                res["candidate_id"] = candidate_id
+            return json.dumps(res)
+        except Exception as exc:
+            return json.dumps({"status": "error", "message": f"screen_stocks error: {exc}"})
+
+    @tool
     def compare_candidates(candidate_ids: list[str], metrics: list[str] | None = None) -> str:
         """Compare multiple registered candidates side-by-side across audited financial and valuation metrics."""
         requested_metrics = metrics or [
@@ -720,7 +771,7 @@ def create_agent_tools(
         get_market_data, get_company_research, list_sec_filings, pull_sec_filings,
         search_sec_evidence, read_sec_evidence, verify_sec_claim, get_sec_financials,
         investigate_sec,
-        get_ownership_and_insider_activity, get_macro_context, register_candidate, compare_candidates,
+        get_ownership_and_insider_activity, get_macro_context, register_candidate, screen_stocks, compare_candidates,
         evaluate_valuation, conduct_candidate_diligence,
     ]
     return [*core_tools, *investment_tools]
