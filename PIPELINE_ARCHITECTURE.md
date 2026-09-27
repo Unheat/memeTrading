@@ -22,7 +22,7 @@ flowchart TD
     %% ==========================================
     subgraph S1["Stage 1: Structured Planning (planner)"]
         direction TB
-        P_DESC["<b>Structured Research Plan Generator</b><br/>• Decomposes query into ResearchPlanSchema<br/>• Sets single vs multi-candidate scope<br/>• Establishes initial tickers & primary hypotheses"]
+        P_DESC["<b>Structured Research Plan Generator</b><br/>• Model-driven preliminary discovery (assess_scout_need)<br/>• Strategic scouting: screen_stocks, search_web, articles, social<br/>• Decomposes query into ResearchPlanSchema<br/>• Sets single vs multi-candidate scope<br/>• Auto-seeds isolated candidate workspaces (cand_...)"]
     end
 
     S1 --> S2
@@ -68,6 +68,7 @@ flowchart TD
         end
 
         subgraph T_COMP["4. Candidate Screening & Ranking"]
+            t_scr["screen_stocks: Keyless factor & preset equity screener"]
             t_reg["register_candidate: Build isolated candidate workspace<br/>(Supports Fast-Path Early Veto: status='vetoed')"]
             t_cmp["compare_candidates: Build normalized cross-peer comparison matrix"]
         end
@@ -152,7 +153,7 @@ flowchart TD
 
     %% Class assignments
     class S1,S2,S3,S4,S5 stage;
-    class t_web,t_art,t_doc,t_soc,t_sec_fin,sec_list,sec_pull,sec_search,sec_chunk,sec_claim,sec_insider,t_mkt,t_co,t_own,t_macro,t_reg,t_cmp,t_val tool;
+    class t_web,t_art,t_doc,t_soc,t_sec_fin,sec_list,sec_pull,sec_search,sec_chunk,sec_claim,sec_insider,t_mkt,t_co,t_own,t_macro,t_scr,t_reg,t_cmp,t_val tool;
     class ENG_EXP,ENG_FOR,ENG_MOAT,ENG_QNT,ENG_BULL,ENG_BEAR,sec_sub_desc engine;
     class G_EV,G_ACC,G_VAL,G_ASYM,COMM,GATES gate;
     class PROMO read;
@@ -165,7 +166,7 @@ flowchart TD
 | Analysis Component | Stage 2 (The Analyst Workbench) | Stage 5 (The Boardroom Committee) |
 |---|---|---|
 | **Heavy Modeling & Sub-Agents** | Runs per-candidate on demand via `conduct_candidate_diligence(ticker)`: Quant DCF (with dynamic FRED WACC, CapEx normalization, and Multi-Method Triangulation), Forensics, Moat, Bull Advocate, and Bear Red Team. Or commands the `investigate_sec` analyst sub-agent for deep filing retrieval. | **Zero engine execution.** It never spins up sub-agents or re-runs models. |
-| **Candidate Selection** | Dynamically screens candidates, registers workspaces (`register_candidate`), declares early vetoes (`status='vetoed'`), and builds cross-candidate comparison matrices (`compare_candidates`). | Promotes the **winning candidate's dossier** into state (prioritizing the highest asymmetric reward-to-risk ratio). |
+| **Candidate Selection** | Dynamically screens candidates quantitatively (`screen_stocks`), registers workspaces (`register_candidate`), declares early vetoes (`status='vetoed'`), and builds cross-candidate comparison matrices (`compare_candidates`). | Promotes the **winning candidate's dossier** into state (prioritizing the highest asymmetric reward-to-risk ratio). |
 | **Evidence & Compliance** | Commands `investigate_sec` to auto-discover, pull, chunk, and cite 10-K/10-Qs; verifies rumors via `verify_sec_claim`. | Evaluates the **Evidence Gate (G1)**: ensures primary SEC citations and market context exist before voting. |
 | **Audit Gates** | Collects raw metrics (deterministic Reverse DCF implied growth, Beneish M-Score, Bear floor, Multi-method divergence flag). | Runs **instant mathematical checks**: Accounting Gate (G2), Valuation Gate (G3), and Asymmetry Gate (G4 $\ge$ the configured `asymmetry_hurdle`, profile-selected, default 3.0x). |
 | **Capital Allocation & Sizing** | Formulates thesis, numeric bull target price, and downside floor prices (both debate anchors are validated; missing anchors degrade the report and fall back to labeled Street/DCF anchors). | The **Chief Investment Officer (CIO)** conducts a single formal deliberation with enforced anchor provenance, assigns conviction tier, and sizes via **tiered Fractional Kelly**: near-miss ratios land in a zero-capital `PAPER_TRADE_WATCH` queue for calibration. |

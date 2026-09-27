@@ -9,7 +9,7 @@
 [![LangGraph DAG](https://img.shields.io/badge/Orchestration-LangGraph%20Gated%20DAG-FF6F00.svg?style=flat-square&logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
 [![SEC EDGAR Audited](https://img.shields.io/badge/Compliance-SEC%20EDGAR%20Audited-008080.svg?style=flat-square&logo=safari&logoColor=white)](app/sec/)
 [![Reverse DCF](https://img.shields.io/badge/Valuation-Reverse%20DCF%20(Mauboussin)-7C3AED.svg?style=flat-square)](app/valuation/)
-[![Deterministic Gates](https://img.shields.io/badge/Quality-340%2B%20Unit%20Tests%20Passing-10B981.svg?style=flat-square&logo=pytest&logoColor=white)](tests/)
+[![Deterministic Gates](https://img.shields.io/badge/Quality-450%2B%20Unit%20Tests%20Passing-10B981.svg?style=flat-square&logo=pytest&logoColor=white)](tests/)
 
 <br/>
 
@@ -113,7 +113,7 @@ See [PIPELINE_ARCHITECTURE.md](./PIPELINE_ARCHITECTURE.md) for the complete end-
 
 ```mermaid
 flowchart TD
-    START([User Research Prompt]) --> S1[Stage 1: Structured Planning]
+    START([User Research Prompt]) --> S1[Stage 1: Structured Planning<br/>(assess_scout_need & 2-step synthesis)]
     S1 --> S2[Stage 2: Deep Research Agent Loop]
 
     subgraph S2["Stage 2: Deep Research Agent (Analyst Workbench)"]
@@ -122,7 +122,7 @@ flowchart TD
         
         T_DISC["Web, Social & News Intelligence<br/>(search_web, search_articles, search_social)"]
         T_MKT["Market Context & Macro<br/>(get_market_data, get_company_research, get_macro_context)"]
-        T_CAND["Candidate Screening & Workspaces<br/>(register_candidate, compare_candidates)"]
+        T_CAND["Candidate Screening & Workspaces<br/>(screen_stocks, register_candidate, compare_candidates)"]
         T_DIL["Candidate Diligence Sub-Agent<br/>(conduct_candidate_diligence)"]
 
         subgraph SEC_SPECIALIST["Autonomous SEC Specialist Sub-Agent (LangGraph)"]

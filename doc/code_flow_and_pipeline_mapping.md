@@ -67,8 +67,11 @@ The architecture strictly enforces the **Separation of Duties** principle:
   - [`app/agent/ledger.py`](../app/agent/ledger.py) (`ResearchWorkItem`)
 
 #### Execution Flow
-1. **Scout Intelligence Gathering**: Before generating the plan, `planner_node` invokes a fast web search or article search (`search_web` or `search_articles`, limit 5) using the raw user query. This grounds the planner in live company names, tickers, and recent catalysts without relying on pre-training cutoff memory.
-2. **Structured Plan Generation**: Calls `generate_research_plan()` in [`planning.py:110`](../app/agent/planning.py), which binds `ResearchPlanSchema` via model structured outputs (`with_structured_output`). The plan identifies:
+1. **Model-First Scout Assessment**: Before generating the plan, `planner_node` calls `assess_scout_need(model, query, ticker, company)` in [`app/agent/planning.py`](../app/agent/planning.py). 
+   - **Fast-Path**: If the user already provided an explicit ticker or company, scouting is bypassed with zero tool calls or searches.
+   - **Open-Ended Screening**: If open-ended (e.g. "find best 2 stocks in tech"), the LLM formulates 1–2 concise keyword search queries and selects the appropriate tool: `screen_stocks` (quantitative factor/preset filtering), `search_web` (general industry commentary), `search_articles` (news/earnings catalysts), or `search_social` (retail momentum).
+   - **Targeted Discovery Execution**: Only the model-formulated queries are executed, extracting candidate companies, prices, and metrics into `scout_context`.
+2. **Structured Plan Generation**: Calls `generate_research_plan()` in [`planning.py:110`](../app/agent/planning.py), which binds `ResearchPlanSchema` via model structured outputs (`with_structured_output`) grounded by `scout_context`. The plan identifies:
    - `research_type`: `"single_diligence"`, `"multi_candidate_ranking"`, or `"general_deep_dive"`.
    - `candidate_entities`: Explicit tickers to evaluate.
    - `primary_questions`: Specific hypotheses to test.
@@ -87,6 +90,7 @@ The architecture strictly enforces the **Separation of Duties** principle:
   - [`app/agent/context.py`](../app/agent/context.py) (`ModelContextPolicy`, `prepare_context`)
   - [`app/agent/prompts.py`](../app/agent/prompts.py) (`build_research_system_prompt`)
   - [`app/agent/tools.py`](../app/agent/tools.py) (`create_agent_tools`, `ToolCallGuard`)
+  - [`app/market/screener.py`](../app/market/screener.py) (`execute_equity_screen`)
 
 #### Execution Flow
 1. **Context Compaction**: `executor_node` calls `prepare_context()` from [`context.py:237`](../app/agent/context.py). This enforces pair-safe pruning: if the conversation approaches token limits, older tool message bodies are truncated into compact metadata envelopes while strictly preserving tool-call/tool-message ID pairings and entity backlinks.
@@ -109,17 +113,17 @@ In Stage 2, the LLM has access to a registry of tools. Two of these tools are au
                                     │
        ┌────────────────────────────┼─────────────────────────────┐
        ▼                            ▼                             ▼
-Discovery & Market Data      investigate_sec()           conduct_candidate_diligence()
-• search_web                 Autonomous SEC Analyst      Candidate Diligence Sub-Agent
-• get_sec_financials         Sub-Agent                   (diligence.py)
-• get_market_data            (app/sec/sec_agent.py)               │
-• register_candidate                                              ▼
-• compare_candidates                                     1. Expectations Analyst (expectations.py)
-                                                         2. Forensic Accounting (specialists.py)
-                                                         3. Moat Analysis (specialists.py)
-                                                         4. Quant DCF Engine (specialists.py)
-                                                         5. Bull Advocate (bull.py)
-                                                         6. Bear Red Team (adversarial.py)
+Discovery, Screening & Market Data  investigate_sec()           conduct_candidate_diligence()
+• screen_stocks                     Autonomous SEC Analyst      Candidate Diligence Sub-Agent
+• search_web                        Sub-Agent                   (diligence.py)
+• get_sec_financials                (app/sec/sec_agent.py)               │
+• get_market_data                                                        ▼
+• register_candidate                                            1. Expectations Analyst (expectations.py)
+• compare_candidates                                            2. Forensic Accounting (specialists.py)
+                                                                3. Moat Analysis (specialists.py)
+                                                                4. Quant DCF Engine (specialists.py)
+                                                                5. Bull Advocate (bull.py)
+                                                                6. Bear Red Team (adversarial.py)
 ```
 
 #### Where `specialists.py` Fits in the Pipeline
