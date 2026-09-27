@@ -120,8 +120,20 @@ def run_investigation(
         effective_render = render_video if render_video is not None else cfg.media.render_video
         effective_pair = character_pair or cfg.media.character_pair
 
-        configured_budget = BudgetLimits(cfg.research.max_tool_calls, cfg.research.max_identical_calls)
-        budget = configured_budget if request.budget == BudgetLimits() else request.budget
+        if request.budget != BudgetLimits():
+            budget = request.budget
+        elif request.depth == "standard" and cfg.research.max_tool_calls == 50:
+            budget = BudgetLimits(
+                max_total_tool_calls=25,
+                max_identical_calls=cfg.research.max_identical_calls,
+                max_reflection_rounds=2,
+            )
+        else:
+            budget = BudgetLimits(
+                max_total_tool_calls=cfg.research.max_tool_calls,
+                max_identical_calls=cfg.research.max_identical_calls,
+                max_reflection_rounds=3 if request.depth == "deep" else 2,
+            )
         effective_request = ResearchRequest(
             query=request.query, ticker=request.ticker, company=request.company, theme=request.theme,
             mandate=request.mandate, time_boundary=request.time_boundary, as_of_date=request.as_of_date, budget=budget,

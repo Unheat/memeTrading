@@ -76,10 +76,13 @@ def _has_evidence_gaps(state: InvestigationState) -> bool:
             and c.get("status") not in {"vetoed", "rejected", "screened_out"}
             and not c.get("veto_reason")
         ]
-        if len(active_candidates) > 1 and not state.get("comparisons"):
+        equity_candidates = [c for c in active_candidates if c.get("ticker")]
+        if len(equity_candidates) > 1 and not state.get("comparisons"):
             return True
 
         for cand in active_candidates:
+            if not cand.get("ticker"):
+                continue
             if not cand.get("market_context"):
                 return True
             if not has_candidate_sec_evidence(cand):
@@ -249,6 +252,9 @@ def create_research_graph(
             except Exception as exc:
                 logger.debug("Preliminary scout assessment failed (%s); proceeding with ungrounded planning", exc)
 
+        budget_dict = state.get("budget_state") or {}
+        max_calls = budget_dict.get("max_total_tool_calls") or budget_dict.get("max_tool_calls", 50)
+
         if not hasattr(model, "with_structured_output"):
             plan = ResearchPlanSchema(
                 brief=str(query),
@@ -268,6 +274,7 @@ def create_research_graph(
                 company=company,
                 scout_context=scout_context,
                 as_of_date=as_of,
+                max_tool_calls=max_calls,
             )
         except Exception as exc:
             logger.warning("Structured planner failed (%s); using fallback plan", exc)
@@ -316,16 +323,29 @@ def create_research_graph(
 
         work_items = []
         is_equity = bool(ticker or company or plan.candidate_entities)
-        for idx, q in enumerate(plan.primary_questions or [], start=1):
-            tier = "primary_sec" if is_equity else "general"
-            item = ResearchWorkItem(
-                work_id=f"work_q_{idx}",
-                question=q,
-                evidence_tier=tier,
-                priority=10 - idx,
-                depth=1,
-            )
-            work_items.append(item.to_dict())
+        if getattr(plan, "hypotheses", None):
+            for idx, hyp in enumerate(plan.hypotheses, start=1):
+                c_id = f"cand_{hyp.target_entity.strip().lower()}" if hyp.target_entity else None
+                item = ResearchWorkItem(
+                    work_id=f"work_hyp_{idx}",
+                    question=hyp.statement,
+                    evidence_tier=hyp.evidence_tier,
+                    priority=10 - idx,
+                    depth=1,
+                    candidate_id=c_id,
+                )
+                work_items.append(item.to_dict())
+        else:
+            for idx, q in enumerate(plan.primary_questions or [], start=1):
+                tier = "primary_sec" if is_equity else "general"
+                item = ResearchWorkItem(
+                    work_id=f"work_q_{idx}",
+                    question=q,
+                    evidence_tier=tier,
+                    priority=10 - idx,
+                    depth=1,
+                )
+                work_items.append(item.to_dict())
 
         for c_idx, c_ticker in enumerate(plan.candidate_entities or [], start=1):
             clean_c = c_ticker.strip().upper()
@@ -468,13 +488,16 @@ def create_research_graph(
             and c.get("status") not in {"vetoed", "rejected", "screened_out"}
             and not c.get("veto_reason")
         ]
-        if len(active_candidates) > 1 and not comparisons:
+        equity_candidates = [c for c in active_candidates if c.get("ticker")]
+        if len(equity_candidates) > 1 and not comparisons:
             deterministic_gaps.append("Cross-candidate comparison matrix is missing; call `compare_candidates`.")
         for cid, cand in candidates.items():
             if isinstance(cand, Mapping):
                 if cand.get("status") in {"vetoed", "rejected", "screened_out"} or cand.get("veto_reason"):
                     continue
-                t = cand.get("ticker") or cid
+                t = cand.get("ticker")
+                if not t:
+                    continue
                 if not cand.get("market_context"):
                     deterministic_gaps.append(f"Missing market data for candidate ${t}; call `get_market_data`.")
                 sec_fin = cand.get("sec_financials") or {}

@@ -16,6 +16,20 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 
+class ResearchHypothesis(BaseModel):
+    """A testable sub-question, claim, or hypothesis with an assigned evidence tier."""
+
+    statement: str = Field(description="Actionable sub-question, hypothesis, or thesis to test.")
+    evidence_tier: Literal["structured_quant", "primary_regulatory", "macro_series", "open_web"] = Field(
+        default="open_web",
+        description="The primary evidence quality tier required: 'structured_quant' for factor screening / ratios / DCF, 'primary_regulatory' for SEC 10-K/10-Q XBRL statements & footnote inspection, 'macro_series' for FRED economic rates/yields, or 'open_web' for industry whitepapers / news / PDFs.",
+    )
+    target_entity: Optional[str] = Field(
+        default=None,
+        description="Optional company ticker or macroeconomic entity associated with this hypothesis (e.g. 'NVDA', 'FEDFUNDS').",
+    )
+
+
 class ResearchPlanSchema(BaseModel):
     """Structured deep research plan generated from the user's free-form prompt."""
 
@@ -35,6 +49,10 @@ class ResearchPlanSchema(BaseModel):
     primary_questions: List[str] = Field(
         default_factory=list,
         description="3 to 5 targeted, answerable sub-questions that must be investigated.",
+    )
+    hypotheses: List[ResearchHypothesis] = Field(
+        default_factory=list,
+        description="Structured sub-hypotheses with target evidence tiers for dynamic DAG execution.",
     )
     requires_candidate_workspaces: bool = Field(
         default=False,
@@ -210,6 +228,7 @@ def generate_research_plan(
     company: Optional[str] = None,
     scout_context: Optional[str] = None,
     as_of_date: Optional[str] = None,
+    max_tool_calls: Optional[int] = None,
 ) -> ResearchPlanSchema:
     """Generate a structured research plan from user prompt using LLM structured output.
 
@@ -220,6 +239,7 @@ def generate_research_plan(
         company: Optional explicit company name if provided by caller.
         scout_context: Optional preliminary web/news snippets gathered prior to planning.
         as_of_date: Optional PIT cutoff date for backtest discipline.
+        max_tool_calls: Optional execution tool budget ceiling.
 
     Returns:
         Validated ResearchPlanSchema instance.
@@ -231,7 +251,11 @@ def generate_research_plan(
         "1. Identify whether this is a multi-candidate ranking/screening, a single-company deep diligence, or a general thematic investigation.\n"
         "2. If the user asks for a specific count (e.g. '5 best tech stocks', 'top 10 AI companies', 'compare 3 peers'), set ranking_count to that integer.\n"
         "3. Identify explicit or promising candidate entities (tickers/names) to investigate. If preliminary scout intelligence is provided, use it to ground exact real-world tickers and entities.\n"
-        "4. Formulate 3 to 5 targeted, high-signal questions focusing on valuation, real financial performance (SEC/XBRL), operational durability, and market setup.\n"
+        "4. Formulate 3 to 5 targeted, high-signal hypotheses/questions with appropriate evidence_tier assignments:\n"
+        "   - 'structured_quant' for factor screening, market quotes, valuation multiples, and Reverse DCF.\n"
+        "   - 'primary_regulatory' for audited SEC 10-K/10-Q XBRL statements, footnote inspection, and Form 4 insider trades.\n"
+        "   - 'macro_series' for interest rates, inflation, treasury yields, or currency liquidity via FRED.\n"
+        "   - 'open_web' for broad industry trends, executive commentary, supply chain news, or whitepaper PDFs.\n"
         "5. Set requires_candidate_workspaces to True whenever multiple candidate companies are being researched or compared."
     ))
 
@@ -242,6 +266,8 @@ def generate_research_plan(
         user_text += f"\nExplicit Ticker: {ticker}"
     if company:
         user_text += f"\nExplicit Company: {company}"
+    if max_tool_calls is not None:
+        user_text += f"\nAvailable Execution Tool Budget: {max_tool_calls} total tool calls. Ensure your planned investigation and candidate count are achievable within this budget limit."
     if scout_context and scout_context.strip():
         user_text += f"\n\nPreliminary Scout Intelligence (Live Discovery):\n{scout_context.strip()}"
 

@@ -11,10 +11,11 @@ from app.agent.planning import (
     generate_research_plan,
     PlannerScoutAssessment,
     PlannerScoutQuery,
+    ResearchHypothesis,
     ResearchPlanSchema,
 )
 from app.agent.screening import build_candidate_comparisons
-from app.agent.state import ResearchRequest, create_initial_state
+from app.agent.state import BudgetLimits, ResearchRequest, create_initial_state
 from app.agent.tool_result_ingestion import ingest_tool_results
 from app.agent.tools import create_agent_tools
 from app.articles.schemas import ArticleContent, ArticleRecord, ArticleSearchResult
@@ -413,5 +414,96 @@ def test_planner_node_executes_model_driven_screen_stocks():
     assert screen_calls[0]["sector"] == "Technology"
     assert "cand_nvda" in plan_out["candidates"]
     assert "cand_smci" in plan_out["candidates"]
+
+
+def test_evidence_tier_hypotheses_hydrated_in_work_queue():
+    """Hypotheses with diverse evidence tiers are mapped directly to prioritized work items."""
+    class MockHypothesisPlannerModel:
+        def with_structured_output(self, schema):
+            mock_runnable = MagicMock()
+            if schema is ResearchPlanSchema:
+                mock_runnable.invoke.return_value = ResearchPlanSchema(
+                    brief="Analyze impact of China metal export ban on semiconductors",
+                    research_type="general_deep_dive",
+                    hypotheses=[
+                        ResearchHypothesis(
+                            statement="Identify which chip technologies require banned metals",
+                            evidence_tier="open_web",
+                        ),
+                        ResearchHypothesis(
+                            statement="Audit 10-K Item 1A raw material supply disclosures",
+                            evidence_tier="primary_regulatory",
+                            target_entity="QRVO",
+                        ),
+                        ResearchHypothesis(
+                            statement="Check Federal Reserve industrial commodity inflation series",
+                            evidence_tier="macro_series",
+                        ),
+                        ResearchHypothesis(
+                            statement="Screen for alternative non-China rare earth suppliers",
+                            evidence_tier="structured_quant",
+                        ),
+                    ],
+                    requires_candidate_workspaces=False,
+                )
+            return mock_runnable
+
+    req = ResearchRequest(query="China metal export ban impact on semiconductors")
+    state = create_initial_state(req, case_id="test_macro_hypotheses")
+    graph = create_research_graph(MockHypothesisPlannerModel(), [])
+
+    plan_out = graph.nodes["planner"].invoke(state)
+    work_queue = plan_out["work_queue"]
+
+    assert len(work_queue) == 4
+    tiers = [w["evidence_tier"] for w in work_queue]
+    assert tiers == ["open_web", "primary_regulatory", "macro_series", "structured_quant"]
+    assert work_queue[1]["candidate_id"] == "cand_qrvo"
+
+
+def test_depth_budget_scaling_in_runner(tmp_path):
+    """Runner scales default budget limits between standard (25) and deep (50)."""
+    from langchain_core.messages import AIMessage
+    from app.agent.runner import run_investigation
+
+    class QuickModel:
+        def bind_tools(self, tools):
+            return self
+        def invoke(self, messages):
+            return AIMessage(content="Conclusion")
+
+    # 1. Standard depth
+    req_std = ResearchRequest(query="Quick check on tech", depth="standard")
+    res_std = run_investigation(request=req_std, model=QuickModel(), cases_root=tmp_path)
+    with open(tmp_path / res_std.case_id / "run-manifest.json") as f:
+        manifest_std = json.load(f)
+    assert manifest_std["request"]["depth"] == "standard"
+
+    # 2. Deep depth
+    req_deep = ResearchRequest(query="Deep investigation on tech", depth="deep")
+    res_deep = run_investigation(request=req_deep, model=QuickModel(), cases_root=tmp_path)
+    with open(tmp_path / res_deep.case_id / "run-manifest.json") as f:
+        manifest_deep = json.load(f)
+    assert manifest_deep["request"]["depth"] == "deep"
+
+
+def test_thematic_macro_reflection_not_blocked_by_sec_filings():
+    """Non-equity thematic research (requires_candidate_workspaces=False) does not demand SEC filings for general concepts."""
+    state = {
+        "ticker": None,
+        "research_intent": {"requires_candidate_workspaces": False},
+        "candidates": {
+            "cand_semiconductor_sector": {
+                "candidate_id": "cand_semiconductor_sector",
+                "ticker": None,
+                "evidence": [{"quote": "Gallium export controls restrict wafer production.", "source_url": "https://example.com/sec"}],
+            }
+        },
+        "work_queue": [],
+        "source_records": [{"url": "https://example.com/sec", "status": "read"}],
+    }
+    # _has_evidence_gaps should be False because it's not a multi-candidate equity comparison or explicit ticker
+    assert _has_evidence_gaps(state) is False
+
 
 
