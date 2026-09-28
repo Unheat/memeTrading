@@ -312,4 +312,39 @@ const isWarning = article.data.verdict === 'Forensic Warning';
   .dark .mermaid .arrowheadPath {
     fill: #9EA3B0 !important;
   }
+
+  /* Edge Labels & Annotations in Mermaid */
+  .mermaid .edgeLabel {
+    background-color: transparent !important;
+  }
+  .mermaid .edgeLabel rect,
+  .mermaid .labelBkg {
+    fill: #FAF7F0 !important;
+    rx: 4px !important;
+    ry: 4px !important;
+    stroke: #DCD5C4 !important;
+    stroke-width: 1px !important;
+  }
+  .mermaid .edgeLabel span,
+  .mermaid .edgeLabel p,
+  .mermaid .edgeLabel div {
+    color: #635F57 !important;
+    fill: #635F57 !important;
+    font-size: 11px !important;
+    font-weight: 500 !important;
+    padding: 3px 6px !important;
+    background-color: transparent !important;
+  }
+  .dark .mermaid .edgeLabel rect,
+  .dark .mermaid .labelBkg {
+    fill: #1E232E !important;
+    stroke: #3C4559 !important;
+  }
+  .dark .mermaid .edgeLabel span,
+  .dark .mermaid .edgeLabel p,
+  .dark .mermaid .edgeLabel div,
+  .dark .mermaid .edgeLabel text {
+    color: #D4D0C7 !important;
+    fill: #D4D0C7 !important;
+  }
 </style>
