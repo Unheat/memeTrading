@@ -136,7 +136,16 @@ def publish_case(
     if not citation_cards:
         raise ValueError(f"Case {case_id} lacks persisted canonical citation_cards; publication blocked.")
 
-    article_validation = validate_article_body_citations(raw_article, citation_cards)
+    # The persisted article carries the deterministic bibliography appended after the body;
+    # bibliography entries are the sources themselves and never carry citation tags, so the
+    # citation gate must see the same body the writer validated (split convention mirrors
+    # app.agent.media.generate_article_markdown).
+    article_body = re.split(
+        r"\n##\s*(?:Primary Sources|Regulatory Receipts|References|Sources)",
+        raw_article,
+        flags=re.IGNORECASE,
+    )[0].strip()
+    article_validation = validate_article_body_citations(article_body, citation_cards)
     if not article_validation["passed"]:
         raise ValueError(
             f"Case {case_id} article failed citation validation: {'; '.join(article_validation['errors'])}"

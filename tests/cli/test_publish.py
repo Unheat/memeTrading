@@ -149,3 +149,41 @@ def test_publish_case_blocked_with_invalid_citations(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="article failed citation validation"):
         publish_case(case_dir=case_dir, web_root=web_dir, youtube_upload=False, deploy=False)
+
+
+def test_publish_case_ignores_appended_bibliography_entries(tmp_path: Path) -> None:
+    """Publishing must not fail on the appended bibliography, whose entries carry no [n] tags."""
+    case_dir = tmp_path / "cases" / "BIBLIO-2026-09-28-001"
+    case_dir.mkdir(parents=True)
+    web_dir = tmp_path / "web"
+    web_dir.mkdir(parents=True)
+
+    article_text = """# Turnaround Forensics
+
+Free cash flow turned positive in Q2 [1].
+
+## Primary Sources & Regulatory Receipts
+
+1. **U.S. Securities & Exchange Commission (SEC) — Official XBRL Financial Statements ($INTC)** (SEC Accession `sec_xbrl` | [Official Source](https://www.sec.gov))
+2. **Wall Street Consensus Aggregator & Broker Estimates Archive ($INTC)** ([Official Source](https://finance.yahoo.com))
+"""
+    (case_dir / "article.md").write_text(article_text, encoding="utf-8")
+    inv_data = {
+        "ticker": "BIBLIO",
+        "as_of": "2026-09-28",
+        "thesis": "Bibliography regression",
+        "publication_readiness": {
+            "passed": True,
+            "status": "publishable",
+            "reasons": [],
+            "allowed_artifacts": ["article", "video", "publish"],
+        },
+        "citation_cards": [
+            {"index": 1, "source_type": "SEC Filing", "title": "Form 10-Q", "url": "https://www.sec.gov"},
+        ],
+    }
+    (case_dir / "investigation.json").write_text(json.dumps(inv_data), encoding="utf-8")
+
+    res = publish_case(case_dir=case_dir, web_root=web_dir, youtube_upload=False, deploy=False)
+    assert res.target_mdx_path.exists()
+    assert "## Primary Sources & Regulatory Receipts" in res.target_mdx_path.read_text(encoding="utf-8")
