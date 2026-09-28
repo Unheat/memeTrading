@@ -25,6 +25,7 @@ Extract live quarterly financial statements and metrics from official SEC EDGAR 
 3. **Normalized consumer contract**: Successful tool payloads retain each extracted period series unchanged. Pandas/NumPy non-finite values (`NaN`, positive infinity, negative infinity) are normalized to `null`; matching continues to later candidate rows so abstract statement rows cannot mask a concrete value. Downstream derives FCF only as same-period CFO minus CapEx; absent values are retained as `null` and must not be estimated.
 4. **CFO aliases**: Cash-from-operations lookup prioritizes `NetCashProvidedByUsedInOperatingActivities` and supports `NetCashProvidedByOperatingActivities` and `OperatingCashFlow`; abstract rows are excluded because they are structural labels, not reported values.
 5. **Graceful Fallback**: If multi-period statements are empty or raise an error, fall back to `company.get_facts()` concepts or return clean `status="unavailable"` without crashing.
+6. **Quarterly CapEx YTD Derivation**: Filers (e.g. NVDA, AMZN) may tag the latest quarters' CapEx only as cumulative year-to-date durations (H1 ≈ 130–210 days, 9M ≈ 211–300 days, FY ≈ 350–380 days) with no discrete ~3-month fact. The fact-level fallback derives the discrete quarter arithmetically within the same XBRL concept and fiscal year: Q2 = H1 − Q1, Q3 = 9M − H1 (or 9M − Q1 when H1 is absent), Q4 = FY − 9M. Discrete facts always take priority; when a quarter cannot be derived from reported facts it stays `null` and must not be estimated.
 
 ## Donor Code Provenance
 

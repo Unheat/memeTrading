@@ -333,7 +333,11 @@ def _extract_fact_quarterly_capex(company: Any, periods: list[str]) -> dict[str,
     """Fallback extraction of discrete quarterly CapEx directly from company facts.
 
     Handles companies like AMZN or NVDA that switched tags to PaymentsToAcquireProductiveAssets
-    which may be omitted from edgartools's face statement builder dataframe.
+    which may be omitted from edgartools's face statement builder dataframe. Filers may also
+    report the latest quarters only as cumulative year-to-date durations (e.g. NVDA fiscal
+    Q2 2027 CapEx exists solely as a 181-day H1 fact); in that case the discrete quarter is
+    derived arithmetically within the same concept and fiscal year (Q2 = H1 - Q1,
+    Q3 = 9M - H1, Q4 = FY - 9M). Values that cannot be derived from reported facts stay absent.
     """
     capex_by_period: dict[str, float | None] = {}
     try:
@@ -369,21 +373,46 @@ def _extract_fact_quarterly_capex(company: Any, periods: list[str]) -> dict[str,
                 candidates = []
                 fy_cands = []
                 q3_cands = []
+                h1_cands = []
+                q1_cands = []
                 for f in facts:
                     if f.period_type == "duration" and f.fiscal_year == fy and concept in str(f.concept).lower():
                         if f.period_start and f.period_end:
                             days = (f.period_end - f.period_start).days
                             if f.fiscal_period == f"Q{fq}" and 70 <= days <= 110 and f.value is not None:
                                 candidates.append((f.period_end, getattr(f, "filing_date", None) or f.period_end, abs(float(f.value))))
+                            elif f.fiscal_period == "Q1" and 70 <= days <= 110 and f.value is not None:
+                                q1_cands.append((f.period_end, abs(float(f.value))))
+                            elif f.fiscal_period == "Q2" and 130 <= days <= 210 and f.value is not None:
+                                h1_cands.append((f.period_end, abs(float(f.value))))
                             elif fq == 4 and f.fiscal_period == "FY" and 350 <= days <= 380 and f.value is not None:
                                 fy_cands.append((f.period_end, abs(float(f.value))))
-                            elif fq == 4 and f.fiscal_period == "Q3" and 260 <= days <= 290 and f.value is not None:
+                            elif f.fiscal_period == "Q3" and 211 <= days <= 300 and f.value is not None:
                                 q3_cands.append((f.period_end, abs(float(f.value))))
 
                 if candidates:
                     candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
                     extracted_val = candidates[0][2]
                     break
+                elif fq == 2 and h1_cands and q1_cands:
+                    h1_cands.sort(key=lambda x: x[0], reverse=True)
+                    q1_cands.sort(key=lambda x: x[0], reverse=True)
+                    best_h1 = h1_cands[0][1]
+                    best_q1 = q1_cands[0][1]
+                    if best_h1 >= best_q1:
+                        extracted_val = round(best_h1 - best_q1, 2)
+                        break
+                elif fq == 3 and q3_cands and (h1_cands or q1_cands):
+                    q3_cands.sort(key=lambda x: x[0], reverse=True)
+                    if h1_cands:
+                        h1_cands.sort(key=lambda x: x[0], reverse=True)
+                        base = h1_cands[0][1]
+                    else:
+                        q1_cands.sort(key=lambda x: x[0], reverse=True)
+                        base = q1_cands[0][1]
+                    if q3_cands[0][1] >= base:
+                        extracted_val = round(q3_cands[0][1] - base, 2)
+                        break
                 elif fq == 4 and fy_cands and q3_cands:
                     fy_cands.sort(key=lambda x: x[0], reverse=True)
                     q3_cands.sort(key=lambda x: x[0], reverse=True)

@@ -181,3 +181,102 @@ def test_resolve_bs_dataframe_and_col_maps_q4_to_annual_fy():
     lt_debt = _find_bs_metric(["LongTermDebtNoncurrent"], "Q4 2026", bs_q, bs_a)
     assert st_debt == 10.0
     assert lt_debt == 30.0
+
+
+def _capex_fact(concept: str, fiscal_year: int, fiscal_period: str, start, end, value):
+    """Build a minimal edgartools-like fact for CapEx fallback tests."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        concept=concept,
+        period_type="duration",
+        fiscal_year=fiscal_year,
+        fiscal_period=fiscal_period,
+        period_start=start,
+        period_end=end,
+        value=value,
+        filing_date=end,
+    )
+
+
+def _capex_fallback_company(facts):
+    """Build a minimal company object exposing only .facts for the fallback extractor."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(facts=facts)
+
+
+def test_fact_quarterly_capex_derives_q2_from_ytd_h1():
+    """NVDA-style filings tag Q2 CapEx only as a 181-day H1 YTD fact; derive Q2 = H1 - Q1."""
+    from datetime import date
+
+    from app.sec.financials import _extract_fact_quarterly_capex
+
+    company = _capex_fallback_company([
+        _capex_fact(
+            "us-gaap:PaymentsToAcquireProductiveAssets", 2027, "Q1",
+            date(2026, 1, 26), date(2026, 4, 26), 1_757_000_000.0,
+        ),
+        _capex_fact(
+            "us-gaap:PaymentsToAcquireProductiveAssets", 2027, "Q2",
+            date(2026, 1, 26), date(2026, 7, 26), 4_434_000_000.0,
+        ),
+    ])
+    result = _extract_fact_quarterly_capex(company, ["Q2 2027"])
+    assert result["Q2 2027"] == round(4_434_000_000.0 - 1_757_000_000.0, 2)
+
+
+def test_fact_quarterly_capex_derives_q3_from_ytd_9m():
+    """Q3 CapEx reported only inside a 272-day 9M YTD fact derives as 9M - H1."""
+    from datetime import date
+
+    from app.sec.financials import _extract_fact_quarterly_capex
+
+    company = _capex_fallback_company([
+        _capex_fact(
+            "us-gaap:PaymentsToAcquireProductiveAssets", 2026, "Q2",
+            date(2025, 1, 27), date(2025, 7, 27), 3_122_000_000.0,
+        ),
+        _capex_fact(
+            "us-gaap:PaymentsToAcquireProductiveAssets", 2026, "Q3",
+            date(2025, 1, 27), date(2025, 10, 26), 4_758_000_000.0,
+        ),
+    ])
+    result = _extract_fact_quarterly_capex(company, ["Q3 2026"])
+    assert result["Q3 2026"] == round(4_758_000_000.0 - 3_122_000_000.0, 2)
+
+
+def test_fact_quarterly_capex_q4_still_derives_fy_minus_9m():
+    """Pre-existing Q4 derivation (FY - 9M) keeps working alongside Q2/Q3 derivation."""
+    from datetime import date
+
+    from app.sec.financials import _extract_fact_quarterly_capex
+
+    company = _capex_fallback_company([
+        _capex_fact(
+            "us-gaap:PaymentsToAcquireProductiveAssets", 2026, "Q3",
+            date(2025, 1, 27), date(2025, 10, 26), 4_758_000_000.0,
+        ),
+        _capex_fact(
+            "us-gaap:PaymentsToAcquireProductiveAssets", 2026, "FY",
+            date(2025, 1, 26), date(2026, 1, 25), 6_042_000_000.0,
+        ),
+    ])
+    result = _extract_fact_quarterly_capex(company, ["Q4 2026"])
+    assert result["Q4 2026"] == round(6_042_000_000.0 - 4_758_000_000.0, 2)
+
+
+def test_fact_quarterly_capex_undeducible_stays_absent():
+    """A YTD H1 fact without a Q1 base must NOT be invented as the discrete quarter."""
+    from datetime import date
+
+    from app.sec.financials import _extract_fact_quarterly_capex
+
+    company = _capex_fallback_company([
+        _capex_fact(
+            "us-gaap:PaymentsToAcquireProductiveAssets", 2027, "Q2",
+            date(2026, 1, 26), date(2026, 7, 26), 4_434_000_000.0,
+        ),
+    ])
+    result = _extract_fact_quarterly_capex(company, ["Q2 2027"])
+    assert "Q2 2027" not in result

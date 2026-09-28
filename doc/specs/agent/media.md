@@ -116,3 +116,4 @@ class FacelessBridge:
 3. `FacelessBridge` handles missing Node, missing FFmpeg, or missing Fish API key gracefully without raising unhandled exceptions.
 4. Rendered video files larger than 24 MB are automatically re-encoded to 720×1280 (<25 MB) with `+faststart` before Cloudflare Edge deployment.
 5. `delete_published_article` cleanly removes both Markdown content and binary video files from the web repository and redeploys without orphaned assets.
+6. `validate_article_body_citations` exempts display-math blocks (every non-empty line starts with `$$`) from the factual-paragraph citation requirement — formulas are derived renderings of model outputs, structurally equivalent to code fences — while still requiring citations on all surrounding factual prose and table rows.

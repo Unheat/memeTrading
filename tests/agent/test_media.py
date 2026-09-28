@@ -531,3 +531,45 @@ Revenue grew by 15% [1].
     result = validate_article_body_citations(article, cards)
     assert result["passed"] is False
     assert any("Table row lacks a valid citation tag" in err for err in result["errors"])
+
+
+def test_validate_article_body_citations_display_math_exempt():
+    """Display-math $$ blocks are exempt like code fences; cited prose still passes."""
+    from app.agent.media import CitationCard, validate_article_body_citations
+
+    cards = [
+        CitationCard(index=1, tag="[1]", source_type="SEC Filing", title="10-Q", url="https://sec.gov/1"),
+    ]
+    article = """# Research Headline
+Revenue grew by 15% [1].
+
+$$\\text{Enterprise Value} = \\sum_{t=1}^{10} \\frac{CF_0 \\times (1 + g_{implied})^t}{(1 + WACC)^t}$$
+
+$$
+\\text{Fair Value} = \\frac{EV}{Shares} + \\text{Net Cash}
+$$
+
+Implied growth reconciles with consensus [1].
+"""
+    result = validate_article_body_citations(article, cards)
+    assert result["passed"] is True
+    assert result["errors"] == []
+
+
+def test_validate_article_body_citations_prose_still_required_beside_math():
+    """The math exemption must not become a blanket bypass: uncited prose still fails."""
+    from app.agent.media import CitationCard, validate_article_body_citations
+
+    cards = [
+        CitationCard(index=1, tag="[1]", source_type="SEC Filing", title="10-Q", url="https://sec.gov/1"),
+    ]
+    article = """# Research Headline
+Revenue grew by 15% [1].
+
+$$\\text{Enterprise Value} = \\sum_{t=1}^{10} \\frac{CF_t}{(1 + WACC)^t}$$
+
+Google secretly launched a new chip architecture without announcement.
+"""
+    result = validate_article_body_citations(article, cards)
+    assert result["passed"] is False
+    assert any("Factual paragraph lacks a valid citation tag" in err for err in result["errors"])

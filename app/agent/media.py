@@ -602,6 +602,12 @@ def validate_article_body_citations(
         if block.startswith("```") and block.endswith("```"):
             continue
 
+        # 3b. Display-math exemption: LaTeX blocks ($$ ... $$) are derived renderings of
+        # model outputs (reverse DCF equations etc.), structurally equivalent to code fences,
+        # not prose claims. Surrounding factual prose still requires citations.
+        if block.startswith("$$") and block.endswith("$$"):
+            continue
+
         # 4. Blockquote exemption
         if all(line.startswith(">") for line in lines):
             continue
