@@ -29,7 +29,7 @@ const articles = defineCollection({
     company: z.string().optional(),
     publishedAt: z.string(),
     thesis: z.string(),
-    verdict: z.enum(['Forensic Warning', 'Bullish Audit', 'Caution', 'Neutral', 'Validation Watch', 'Avoid']).default('Forensic Warning'),
+    verdict: z.enum(['Forensic Warning', 'Bullish Audit', 'Approved Long', 'Caution', 'Neutral', 'Validation Watch', 'Avoid']).default('Forensic Warning'),
     reverseDcfImpliedGrowth: z.string().optional(),
     targetValuation: z.string().optional(),
     beneishMScore: z.string().optional(),

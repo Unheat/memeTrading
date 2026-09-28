@@ -34,7 +34,15 @@ You are an activist short-seller and head of the Red Team Stress Testing unit at
    You must provide at least 2 explicit numerical thresholds where the thesis is provably broken:
    - Example: *"Kill Trigger 1: Consolidated Free Cash Flow margin drops below 18.0% for 2 consecutive quarters."*
    - Example: *"Kill Trigger 2: Cloud segment Net Revenue Retention (NRR) slows below 110%."*
-4. **Isolation Barrier**:
+4. **Empirically Grounded Downside Bear Floor (`bear_floor_price`)**:
+   - The Bear Floor must be an empirically grounded downside anchor based on financial reality, NOT an arbitrary catastrophic crash.
+   - Anchor the floor to institutional valuation supports provided in the evidence:
+     * Street Consensus Low Target: The lowest price target among covering Wall Street analysts.
+     * Trough Valuation Multiple: Trough P/E (e.g. 10x-15x on normalized earnings) or low-case DCF fair value.
+     * Balance Sheet Support: Tangible book value per share or net cash per share.
+   - For profitable, cash-generative market leaders with fortress balance sheets and expanding free cash flows, the bear floor represents a realistic cyclical drawdown (typically 10%–25% below market price, or bounded by the Street Low target), NOT an unevidenced bankruptcy scenario unless fraud or insolvency is proven.
+   - For speculative, unprofitable, or debt-heavy turnarounds, a deeper downside floor (e.g. tangible asset liquidation or restructuring floor) is appropriate.
+5. **Isolation Barrier**:
    You run in strict isolation from the Bull agent. You do not see their draft. You cannot soften or negotiate your objections.
 
 ---
@@ -76,6 +84,8 @@ def run_adversarial_red_team(state: InvestigationState, model: Any) -> dict[str,
     contradictions = state.get("contradictions", [])
     market = state.get("market_context") or {}
     consensus = state.get("consensus_snapshot") or {}
+    quant = state.get("quant_report") or {}
+    quant_val = quant.get("valuation") or {}
 
     facts_payload = json.dumps(
         {
@@ -87,6 +97,7 @@ def run_adversarial_red_team(state: InvestigationState, model: Any) -> dict[str,
             "contradictions": contradictions,
             "market_context": market,
             "consensus_snapshot": consensus,
+            "quant_valuation_low_case": ((quant_val.get("fair_value_range") or {}).get("low") or (quant_val.get("cases", {}).get("low", {}) or {}).get("fair_value_per_share")),
         },
         indent=2,
     )
@@ -98,7 +109,7 @@ Verified Evidence and Facts gathered:
 {facts_payload}
 ```
 
-Identify the 4 structural flaws, 2 numeric kill triggers, and realistic bear floor price.
+Identify the 4 structural flaws, 2 numeric kill triggers, and realistic, empirically grounded bear floor price.
 """
 
     response = model.invoke([
@@ -111,8 +122,13 @@ Identify the 4 structural flaws, 2 numeric kill triggers, and realistic bear flo
         # the report instead of discarding it wholesale.
         data = parse_llm_json_block(getattr(response, "content", ""))
 
-        objections = tuple(str(x) for x in (data.get("falsifiable_objections") or []) if str(x).strip())
-        kill_criteria = tuple(str(x) for x in (data.get("numeric_kill_criteria") or []) if str(x).strip())
+        def _extract_text(item: Any) -> str:
+            if isinstance(item, dict):
+                return str(item.get("mechanism") or item.get("objection") or item.get("thesis") or item.get("description") or item.get("criterion") or item.get("metric") or item).strip()
+            return str(item).strip()
+
+        objections = tuple(_extract_text(x) for x in (data.get("falsifiable_objections") or []) if _extract_text(x))
+        kill_criteria = tuple(_extract_text(x) for x in (data.get("numeric_kill_criteria") or []) if _extract_text(x))
         bear_floor = None
         raw_floor = data.get("bear_floor_price")
         try:

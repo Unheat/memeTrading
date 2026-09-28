@@ -178,8 +178,8 @@ def publish_case(
 
     ic_verdict = inv_data.get("ic_verdict", {}) or {}
     raw_verdict = str(ic_verdict.get("verdict") or "").upper()
-    if "BULL" in raw_verdict or "BUY" in raw_verdict:
-        verdict = "Bullish Audit"
+    if "BULL" in raw_verdict or "BUY" in raw_verdict or "LONG" in raw_verdict or "APPROVED" in raw_verdict:
+        verdict = "Approved Long"
     elif "CAUTION" in raw_verdict or "WATCH" in raw_verdict:
         verdict = "Validation Watch"
     elif "NEUTRAL" in raw_verdict or "HOLD" in raw_verdict:
