@@ -130,7 +130,12 @@ def publish_case(
     if not article_file.exists():
         raise FileNotFoundError(f"article.md not found in {case_path}")
 
-    raw_article = article_file.read_text(encoding="utf-8")
+    raw_article = article_file.read_text(encoding="utf-8").strip()
+    # Strip any leading YAML frontmatter if already present
+    if raw_article.startswith("---"):
+        parts = raw_article.split("---", 2)
+        if len(parts) >= 3:
+            raw_article = parts[2].strip()
 
     citation_cards = inv_data.get("citation_cards") or []
     if not citation_cards:
@@ -188,11 +193,39 @@ def publish_case(
     rev_dcf = valuation.get("reverse_dcf") or {}
     implied_growth = rev_dcf.get("implied_growth_pct") or rev_dcf.get("implied_fcf_growth_rate") or valuation.get("implied_growth_rate")
 
-    base_case = valuation.get("cases", {}).get("base", {})
-    fair_value = base_case.get("fair_value_per_share") or valuation.get("fair_value") or valuation.get("estimated_fair_value")
+    # Fallback to dossier or memo text for implied growth if unpopulated
+    memo_file = case_path / "memo.md"
+    memo_text = memo_file.read_text(encoding="utf-8") if memo_file.exists() else ""
 
-    rev_dcf_str = str(implied_growth) if isinstance(implied_growth, str) else (f"{float(implied_growth) * 100:.1f}%" if implied_growth is not None else None)
-    target_val_str = f"${float(fair_value):.2f}" if fair_value is not None else None
+    rev_dcf_str = None
+    if implied_growth is not None:
+        rev_dcf_str = str(implied_growth) if isinstance(implied_growth, str) else f"{float(implied_growth) * 100:.1f}%"
+    elif memo_text:
+        m_growth = re.search(r"(?:Reverse DCF Implied Growth|Implied 5-Year FCF CAGR)[^\n0-9]*([0-9]+(?:\.[0-9]+)?)\s*%", memo_text, re.I)
+        if m_growth:
+            rev_dcf_str = f"{m_growth.group(1)}%"
+
+    # Resolve fundamental fair value per share
+    dossier = (inv_data.get("capability_outputs", {}).get("diligence_dossiers") or {}).get(ticker, {})
+    val_range = (dossier.get("valuation") or {}).get("fair_value_range") or {}
+    base_case = valuation.get("cases", {}).get("base", {})
+
+    fair_value = (
+        val_range.get("blended_base")
+        or val_range.get("base")
+        or dossier.get("fair_value")
+        or base_case.get("fair_value_per_share")
+        or valuation.get("fair_value")
+        or valuation.get("estimated_fair_value")
+    )
+
+    target_val_str = None
+    if fair_value is not None and float(fair_value) > 0:
+        target_val_str = f"${float(fair_value):.2f}"
+    elif memo_text:
+        m_val = re.search(r"(?:Weighted Expected Value|Probability-Weighted Expected Value|Fundamental Fair Value|Blended Fair Value|Base Target|fair value corridor)[^\n$]*\$([0-9]+(?:\.[0-9]{1,2})?)", memo_text, re.I)
+        if m_val:
+            target_val_str = f"${float(m_val.group(1)):.2f}"
 
     # M-Score risk
     forensic = inv_data.get("forensic_report", {}) or {}
@@ -312,7 +345,6 @@ def publish_case(
     if video_config:
         frontmatter_dict["video"] = video_config
     if citations:
-        frontmatter_dict["citations"] = citations
         frontmatter_dict["citations"] = citations
 
     frontmatter_yaml = json.dumps(frontmatter_dict, indent=2)
