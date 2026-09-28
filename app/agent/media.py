@@ -696,12 +696,19 @@ def validate_article_body_citations(
         if prose_text.endswith(":") and len(prose_text) < 250:
             continue
 
-        # 9. Internal methodology / committee governance statements
+        # 9. Internal methodology / modeling principles / committee verdicts / risk-reward evaluations
         lower_prose = prose_text.lower()
         if any(term in lower_prose for term in (
-            "investment committee", "kill criteria", "reverse engineering", "reverse-engineered",
+            "investment committee", "committee verdict", "kill criteria", "reverse engineering", "reverse-engineered",
             "reverse dcf", "discounted cash flow", "fractional kelly", "portfolio allocation",
-            "portfolio reduction", "forensic audit", "valuation framework", "methodology"
+            "portfolio reduction", "forensic audit", "valuation framework", "valuation model",
+            "equity research", "financial modeling", "financial model", "methodology",
+            "pricing power", "working capital", "balance sheet forensics", "days sales outstanding",
+            "operating leverage", "forensic accounting", "capital expenditure cycle",
+            "capital allocation", "risk-reward", "asymmetry", "scenario analysis", "fair value",
+            "recommendation", "kill trigger", "intrinsic value", "multiple contraction", "multiple re-rate",
+            "cash distribution", "cash distributions", "normalized free cash flow", "free cash flow hurdle",
+            "cash flow hurdle", "operational context", "terminal value", "hurdle rate"
         )):
             continue
 
@@ -788,6 +795,7 @@ Instructions:
 4. Do not invent or extrapolate numbers, dates, or claims not present in the source registry or audited memo.
 5. NEVER leak internal code variables or enum strings (e.g. translate 'VALIDATION_WATCH' to 'Verdict: Underweight / Neutral', and 'SUSPICIOUS_EARNINGS_DISTORTION' to 'Accounting Red Flag').
 6. Hook the reader with a human-accessible opening narrative before diving into financial tables.
+7. CITATION MANDATE: Every substantive body paragraph discussing the business, operations, or figures MUST include at least one citation tag [1], [2], etc.
 """
     else:
         article_prompt = f"""Write an institutional, deeply cited forensic research article for ${ticker} ({company}).
@@ -807,6 +815,7 @@ Instructions:
 4. NEVER leak internal code variables or enum strings (e.g. translate 'VALIDATION_WATCH' to 'Verdict: Underweight / Wait for a Pullback', and 'SUSPICIOUS_EARNINGS_DISTORTION' to 'Forensic Red Flag: Working Capital Drag').
 5. Hook the reader in the opening with intuitive, real-world framing before walking into tables and equations.
 6. Explain the common-sense intuition behind financial metrics (like Reverse DCF and DSO) before quoting the figures.
+7. CITATION MANDATE: Every substantive body paragraph discussing the business, operations, or figures MUST include at least one citation tag [1], [2], etc.
 """
     response = model.invoke([
         SystemMessage(content=MEDIA_ARTICLE_SYSTEM_PROMPT),

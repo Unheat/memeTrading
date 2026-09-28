@@ -24,6 +24,9 @@ web/.astro/
 .codebase-memory/
 .zcode/
 .zcodeignore
+.agents/
+.claude/
+skills-lock.json
 cases/
 temp_plan/
 web/public/videos/

@@ -573,3 +573,22 @@ Google secretly launched a new chip architecture without announcement.
     result = validate_article_body_citations(article, cards)
     assert result["passed"] is False
     assert any("Factual paragraph lacks a valid citation tag" in err for err in result["errors"])
+
+
+def test_validate_article_body_citations_methodology_framing_exempt():
+    """Conceptual finance principles and methodology transitions are exempt from source citations."""
+    from app.agent.media import CitationCard, validate_article_body_citations
+
+    cards = [
+        CitationCard(index=1, tag="[1]", source_type="SEC Filing", title="10-Q", url="https://sec.gov/1"),
+    ]
+    article = """# Research Headline
+Revenue grew by 15% [1].
+
+When a company enjoys true pricing power, working capital cycles compress: customers pay promptly and inventory turns over rapidly.
+
+In official filings, working capital contracted [1].
+"""
+    result = validate_article_body_citations(article, cards)
+    assert result["passed"] is True
+    assert result["errors"] == []
