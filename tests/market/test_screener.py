@@ -104,6 +104,34 @@ def test_execute_equity_screen_custom_criteria():
         assert res["sector"] == "Technology"
         assert res["records"][0]["ticker"] == "GOOGL"
         assert mock_yf.call_count == 1
+        args, kwargs = mock_yf.call_args
+        assert kwargs.get("sort_field") == "intradaymarketcap"
+        assert kwargs.get("sort_asc") is False
+
+
+def test_execute_equity_screen_custom_sort_fallers():
+    """Custom criteria supports sorting by percent change ascending to find biggest fallers."""
+    mock_quotes = [
+        {
+            "symbol": "DOWN",
+            "shortName": "Down Corp",
+            "regularMarketPrice": 10.0,
+            "marketCap": 2000000000.0,
+            "trailingPE": 15.0,
+        }
+    ]
+    with patch("app.market.screener._screen_yfinance", return_value={"quotes": mock_quotes}) as mock_yf:
+        res = execute_equity_screen(
+            sector="Technology",
+            sort_by="percent_change",
+            sort_asc=True,
+            limit=10,
+        )
+        assert res["status"] == "ok"
+        assert res["sorted_by"] == "percentchange"
+        args, kwargs = mock_yf.call_args
+        assert kwargs.get("sort_field") == "percentchange"
+        assert kwargs.get("sort_asc") is True
 
 
 def test_execute_equity_screen_handles_exception():

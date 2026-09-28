@@ -562,7 +562,9 @@ def create_agent_tools(
         max_market_cap: float | None = None,
         max_pe_ratio: float | None = None,
         min_revenue_growth_pct: float | None = None,
-        limit: int = 5,
+        sort_by: str | None = "market_cap",
+        sort_asc: bool = False,
+        limit: int = 25,
         candidate_id: str | None = None,
     ) -> str:
         """Screen US stocks quantitatively using institutional factor criteria or Wall Street presets.
@@ -571,9 +573,9 @@ def create_agent_tools(
         1. Discover candidates on open-ended screening requests based on real financial metrics (growth, P/E, cap).
         2. Identify legitimate industry peers for relative valuation multiples and comparison matrices.
         3. Find clean replacement candidates when an existing stock is vetoed by the Forensic Accounting Gate.
-
-        Supported presets: 'growth_technology_stocks', 'undervalued_growth_stocks', 'undervalued_large_caps',
-        'most_actives', 'day_gainers', 'day_losers', 'most_shorted_stocks'.
+        4. Screen top movers or special situations using presets ('day_gainers', 'day_losers', 'most_shorted_stocks',
+           'growth_technology_stocks', 'undervalued_large_caps', 'most_actives') or sorting criteria
+           (sort_by='percent_change' with sort_asc=True for biggest fallers/losers, sort_by='market_cap' for largest leaders).
         """
         suppressed = _guard_check(
             "screen_stocks",
@@ -584,6 +586,8 @@ def create_agent_tools(
                 "max_market_cap": max_market_cap,
                 "max_pe_ratio": max_pe_ratio,
                 "min_revenue_growth_pct": min_revenue_growth_pct,
+                "sort_by": sort_by,
+                "sort_asc": sort_asc,
                 "limit": limit,
             },
         )
@@ -597,6 +601,8 @@ def create_agent_tools(
                 max_market_cap=max_market_cap,
                 max_pe_ratio=max_pe_ratio,
                 min_revenue_growth_pct=min_revenue_growth_pct,
+                sort_by=sort_by,
+                sort_asc=sort_asc,
                 limit=limit,
             )
             if candidate_id:

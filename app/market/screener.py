@@ -49,10 +49,31 @@ SECTOR_MAP = {
 }
 
 
-def _screen_yfinance(query_or_preset: Any, count: int = 5) -> dict[str, Any]:
+SORT_FIELD_MAP = {
+    "market_cap": "intradaymarketcap",
+    "intradaymarketcap": "intradaymarketcap",
+    "volume": "dayvolume",
+    "dayvolume": "dayvolume",
+    "percent_change": "percentchange",
+    "percentchange": "percentchange",
+    "pe_ratio": "peratio.lasttwelvemonths",
+    "pe": "peratio.lasttwelvemonths",
+}
+
+
+def _screen_yfinance(
+    query_or_preset: Any,
+    count: int = 25,
+    sort_field: str | None = None,
+    sort_asc: bool = False,
+) -> dict[str, Any]:
     """Seam over yfinance screener function to allow clean testing without live network."""
     import yfinance.screener.screener as yfs
-    return yfs.screen(query_or_preset, count=count)
+    kwargs: dict[str, Any] = {"count": count}
+    if sort_field:
+        kwargs["sortField"] = sort_field
+        kwargs["sortAsc"] = sort_asc
+    return yfs.screen(query_or_preset, **kwargs)
 
 
 def normalize_sector(sector: str | None) -> str | None:
@@ -77,7 +98,9 @@ def execute_equity_screen(
     max_market_cap: Optional[float] = None,
     max_pe_ratio: Optional[float] = None,
     min_revenue_growth_pct: Optional[float] = None,
-    limit: int = 5,
+    sort_by: Optional[str] = "market_cap",
+    sort_asc: bool = False,
+    limit: int = 25,
 ) -> dict[str, Any]:
     """Execute quantitative equity screener across US major exchanges.
 
@@ -88,12 +111,14 @@ def execute_equity_screen(
         max_market_cap: Maximum intraday market capitalization in USD.
         max_pe_ratio: Maximum trailing P/E ratio.
         min_revenue_growth_pct: Minimum quarterly revenue growth percentage.
-        limit: Maximum number of candidate results to return (1-25).
+        sort_by: Criterion to sort results ('market_cap', 'volume', 'percent_change', 'pe_ratio').
+        sort_asc: True for ascending sort, False for descending (defaults to False, highest first).
+        limit: Maximum number of candidate results to return (1-25, default 25).
 
     Returns:
         Structured dictionary containing status, match count, and candidate records.
     """
-    safe_limit = max(1, min(25, int(limit or 5)))
+    safe_limit = max(1, min(25, int(limit or 25)))
 
     # Branch 1: Predefined screen preset
     if preset and str(preset).strip().lower() in SUPPORTED_PRESETS:
@@ -137,12 +162,14 @@ def execute_equity_screen(
         if min_revenue_growth_pct is not None:
             subqueries.append(EqyQy("gte", ["quarterlyrevenuegrowth.quarterly", float(min_revenue_growth_pct)]))
 
+        sort_field = SORT_FIELD_MAP.get(str(sort_by).strip().lower(), "intradaymarketcap") if sort_by else "intradaymarketcap"
+
         if len(subqueries) == 1 and not norm_sec:
             # If no filters provided, default to growth tech preset
             raw_response = _screen_yfinance("growth_technology_stocks", count=safe_limit)
         else:
             query = EqyQy("and", subqueries)
-            raw_response = _screen_yfinance(query, count=safe_limit)
+            raw_response = _screen_yfinance(query, count=safe_limit, sort_field=sort_field, sort_asc=sort_asc)
 
         quotes = raw_response.get("quotes", [])
         records = _format_quotes(quotes, safe_limit)
@@ -150,6 +177,7 @@ def execute_equity_screen(
             "status": "ok",
             "count": len(records),
             "sector": norm_sec,
+            "sorted_by": sort_field,
             "records": records,
         }
     except Exception as exc:
