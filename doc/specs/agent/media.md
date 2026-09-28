@@ -34,6 +34,11 @@ class CitationCard:
 - Injects the pre-indexed source cards and `memo_markdown` into the prompt.
 - Constrains the LLM to cite claims using `[1]`, `[2]`, etc., matching the exact numbers in the source cards.
 - Deterministically appends the verified `## Primary Sources & Regulatory Receipts` bibliography directly from Python, ensuring 100% link accuracy.
+- **Editorial Voice & Architecture**:
+  - **Narrative Hook First**: Opens with an arresting, human-accessible narrative hook that articulates the core business tension or valuation paradox before plunging into dense tables.
+  - **Zero Code Leakage / Plain English**: Strictly translates internal state enums (`VALIDATION_WATCH`, `SUSPICIOUS_EARNINGS_DISTORTION`, `QUALIFIED_NORMALIZED_ADJUSTMENT`, `cand_*`) into crisp, authoritative financial terminology (e.g. "Verdict: Underweight / Wait for Pullback", "Forensic Red Flag: Working Capital Drag").
+  - **Progressive Disclosure**: Guides the reader intuitively from real-world business mechanics (supply chains, customer budgets, physical constraints) into SEC balance sheet forensics, demystified Reverse DCF expectations, and quantitative risk thresholds.
+  - **Anti-Slop Hygiene**: Avoids empty AI buzzwords ("delve", "testament", "tapestry", "landscape", "pivotal moment") in favor of active, specific, Wall Street / Substack-grade financial prose.
 
 #### `generate_reel_script(article_markdown: str, model: Any, character_pair: str = "peter_stewie", reel_temperature: float = 0.4) -> tuple[list[dict], str, str]`
 - Reads `article_markdown` directly as input.
