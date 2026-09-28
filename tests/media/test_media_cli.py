@@ -71,3 +71,37 @@ def test_generate_video_for_case_validates_article_citations(tmp_path: Path) -> 
 
     with pytest.raises(ValueError, match="article failed citation validation"):
         generate_video_for_case(case_dir=case_dir, script_only=True)
+
+
+def test_generate_video_for_case_ignores_appended_bibliography(tmp_path: Path, monkeypatch) -> None:
+    """The persisted article's trailing bibliography must not fail the video citation gate.
+
+    Bibliography entries are the sources themselves and carry no [n] tags; the gate must
+    validate the same body the writer validated, not the full persisted file.
+    """
+    case_dir = tmp_path / "BIBLIO-2026-09-28-001"
+    case_dir.mkdir(parents=True)
+    article = (
+        "# Title\n\nRevenue grew by 15% [1].\n\n---\n\n"
+        "## Primary Sources & Regulatory Receipts\n\n"
+        "1. **U.S. Securities & Exchange Commission (SEC) — Official XBRL Financial Statements** "
+        "(SEC Accession `sec_xbrl` | [Official Source](https://www.sec.gov))\n"
+    )
+    (case_dir / "article.md").write_text(article, encoding="utf-8")
+    inv_data = {
+        "ticker": "BIBLIO",
+        "publication_readiness": {"passed": True, "status": "publishable", "reasons": []},
+        "citation_cards": [{"index": 1, "title": "SEC 10-K", "url": "https://sec.gov"}],
+    }
+    (case_dir / "investigation.json").write_text(json.dumps(inv_data), encoding="utf-8")
+
+    captured: dict[str, object] = {}
+
+    def fake_generate_reel_script(article_markdown: str, model: object, character_pair: str, reel_temperature: float) -> tuple[list[dict], str, str]:
+        captured["article"] = article_markdown
+        return [], "script", "caption"
+
+    monkeypatch.setattr("app.media.cli.generate_reel_script", fake_generate_reel_script)
+    result = generate_video_for_case(case_dir=case_dir, script_only=True)
+    assert result is None
+    assert "Primary Sources" not in str(captured.get("article", ""))

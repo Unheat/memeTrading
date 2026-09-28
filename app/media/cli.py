@@ -73,7 +73,16 @@ def generate_video_for_case(
         raise ValueError(f"Case {case_path.name} has no persisted canonical citation_cards.")
 
     source_text = article_file.read_text(encoding="utf-8")
-    validation = validate_article_body_citations(source_text, canonical_cards)
+    # The persisted article carries the deterministic bibliography appended after the body.
+    # Bibliography entries are the sources themselves and never carry citation tags, so the
+    # citation gate must see the same body the writer validated (split convention mirrors
+    # app.agent.media.generate_article_markdown).
+    article_body = re.split(
+        r"\n##\s*(?:Primary Sources|Regulatory Receipts|References|Sources)",
+        source_text,
+        flags=re.IGNORECASE,
+    )[0].strip()
+    validation = validate_article_body_citations(article_body, canonical_cards)
     if not validation["passed"]:
         raise ValueError(
             f"Case {case_path.name} article failed citation validation: {'; '.join(validation['errors'])}"
@@ -107,7 +116,7 @@ def generate_video_for_case(
 
         logger.info("Synthesizing viral video dialogue using character pair '%s'...", character_pair)
         dialogue_json, reel_script_text, caption_text = generate_reel_script(
-            article_markdown=source_text,
+            article_markdown=article_body,
             model=runtime.model,
             character_pair=character_pair,
             reel_temperature=cfg.media.reel_temperature,
