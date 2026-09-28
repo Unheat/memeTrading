@@ -7,19 +7,36 @@ import mermaid from 'astro-mermaid';
 export default defineConfig({
   output: 'static',
   outDir: './dist',
+  markdown: {
+    shikiConfig: {
+      theme: 'css-variables',
+    },
+  },
   integrations: [
     mermaid({
-      theme: 'neutral',
-      autoTheme: true,
+      theme: 'base',
+      autoTheme: false,
       mermaidConfig: {
+        startOnLoad: true,
+        flowchart: {
+          htmlLabels: true,
+          useMaxWidth: false,
+          curve: 'basis',
+          nodeSpacing: 45,
+          rankSpacing: 45,
+          padding: 18,
+        },
         themeVariables: {
           fontFamily: 'Inter, system-ui, sans-serif',
-          fontSize: '13px',
-          primaryColor: '#ECE7DB',
-          primaryBorderColor: '#DCD5C4',
-          primaryTextColor: '#23211D',
-          lineColor: '#635F57',
-          secondaryColor: '#FAF9F5',
+          fontSize: '12px',
+          primaryColor: '#FFFFFF',
+          primaryBorderColor: '#C8C0AC',
+          primaryTextColor: '#181714',
+          lineColor: '#5A554C',
+          secondaryColor: '#F5F2E9',
+          tertiaryColor: '#FAF7F0',
+          edgeLabelBackground: '#FAF7F0',
+          nodeBorder: '#C8C0AC',
         },
       },
     }),

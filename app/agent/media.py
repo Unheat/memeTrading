@@ -68,10 +68,11 @@ EDITORIAL FORMAT & STRUCTURE:
      * Define 2–3 precise, quantitative Kill Triggers (what specific metric breaches would force an immediate exit).
 5. FINANCIAL TABLES: Present financial data in clean, well-aligned Markdown tables with explicit units in headers, e.g. `| Metric ($ in Millions) | FY24 | FY25 | FY26E |`. Ensure numbers are cleanly formatted (e.g., `$8.12B`, `28.2%`).
 6. VALUATION CALLOUTS: Present valuation metrics, Reverse DCF implied growth, and Reward-to-Risk asymmetry in structured bullet points or callout cards. NEVER use raw LaTeX formula blocks (e.g. do NOT write `$$\\frac{...}{...}$$` with citation tags inside equations).
-7. DIAGRAMS & CHARTS (STRICT ZERO-ASCII POLICY):
-   - STRICTLY FORBIDDEN: NEVER draw raw ASCII art boxes (e.g. `+-----+`, `|`, `▼`), ASCII axis plots, or text-based line drawings. They look cheap and disrupt the publication's design.
-   - CAUSAL FLYWHEELS & VALUE CHAINS: For multi-step processes, supply-chain links, or feedback loops, author clean Mermaid.js vector diagrams inside ```mermaid code blocks (e.g. `flowchart TD\n  A["Step A"] --> B["Step B"]`).
-   - REVENUE ESCALATIONS & SCHEDULES: Present multi-year revenue projections, consensus estimates, and CapEx comparisons as clean Markdown tables with explicit columns for Horizon, Amount ($), and YoY/QoQ growth rates.
+7. DIAGRAMS & CHARTS (STRICT ZERO-ASCII & ZERO-GENERIC-CODE-BLOCK POLICY):
+   - STRICTLY FORBIDDEN: NEVER emit generic triple-backtick ``` code blocks for calculations, reconciliations, scenario spectrums, or ASCII drawings.
+   - The ONLY permitted code fence in the entire article is ```mermaid for flowcharts. There should be ZERO other code fences.
+   - Every financial reconciliation, valuation spectrum, analyst distribution, or calculation MUST be rendered as a clean, responsive Markdown table or styled bullet points.
+   - CAUSAL FLYWHEELS & FLOWCHARTS: Author clean Mermaid.js vector diagrams inside ```mermaid code blocks. Inside Mermaid node labels, ALWAYS use `<br/>` tags to break long lines (keep each line under 35 characters) so text is never clipped or truncated.
    - ASYMMETRIC SCENARIOS: Present valuation ranges (Bear Floor, Base Fair Value, High Case, Current Price) in clean comparative tables.
 
 STRICT CITATION HYGIENE (WIKIPEDIA STYLE):

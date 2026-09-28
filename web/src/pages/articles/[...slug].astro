@@ -129,25 +129,132 @@ const isWarning = article.data.verdict === 'Forensic Warning';
 </Layout>
 
 <style is:global>
+  /* Code block styling: Clean contrast in both light and dark modes */
+  .prose pre,
+  .prose pre.astro-code {
+    background-color: #FAF7F0 !important;
+    border: 1px solid #DCD5C4 !important;
+    border-radius: 0.625rem !important;
+    padding: 1.125rem 1.25rem !important;
+    color: #181714 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03) !important;
+    overflow-x: auto !important;
+  }
+  .prose pre code,
+  .prose pre code span,
+  .prose pre .line {
+    color: #181714 !important;
+    background-color: transparent !important;
+    font-family: 'JetBrains Mono', SFMono-Regular, Menlo, monospace !important;
+    font-size: 0.8125rem !important;
+    line-height: 1.6 !important;
+  }
+  .dark .prose pre,
+  .dark .prose pre.astro-code {
+    background-color: #161920 !important;
+    border: 1px solid #292F3D !important;
+    color: #EAE7E1 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25) !important;
+  }
+  .dark .prose pre code,
+  .dark .prose pre code span,
+  .dark .prose pre .line {
+    color: #EAE7E1 !important;
+  }
+
+  /* Inline code styling */
+  .prose :not(pre) > code {
+    background-color: #ECE7DB !important;
+    color: #23211D !important;
+    padding: 0.15rem 0.35rem !important;
+    border-radius: 0.25rem !important;
+    font-size: 0.85em !important;
+    border: 1px solid #DCD5C4 !important;
+  }
+  .dark .prose :not(pre) > code {
+    background-color: #1E232E !important;
+    color: #EAE7E1 !important;
+    border-color: #292F3D !important;
+  }
+
+  /* Mermaid Diagram: Financial Times / High-Signal Editorial Graphics */
   .mermaid {
     display: flex;
     justify-content: center;
     align-items: center;
-    margin: 2.25rem 0;
-    padding: 1.5rem 1rem;
-    background-color: #ECE7DB;
+    margin: 2.5rem 0;
+    padding: 1.75rem 1.25rem;
+    background-color: #FAF7F0;
     border: 1px solid #DCD5C4;
     border-radius: 0.75rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
     overflow-x: auto;
   }
   .dark .mermaid {
-    background-color: #1A1E26;
+    background-color: #161920;
     border-color: #292F3D;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
   }
   .mermaid svg {
     max-width: 100%;
     height: auto;
+    overflow: visible !important;
+  }
+  .mermaid foreignObject {
+    overflow: visible !important;
+  }
+  .mermaid foreignObject div {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+    line-height: 1.35 !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    padding: 4px 6px !important;
+  }
+  .mermaid .node rect,
+  .mermaid .node polygon,
+  .mermaid .node circle {
+    rx: 6px !important;
+    ry: 6px !important;
+    stroke-width: 1.5px !important;
+    stroke: #C8C0AC !important;
+    fill: #FFFFFF !important;
+  }
+  .dark .mermaid .node rect,
+  .dark .mermaid .node polygon,
+  .dark .mermaid .node circle {
+    fill: #1E232E !important;
+    stroke: #3C4559 !important;
+  }
+  .mermaid .label,
+  .mermaid .nodeLabel,
+  .mermaid .label text {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    color: #181714 !important;
+    fill: #181714 !important;
+    line-height: 1.35 !important;
+  }
+  .dark .mermaid .label,
+  .dark .mermaid .nodeLabel,
+  .dark .mermaid .label text {
+    color: #EAE7E1 !important;
+    fill: #EAE7E1 !important;
+  }
+  .mermaid .edgePath path {
+    stroke: #635F57 !important;
+    stroke-width: 1.5px !important;
+  }
+  .dark .mermaid .edgePath path {
+    stroke: #9EA3B0 !important;
+  }
+  .mermaid .arrowheadPath {
+    fill: #635F57 !important;
+  }
+  .dark .mermaid .arrowheadPath {
+    fill: #9EA3B0 !important;
   }
 </style>
