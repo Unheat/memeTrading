@@ -45,6 +45,7 @@ grassroots demand signal (Reddit, forums, news)
 ```
 
 - 🔍 **Immutable SEC Evidence Ledger:** Every material revenue, inventory, and margin claim is anchored in official SEC EDGAR filings (`10-K`, `10-Q`, `8-K`) with exact accession numbers and disk receipts. Zero hallucinations.
+- 📊 **Keyless Quantitative Equity Screener:** Instant factor-based and Wall Street preset screening across US exchanges (market cap, P/E multiples, revenue growth) with zero paid API keys or third-party subscriptions.
 - 📉 **Reverse DCF (Expectations Investing):** Instead of guessing future stock prices, the engine solves the discounted cash flow equation backwards: what cash-flow growth rate and ROIC is the current share price pricing in?
 - 🛡️ **Forensic Accounting Shields:** Automatically computes the **Beneish M-Score** (manipulation risk), **Sloan Accrual Ratio** (earnings quality), and **Days of Inventory Outstanding (DIO)** drift to catch cyclical tops early.
 - 🏛️ **Deterministic Committee Boardroom:** Enforces a 4-tier decision gate (Evidence, Accounting, Valuation, and Asymmetry $\ge 3.0\times$) paired with single-pass Chief Investment Officer (CIO) deliberation and **Fractional Kelly Criterion** position sizing.
@@ -113,7 +114,7 @@ See [PIPELINE_ARCHITECTURE.md](./PIPELINE_ARCHITECTURE.md) for the complete end-
 
 ```mermaid
 flowchart TD
-    START([User Research Prompt]) --> S1[Stage 1: Structured Planning<br/>(assess_scout_need & 2-step synthesis)]
+    START([User Research Prompt]) --> S1["Stage 1: Model-Driven Planning<br/>(assess_scout_need discovery + evidence-tier hypotheses)"]
     S1 --> S2[Stage 2: Deep Research Agent Loop]
 
     subgraph S2["Stage 2: Deep Research Agent (Analyst Workbench)"]

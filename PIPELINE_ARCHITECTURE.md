@@ -20,9 +20,36 @@ flowchart TD
     %% ==========================================
     %% STAGE 1: PLANNER
     %% ==========================================
-    subgraph S1["Stage 1: Structured Planning (planner)"]
+    subgraph S1["Stage 1: Model-Driven Planning & Discovery (planner)"]
         direction TB
-        P_DESC["<b>Structured Research Plan Generator</b><br/>• Model-driven preliminary discovery (assess_scout_need)<br/>• Strategic scouting: screen_stocks, search_web, articles, social<br/>• Decomposes query into ResearchPlanSchema<br/>• Sets single vs multi-candidate scope<br/>• Auto-seeds isolated candidate workspaces (cand_...)"]
+
+        subgraph P_ASSESS["1. Model-Driven Scout Assessment (assess_scout_need)"]
+            direction TB
+            p_eval["<b>LLM Intent & Discovery Evaluator</b><br/>• Deconstructs prompt & identifies target entities<br/>• Fast-Path: Bypass scouting if ticker/company already known<br/>• Generates 1-2 targeted keyword queries & picks discovery tool"]
+        end
+
+        subgraph P_SCOUT["2. Targeted Preliminary Discovery Tools"]
+            direction TB
+            p_scr["screen_stocks: Quantitative factor & preset screening"]
+            p_web["search_web: Industry rankings & thematic catalysts"]
+            p_art["search_articles: Real-time news & regulatory announcements"]
+            p_soc["search_social: Retail sentiment & momentum velocity"]
+        end
+
+        subgraph P_SYNTH["3. Structured Plan & Hypothesis Synthesis (generate_research_plan)"]
+            direction TB
+            p_plan["<b>ResearchPlanSchema Generator</b><br/>• Decomposes query into 3-5 testable ResearchHypothesis items<br/>• Assigns evidence_tier: structured_quant, primary_regulatory, macro_series, open_web<br/>• Sets scope (single vs multi-candidate) & execution budget ceiling (25 vs 50)"]
+        end
+
+        subgraph P_INIT["4. State & Workspace Hydration"]
+            direction TB
+            p_seed["<b>Candidate & Queue Hydration</b><br/>• Auto-seeds isolated candidate workspaces (cand_...)<br/>• Hydrates prioritized ResearchWorkItem DAG queue<br/>• Binds budget limits: standard (25) vs deep (50)"]
+        end
+
+        p_eval -->|needs_scouting=True| P_SCOUT
+        p_eval -->|Fast-Path: known entity| p_plan
+        P_SCOUT -->|Grounding Snippets| p_plan
+        p_plan --> p_seed
     end
 
     S1 --> S2
@@ -153,8 +180,8 @@ flowchart TD
 
     %% Class assignments
     class S1,S2,S3,S4,S5 stage;
-    class t_web,t_art,t_doc,t_soc,t_sec_fin,sec_list,sec_pull,sec_search,sec_chunk,sec_claim,sec_insider,t_mkt,t_co,t_own,t_macro,t_scr,t_reg,t_cmp,t_val tool;
-    class ENG_EXP,ENG_FOR,ENG_MOAT,ENG_QNT,ENG_BULL,ENG_BEAR,sec_sub_desc engine;
+    class t_web,t_art,t_doc,t_soc,t_sec_fin,sec_list,sec_pull,sec_search,sec_chunk,sec_claim,sec_insider,t_mkt,t_co,t_own,t_macro,t_scr,t_reg,t_cmp,t_val,p_scr,p_web,p_art,p_soc tool;
+    class ENG_EXP,ENG_FOR,ENG_MOAT,ENG_QNT,ENG_BULL,ENG_BEAR,sec_sub_desc,p_eval,p_plan,p_seed engine;
     class G_EV,G_ACC,G_VAL,G_ASYM,COMM,GATES gate;
     class PROMO read;
 ```
