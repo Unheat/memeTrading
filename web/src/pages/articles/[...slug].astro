@@ -102,7 +102,7 @@ const isWarning = article.data.verdict === 'Forensic Warning';
     <!-- Article Narrative Body with Newsreader Serif Typography -->
     <div
       id="article-content"
-      class="prose prose-journal max-w-none font-serif text-[18px] sm:text-[19px] leading-[1.85] text-journal-ink dark:text-night-ink
+      class="prose prose-journal dark:prose-invert max-w-none font-serif text-[18px] sm:text-[19px] leading-[1.85] text-journal-ink dark:text-night-ink
         prose-headings:font-serif prose-headings:font-bold prose-headings:tracking-tight prose-headings:text-journal-ink dark:prose-headings:text-night-ink
         prose-h2:text-2xl sm:prose-h2:text-3xl prose-h2:mt-12 prose-h2:mb-4 prose-h2:border-b prose-h2:border-journal-border dark:prose-h2:border-night-border prose-h2:pb-2
         prose-h3:text-xl prose-h3:mt-8 prose-h3:mb-3
@@ -110,7 +110,7 @@ const isWarning = article.data.verdict === 'Forensic Warning';
         prose-strong:font-semibold prose-strong:text-journal-ink dark:prose-strong:text-night-ink
         prose-ul:my-5 prose-li:my-1.5
         prose-hr:border-journal-border dark:prose-hr:border-night-border prose-hr:my-10
-        prose-blockquote:font-serif prose-blockquote:italic prose-blockquote:border-l-2 prose-blockquote:border-editorial-blue dark:prose-blockquote:border-editorial-blueDark prose-blockquote:bg-journal-card dark:prose-blockquote:bg-night-card prose-blockquote:p-4 sm:prose-blockquote:p-5 prose-blockquote:rounded-r-lg prose-blockquote:shadow-sm
+        prose-blockquote:font-serif prose-blockquote:italic prose-blockquote:border-l-2 prose-blockquote:border-editorial-blue dark:prose-blockquote:border-editorial-blueDark prose-blockquote:bg-journal-card dark:prose-blockquote:bg-night-card prose-blockquote:text-journal-lead dark:prose-blockquote:text-night-lead prose-blockquote:p-4 sm:prose-blockquote:p-5 prose-blockquote:rounded-r-lg prose-blockquote:shadow-sm
         prose-table:w-full prose-table:text-xs prose-table:my-8 prose-table:border-collapse prose-table:font-sans
         prose-th:font-sans prose-th:font-semibold prose-th:text-xs prose-th:text-journal-lead dark:prose-th:text-night-lead prose-th:uppercase prose-th:tracking-wider prose-th:py-2.5 prose-th:px-3 prose-th:border-b-2 prose-th:border-journal-border dark:prose-th:border-night-border prose-th:bg-journal-bg/70 dark:prose-th:bg-night-bg/70
         prose-td:py-2.5 prose-td:px-3 prose-td:border-b prose-td:border-journal-border/60 dark:prose-td:border-night-border/60 prose-td:font-sans prose-td:text-xs prose-td:text-journal-secondary dark:prose-td:text-night-secondary
@@ -175,6 +175,61 @@ const isWarning = article.data.verdict === 'Forensic Warning';
     background-color: #1E232E !important;
     color: #EAE7E1 !important;
     border-color: #292F3D !important;
+  }
+
+  /* Blockquote / Executive Briefing callout styling in light & dark modes */
+  .prose blockquote {
+    color: #3D3933 !important;
+  }
+  .prose blockquote p,
+  .prose blockquote li,
+  .prose blockquote span {
+    color: #3D3933 !important;
+  }
+  .prose blockquote strong {
+    color: #181714 !important;
+    font-weight: 600 !important;
+  }
+  .dark .prose blockquote {
+    background-color: #1A1E26 !important;
+    border-color: #72A1E5 !important;
+    color: #D4D0C7 !important;
+  }
+  .dark .prose blockquote p,
+  .dark .prose blockquote li,
+  .dark .prose blockquote span {
+    color: #D4D0C7 !important;
+  }
+  .dark .prose blockquote strong {
+    color: #FFFFFF !important;
+    font-weight: 600 !important;
+  }
+  .dark .prose blockquote h3 {
+    color: #F5F2E9 !important;
+  }
+
+  /* Universal dark mode typography safety overrides */
+  .dark .prose p,
+  .dark .prose li {
+    color: #EAE7E1 !important;
+  }
+  .dark .prose strong {
+    color: #FFFFFF !important;
+  }
+  .dark .prose h1,
+  .dark .prose h2,
+  .dark .prose h3,
+  .dark .prose h4 {
+    color: #F5F2E9 !important;
+  }
+  .dark .prose table td {
+    color: #D4D0C7 !important;
+  }
+  .dark .prose table td strong {
+    color: #FFFFFF !important;
+  }
+  .dark .prose table th {
+    color: #F5F2E9 !important;
   }
 
   /* Mermaid Diagram: Financial Times / High-Signal Editorial Graphics */
