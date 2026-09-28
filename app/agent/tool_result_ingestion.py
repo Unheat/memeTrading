@@ -13,6 +13,7 @@ from typing import Any
 from langchain_core.messages import ToolMessage
 
 from app.agent.contracts import ADMISSIBLE_EVIDENCE_STATUSES, ToolResultEnvelope
+from app.sec.receipts import get_sec_company_url
 
 logger = logging.getLogger(__name__)
 
@@ -401,7 +402,7 @@ def _distill_fact_cards(
             ("current_liabilities", "USD"),
         ]
         provider = str(payload.get("provider", "sec_xbrl"))
-        source_url = f"https://www.sec.gov/edgar/browse/?CIK={t_clean}"
+        source_url = get_sec_company_url(ticker=t_clean, cik=payload.get("cik"))
 
         for metric_key, unit in metrics_to_extract:
             series = payload.get(metric_key)

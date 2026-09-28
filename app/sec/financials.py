@@ -49,11 +49,13 @@ class SecFinancialsResult:
     ttm_fcf: float | None = None
     dio: dict[str, float | None] = field(default_factory=dict)
     dso: dict[str, float | None] = field(default_factory=dict)
+    cik: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to JSON-serializable dictionary."""
         return {
             "ticker": self.ticker,
+            "cik": self.cik,
             "status": self.status,
             "periods": list(self.periods),
             "revenue": dict(self.revenue),
@@ -121,6 +123,7 @@ class SecFinancialsResult:
             ttm_fcf=float(data["ttm_fcf"]) if data.get("ttm_fcf") is not None else None,
             dio=dict(data.get("dio", {})),
             dso=dict(data.get("dso", {})),
+            cik=str(data["cik"]) if data.get("cik") else None,
         )
 
 
@@ -442,8 +445,10 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4, as_of_date: str | None
     ensure_sec_identity()
 
     company = _get_company(ticker)
+    comp_cik = getattr(company, "cik", None)
 
     result: dict[str, Any] = {
+        "cik": str(comp_cik) if comp_cik is not None else None,
         "periods": [],
         "revenue": {},
         "gross_profit": {},
@@ -631,6 +636,7 @@ def get_sec_financials(ticker: str, periods: int = 4, as_of_date: str | None = N
             pass
 
         if is_foreign:
+            comp_cik = getattr(comp, "cik", None)
             return SecFinancialsResult(
                 ticker=clean_ticker,
                 status="ok_foreign_issuer_unstructured",
@@ -653,6 +659,7 @@ def get_sec_financials(ticker: str, periods: int = 4, as_of_date: str | None = N
                 error_message="Foreign Private Issuer reports under IFRS via Form 20-F/6-K (no standard US-GAAP XBRL). Use search_sec_evidence, read_sec_evidence, or company research fundamentals for financial metrics.",
                 dio={},
                 dso={},
+                cik=str(comp_cik) if comp_cik is not None else None,
             )
 
         return SecFinancialsResult(
@@ -813,4 +820,5 @@ def get_sec_financials(ticker: str, periods: int = 4, as_of_date: str | None = N
         ttm_fcf=ttm_fcf,
         dio=dio,
         dso=dso,
+        cik=str(raw.get("cik") or "") or None,
     )

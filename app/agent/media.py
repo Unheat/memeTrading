@@ -15,6 +15,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from app.agent.gate import evaluate_publication_readiness
 from app.agent.memo import extract_terminal_model_decision
 from app.agent.state import InvestigationState
+from app.sec.receipts import get_sec_company_url
 
 logger = logging.getLogger(__name__)
 
@@ -287,13 +288,24 @@ def build_source_registry(state: InvestigationState) -> list[CitationCard]:
                 sec_facts.append(f"Latest Cash & Equivalents: ${float(cash_map[periods[0]]) / 1e9:.2f}B")
 
             if sec_facts:
+                c_cik = (
+                    c.get("cik")
+                    or (dossier.get("cik") if isinstance(dossier, Mapping) else None)
+                    or (sec_fin.get("cik") if isinstance(sec_fin, Mapping) else None)
+                    or (state.get("cik") if c_ticker == str(state.get("ticker") or "").upper() else None)
+                )
+                if not c_cik and c.get("sec_filings"):
+                    first_filing = c["sec_filings"][0]
+                    if isinstance(first_filing, Mapping) and first_filing.get("cik"):
+                        c_cik = first_filing["cik"]
+
                 cards.append(
                     CitationCard(
                         index=card_idx,
                         tag=f"[{card_idx}]",
                         source_type="SEC Filing",
                         title=f"U.S. Securities & Exchange Commission (SEC) — Official XBRL Financial Statements (${c_ticker})",
-                        url=f"https://www.sec.gov/edgar/browse/?CIK={c_ticker}",
+                        url=get_sec_company_url(ticker=c_ticker, cik=c_cik),
                         accession=str(sec_fin.get("provider", "SEC-EDGAR-XBRL")),
                         facts=tuple(sec_facts),
                     )

@@ -12,6 +12,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 from app.agent.state import InvestigationState
+from app.sec.receipts import get_sec_company_url
 
 HEADLINE_MAX_WORDS = 15
 BOTTOM_LINE_SENTENCES = 2
@@ -560,7 +561,7 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
                     all_sources.append({
                         "title": f"SEC {filing.get('form', 'Filing')} (${t}, CIK {cik or 'N/A'})",
                         "status": "official_sec_edgar",
-                        "url": filing.get("filing_url") or f"https://www.sec.gov/edgar/browse/?CIK={cik}",
+                        "url": filing.get("filing_url") or get_sec_company_url(ticker=t, cik=cik),
                     })
             if cand.get("market_context"):
                 all_sources.append({

@@ -1,6 +1,6 @@
 """Tests for server-issued SEC discovery receipts and receipt-bound pull resolution."""
 from datetime import date
-from app.sec.receipts import SecReceiptStore
+from app.sec.receipts import SecReceiptStore, get_sec_company_url
 from app.sec.schemas import FilingMetadata
 
 
@@ -50,3 +50,26 @@ def test_receipt_store_registers_filings_and_resolves_selection():
 
     # Reject non-existent receipt
     assert store.resolve_selection("frec_unknown") is None
+
+
+def test_get_sec_company_url_resolution():
+    """Verify canonical SEC browse URLs use modern 10-digit CIK or classic ticker lookup."""
+    # 1. Numeric CIK zero-padded to 10 digits for modern EDGAR entity landing page
+    assert get_sec_company_url(ticker="NVDA", cik="1045810") == "https://www.sec.gov/edgar/browse/?CIK=0001045810"
+    assert get_sec_company_url(ticker="NVDA", cik=1045810) == "https://www.sec.gov/edgar/browse/?CIK=0001045810"
+    assert get_sec_company_url(ticker="INTC", cik="50863") == "https://www.sec.gov/edgar/browse/?CIK=0000050863"
+
+    # 2. Ticker symbol fallback uses classic EDGAR browse endpoint which resolves tickers natively
+    assert get_sec_company_url(ticker="NVDA", cik=None) == "https://www.sec.gov/cgi-bin/browse-edgar?CIK=NVDA"
+    assert get_sec_company_url(ticker="DELL", cik="") == "https://www.sec.gov/cgi-bin/browse-edgar?CIK=DELL"
+
+    # 3. Ticker mistakenly passed in cik parameter does not generate invalid zero-padded string like 000000NVDA
+    assert get_sec_company_url(cik="NVDA") == "https://www.sec.gov/cgi-bin/browse-edgar?CIK=NVDA"
+
+    # 4. Numeric string in ticker treated as CIK
+    assert get_sec_company_url(ticker="1045810") == "https://www.sec.gov/edgar/browse/?CIK=0001045810"
+
+    # 5. Missing or unknown identifiers fall back to general company search
+    assert get_sec_company_url(ticker="UNKNOWN") == "https://www.sec.gov/edgar/searchedgar/companysearch"
+    assert get_sec_company_url(ticker=None, cik=None) == "https://www.sec.gov/edgar/searchedgar/companysearch"
+

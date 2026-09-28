@@ -16,6 +16,40 @@ from app.sec.pull import SelectedSecDocument
 from app.sec.schemas import FilingMetadata
 
 
+def get_sec_company_url(ticker: str | None = None, cik: str | int | None = None) -> str:
+    """Build a canonical, valid SEC EDGAR browse URL for a company.
+
+    If a numeric CIK is available, returns the modern EDGAR entity landing page:
+        https://www.sec.gov/edgar/browse/?CIK={10_digit_zero_padded_cik}
+
+    If only an alphabetic ticker symbol is available (or CIK is absent/non-numeric),
+    returns the classic SEC EDGAR browse endpoint which natively resolves tickers server-side:
+        https://www.sec.gov/cgi-bin/browse-edgar?CIK={ticker}
+
+    Args:
+        ticker: Optional company stock ticker (e.g. "NVDA").
+        cik: Optional Central Index Key (e.g. "0001045810", 1045810).
+
+    Returns:
+        Authoritative SEC EDGAR URL that resolves cleanly without 404 or lookup errors.
+    """
+    clean_cik = str(cik or "").strip()
+    if clean_cik.isdigit():
+        return f"https://www.sec.gov/edgar/browse/?CIK={clean_cik.zfill(10)}"
+
+    clean_ticker = str(ticker or "").strip().upper()
+    if not clean_ticker and clean_cik and not clean_cik.isdigit():
+        clean_ticker = clean_cik.upper()
+
+    if clean_ticker.isdigit():
+        return f"https://www.sec.gov/edgar/browse/?CIK={clean_ticker.zfill(10)}"
+
+    if clean_ticker and clean_ticker not in {"UNKNOWN", "RESEARCH", "NONE"}:
+        return f"https://www.sec.gov/cgi-bin/browse-edgar?CIK={clean_ticker}"
+
+    return "https://www.sec.gov/edgar/searchedgar/companysearch"
+
+
 @dataclass(frozen=True)
 class DocumentReceipt:
     """Opaque server-resolved document reference."""
