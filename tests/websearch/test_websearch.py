@@ -10,6 +10,13 @@ def _ddg_row(title="NVDA press release", href="https://ir.nvidia.com/pr", body="
     return {"title": title, "href": href, "body": body}
 
 
+@pytest.fixture(autouse=True)
+def _isolate_search_env(monkeypatch):
+    """Ensure baseline websearch tests run isolated from ambient TAVILY_API_KEY in .env."""
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+
+
+
 def test_web_record_rejects_non_https():
     with pytest.raises(ValueError, match="url"):
         WebRecord(title="t", url="http://insecure.com/x", domain="insecure.com", snippet=None, position=0)
@@ -71,3 +78,56 @@ def test_search_web_requires_query():
         search_web("")
     with pytest.raises(ValueError):
         search_web("   ")
+
+
+def _tavily_row(title="NVDA press release", url="https://ir.nvidia.com/pr", content="Company announces.") -> dict:
+    return {"title": title, "url": url, "content": content}
+
+
+def test_tavily_search_maps_rows_and_filters_https(monkeypatch):
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test-key")
+    rows = [
+        _tavily_row(),
+        _tavily_row(title="Insecure", url="http://random.com/x", content="b"),
+        _tavily_row(title="No url", url="", content="b"),
+    ]
+    with patch("app.websearch.provider._tavily_request", return_value=rows):
+        records, provider = ddg_search.__globals__["search_with_provider"]("nvda press release", limit=10)
+    assert [r.url for r in records] == ["https://ir.nvidia.com/pr"]
+    assert records[0].domain == "ir.nvidia.com"
+    assert records[0].snippet == "Company announces."
+    assert provider == "tavily"
+
+
+def test_tavily_search_domain_restriction(monkeypatch):
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test-key")
+    rows = [
+        _tavily_row(url="https://ir.nvidia.com/pr"),
+        _tavily_row(title="Other", url="https://random.com/x"),
+    ]
+    with patch("app.websearch.provider._tavily_request", return_value=rows):
+        records, provider = ddg_search.__globals__["search_with_provider"]("nvda", domains=["ir.nvidia.com"], limit=10)
+    assert len(records) == 1
+    assert records[0].url == "https://ir.nvidia.com/pr"
+    assert provider == "tavily"
+
+
+def test_tavily_search_fallback_to_ddg_on_error(monkeypatch):
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test-key")
+    with patch("app.websearch.provider._tavily_request", side_effect=Exception("API rate limit")):
+        with patch("app.websearch.provider._ddgs_text", return_value=[_ddg_row()]):
+            records, provider = ddg_search.__globals__["search_with_provider"]("nvda", limit=10)
+    assert provider == "duckduckgo"
+    assert len(records) == 1
+    assert records[0].url == "https://ir.nvidia.com/pr"
+
+
+def test_search_web_orchestrator_records_tavily_provider(monkeypatch):
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test-key")
+    rows = [_tavily_row()]
+    with patch("app.websearch.provider._tavily_request", return_value=rows):
+        result = search_web("NVDA announcement", limit=10)
+    assert isinstance(result, WebSearchResult)
+    assert result.provider == "tavily"
+    assert result.records[0].snippet == "Company announces."
+

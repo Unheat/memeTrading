@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from app.websearch.provider import PROVIDER_NAME, search as provider_search
+from app.websearch.provider import PROVIDER_NAME, search_with_provider
 from app.websearch.schemas import WebSearchResult
 
 logger = logging.getLogger(__name__)
@@ -31,12 +31,12 @@ def search_web(query: str, domains: list[str] | None = None, limit: int = 10, fi
         if f"filetype:{ft}" not in clean_query.lower():
             clean_query = f"{clean_query} filetype:{ft}"
 
-    records = provider_search(clean_query, domains=domains, limit=limit)
+    records, provider = search_with_provider(clean_query, domains=domains, limit=limit)
 
     return WebSearchResult(
         query=clean_query,
         domains=tuple(domains) if domains else None,
         records=tuple(records),
-        provider=PROVIDER_NAME,
+        provider=provider,
         as_of=datetime.now(timezone.utc).isoformat(),
     )
