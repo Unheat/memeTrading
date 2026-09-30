@@ -38,3 +38,6 @@ client_secrets*.json
 credentials*.json
 .youtube_token*.json
 token*.json
+
+# Logs
+*.log

@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import threading
+from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -30,9 +31,23 @@ logger = logging.getLogger(__name__)
 _ACTIVE_JOB: dict[str, Any] = {
     "status": "idle",
     "case_id": None,
+    "job_id": None,
+    "events": [],
     "log": [],
 }
 _JOB_LOCK = threading.Lock()
+
+
+def get_active_job_snapshot() -> dict[str, Any]:
+    """Return a thread-safe snapshot of active job state."""
+    with _JOB_LOCK:
+        return {
+            "status": _ACTIVE_JOB["status"],
+            "case_id": _ACTIVE_JOB["case_id"],
+            "job_id": _ACTIVE_JOB["job_id"],
+            "events_count": len(_ACTIVE_JOB.get("events", [])),
+            "log": list(_ACTIVE_JOB.get("log", [])),
+        }
 
 
 def get_all_cases(cases_root: str = "cases") -> list[dict[str, Any]]:
@@ -131,8 +146,62 @@ class StudioHandler(BaseHTTPRequestHandler):
 
         if path == "/api/cases":
             cases = get_all_cases()
-            self._send_json({"cases": cases, "job": _ACTIVE_JOB})
+            self._send_json({"cases": cases, "job": get_active_job_snapshot()})
             return
+
+        if path == "/api/job-events":
+            qs = parse_qs(parsed.query)
+            since_raw = qs.get("since", ["0"])[0]
+            try:
+                since = max(0, int(since_raw))
+            except ValueError:
+                since = 0
+
+            with _JOB_LOCK:
+                all_events = list(_ACTIVE_JOB.get("events", []))
+                status = _ACTIVE_JOB.get("status", "idle")
+                case_id = _ACTIVE_JOB.get("case_id")
+                job_id = _ACTIVE_JOB.get("job_id")
+
+            new_events = all_events[since:] if since < len(all_events) else []
+            self._send_json({
+                "status": status,
+                "case_id": case_id,
+                "job_id": job_id,
+                "since": since,
+                "next_seq": len(all_events),
+                "events": new_events,
+            })
+            return
+
+        if path.startswith("/api/case/") and path.endswith("/events"):
+            parts = [p for p in path.split("/") if p]
+            # ['api', 'case', '<case_id>', 'events']
+            if len(parts) >= 4:
+                case_id = parts[2]
+                try:
+                    case_dir = find_case_dir(case_id)
+                    events_file = case_dir / "events.json"
+                    if events_file.exists():
+                        events_data = json.loads(events_file.read_text(encoding="utf-8"))
+                    else:
+                        events_data = []
+                        inv_file = case_dir / "investigation.json"
+                        if inv_file.exists():
+                            inv_json = json.loads(inv_file.read_text(encoding="utf-8"))
+                            for idx, s in enumerate(inv_json.get("searches_performed", []), 1):
+                                events_data.append({
+                                    "seq": idx,
+                                    "timestamp": "",
+                                    "event_type": "tool_call",
+                                    "stage": "executor",
+                                    "title": f"Executed tool: {s.get('tool')}",
+                                    "payload": s,
+                                })
+                    self._send_json({"case_id": case_dir.name, "events": events_data})
+                except Exception as exc:
+                    self._send_json({"error": str(exc)}, status=404)
+                return
 
         if path.startswith("/api/case/"):
             case_id = path[len("/api/case/"):]
@@ -218,10 +287,33 @@ class StudioHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "Ticker or Query is required"}, status=400)
                 return
 
-            def _background_worker():
+            with _JOB_LOCK:
+                if _ACTIVE_JOB["status"] in {"running", "rendering_video"}:
+                    self._send_json({"error": "A job is already actively running"}, status=409)
+                    return
+                job_id = f"job-{int(datetime.now(timezone.utc).timestamp()*1000)}"
+                _ACTIVE_JOB["status"] = "running"
+                _ACTIVE_JOB["job_id"] = job_id
+                _ACTIVE_JOB["case_id"] = None
+                _ACTIVE_JOB["events"] = [
+                    {
+                        "seq": 1,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "event_type": "stage",
+                        "stage": "starting",
+                        "title": f"Dispatching research for {ticker or query}",
+                        "payload": {"ticker": ticker, "query": query, "depth": depth},
+                    }
+                ]
+                _ACTIVE_JOB["log"] = [f"Starting research for {ticker or query}..."]
+
+            def _on_event(event: dict[str, Any]) -> None:
                 with _JOB_LOCK:
-                    _ACTIVE_JOB["status"] = "running"
-                    _ACTIVE_JOB["log"] = [f"Starting research for {ticker or query}..."]
+                    _ACTIVE_JOB.setdefault("events", []).append(event)
+                    if event.get("event_type") in {"stage", "log"} and event.get("title"):
+                        _ACTIVE_JOB.setdefault("log", []).append(event.get("title", ""))
+
+            def _background_worker():
                 try:
                     req = ResearchRequest(
                         ticker=ticker or None,
@@ -234,6 +326,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                         generate_video=with_video,
                         render_video=with_video,
                         character_pair=character_pair,
+                        event_callback=_on_event,
                     )
                     with _JOB_LOCK:
                         _ACTIVE_JOB["status"] = "completed"
@@ -243,9 +336,17 @@ class StudioHandler(BaseHTTPRequestHandler):
                     with _JOB_LOCK:
                         _ACTIVE_JOB["status"] = "failed"
                         _ACTIVE_JOB["log"].append(f"Failed: {e}")
+                        _ACTIVE_JOB.setdefault("events", []).append({
+                            "seq": len(_ACTIVE_JOB.get("events", [])) + 1,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "event_type": "stage",
+                            "stage": "failed",
+                            "title": f"Investigation Failed: {e}",
+                            "payload": {"error": str(e)},
+                        })
 
             threading.Thread(target=_background_worker, daemon=True).start()
-            self._send_json({"status": "started", "message": "Research job dispatched"})
+            self._send_json({"status": "started", "message": "Research job dispatched", "job_id": job_id})
             return
 
         if path == "/api/run-video":
@@ -288,23 +389,56 @@ class StudioHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": f"Case {case_id} lacks a verified article.md"}, status=400)
                 return
 
+            with _JOB_LOCK:
+                if _ACTIVE_JOB["status"] in {"running", "rendering_video"}:
+                    self._send_json({"error": "A job is already actively running"}, status=409)
+                    return
+                job_id = f"video-{int(datetime.now(timezone.utc).timestamp()*1000)}"
+                _ACTIVE_JOB["status"] = "rendering_video"
+                _ACTIVE_JOB["job_id"] = job_id
+                _ACTIVE_JOB["case_id"] = case_id
+                _ACTIVE_JOB["events"] = [
+                    {
+                        "seq": 1,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "event_type": "stage",
+                        "stage": "video_rendering",
+                        "title": f"Rendering video reel for {case_id}",
+                        "payload": {"character_pair": character_pair},
+                    }
+                ]
+                _ACTIVE_JOB["log"] = [f"Rendering video reel for {case_id}..."]
+
             def _video_worker():
-                with _JOB_LOCK:
-                    _ACTIVE_JOB["status"] = "rendering_video"
-                    _ACTIVE_JOB["log"] = [f"Rendering video reel for {case_id}..."]
                 try:
                     rendered = generate_video_for_case(case_path, character_pair=character_pair)
                     with _JOB_LOCK:
                         _ACTIVE_JOB["status"] = "completed"
                         _ACTIVE_JOB["case_id"] = case_id
                         _ACTIVE_JOB["log"].append(f"Video rendered successfully: {rendered}")
+                        _ACTIVE_JOB.setdefault("events", []).append({
+                            "seq": len(_ACTIVE_JOB.get("events", [])) + 1,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "event_type": "stage",
+                            "stage": "completed",
+                            "title": f"Video rendered successfully: {rendered}",
+                            "payload": {"video": str(rendered)},
+                        })
                 except Exception as e:
                     with _JOB_LOCK:
                         _ACTIVE_JOB["status"] = "failed"
                         _ACTIVE_JOB["log"].append(f"Video failed: {e}")
+                        _ACTIVE_JOB.setdefault("events", []).append({
+                            "seq": len(_ACTIVE_JOB.get("events", [])) + 1,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "event_type": "stage",
+                            "stage": "failed",
+                            "title": f"Video rendering failed: {e}",
+                            "payload": {"error": str(e)},
+                        })
 
             threading.Thread(target=_video_worker, daemon=True).start()
-            self._send_json({"status": "started", "message": "Video rendering dispatched"})
+            self._send_json({"status": "started", "message": "Video rendering dispatched", "job_id": job_id})
             return
 
         if path == "/api/publish":
@@ -504,20 +638,78 @@ def get_studio_html() -> str:
         </div>
 
         <!-- Review Tabs -->
-        <div class="flex items-center gap-4 border-b border-obsidian-border pt-3 text-xs font-mono">
-          <button class="tab-btn pb-2 border-b-2 border-emerald-audit text-emerald-audit font-semibold" data-tab="tab-article">
-            Article & Receipts
+        <div class="flex items-center gap-4 border-b border-obsidian-border pt-3 text-xs font-mono overflow-x-auto">
+          <button class="tab-btn pb-2 border-b-2 border-emerald-audit text-emerald-audit font-semibold flex items-center gap-1.5" data-tab="tab-trace">
+            <span id="trace-pulse-dot" class="w-2 h-2 rounded-full bg-emerald-audit animate-pulse hidden"></span>
+            <i class="fa-solid fa-microchip text-[11px]"></i>
+            <span>Live Model Trace</span>
           </button>
-          <button class="tab-btn pb-2 border-b-2 border-transparent text-text-muted hover:text-text-secondary" data-tab="tab-video">
-            Faceless Video Reel
+          <button class="tab-btn pb-2 border-b-2 border-transparent text-text-muted hover:text-text-secondary flex items-center gap-1.5" data-tab="tab-article">
+            <i class="fa-solid fa-file-lines text-[11px]"></i>
+            <span>Article & Receipts</span>
           </button>
-          <button class="tab-btn pb-2 border-b-2 border-transparent text-text-muted hover:text-text-secondary" data-tab="tab-publish">
-            Cloudflare Publish
+          <button class="tab-btn pb-2 border-b-2 border-transparent text-text-muted hover:text-text-secondary flex items-center gap-1.5" data-tab="tab-video">
+            <i class="fa-solid fa-clapperboard text-[11px]"></i>
+            <span>Faceless Video Reel</span>
+          </button>
+          <button class="tab-btn pb-2 border-b-2 border-transparent text-text-muted hover:text-text-secondary flex items-center gap-1.5" data-tab="tab-publish">
+            <i class="fa-solid fa-cloud-arrow-up text-[11px]"></i>
+            <span>Cloudflare Publish</span>
           </button>
         </div>
 
+        <!-- Tab Content: Live Execution & Model Trace -->
+        <div id="tab-trace" class="tab-pane flex-1 pt-4 flex flex-col space-y-3 min-h-[500px]">
+          <!-- Stage Progress Stepper Bar -->
+          <div class="bg-obsidian/70 border border-obsidian-border rounded-xl p-3 text-[11px] font-mono">
+            <div class="flex items-center justify-between text-text-muted mb-1.5">
+              <span class="font-bold text-text-primary text-xs uppercase flex items-center gap-1.5">
+                <i class="fa-solid fa-diagram-project text-cyan-consensus"></i>
+                <span id="trace-current-stage-title">Pipeline Ready</span>
+              </span>
+              <span id="trace-event-counter" class="text-[10px] px-2 py-0.5 rounded bg-obsidian border border-obsidian-border text-emerald-audit font-bold">0 events</span>
+            </div>
+            <!-- Visual Pipeline Stage Pills -->
+            <div class="grid grid-cols-5 gap-1.5 pt-1 text-center text-[10px]">
+              <div id="step-pill-scout" class="py-1 rounded bg-obsidian border border-obsidian-border text-text-muted transition-all">1. Scout</div>
+              <div id="step-pill-plan" class="py-1 rounded bg-obsidian border border-obsidian-border text-text-muted transition-all">2. Plan</div>
+              <div id="step-pill-execute" class="py-1 rounded bg-obsidian border border-obsidian-border text-text-muted transition-all">3. Tools</div>
+              <div id="step-pill-diligence" class="py-1 rounded bg-obsidian border border-obsidian-border text-text-muted transition-all">4. Diligence</div>
+              <div id="step-pill-synthesis" class="py-1 rounded bg-obsidian border border-obsidian-border text-text-muted transition-all">5. Synthesis</div>
+            </div>
+          </div>
+
+          <!-- Controls & Filter Toolbar -->
+          <div class="flex items-center justify-between gap-2 text-[11px] font-mono flex-wrap bg-obsidian/40 p-2 rounded-xl border border-obsidian-border/60">
+            <div class="flex items-center gap-1.5 overflow-x-auto" id="trace-filter-group">
+              <button class="filter-btn px-2.5 py-1 rounded-lg bg-emerald-audit/20 text-emerald-audit border border-emerald-audit/40 font-semibold" data-filter="all">All</button>
+              <button class="filter-btn px-2.5 py-1 rounded-lg bg-obsidian text-text-muted border border-obsidian-border hover:text-text-primary" data-filter="llm_thinking">🧠 Thinking</button>
+              <button class="filter-btn px-2.5 py-1 rounded-lg bg-obsidian text-text-muted border border-obsidian-border hover:text-text-primary" data-filter="tool_call">🛠️ Calls</button>
+              <button class="filter-btn px-2.5 py-1 rounded-lg bg-obsidian text-text-muted border border-obsidian-border hover:text-text-primary" data-filter="tool_result">📥 Returns</button>
+              <button class="filter-btn px-2.5 py-1 rounded-lg bg-obsidian text-text-muted border border-obsidian-border hover:text-text-primary" data-filter="llm_response">💬 Response</button>
+            </div>
+            <div class="flex items-center gap-3">
+              <label class="flex items-center gap-1.5 text-text-muted text-[10px] cursor-pointer">
+                <input id="check-autoscroll" type="checkbox" checked class="rounded bg-obsidian border-obsidian-border text-emerald-audit" />
+                <span>Auto-scroll</span>
+              </label>
+              <button id="btn-clear-trace" class="text-text-muted hover:text-amber-warning text-[10px]">
+                <i class="fa-solid fa-trash-can mr-1"></i>Clear
+              </button>
+            </div>
+          </div>
+
+          <!-- Live Event Cards Container -->
+          <div id="trace-events-stream" class="flex-1 overflow-y-auto max-h-[460px] space-y-2.5 pr-1 font-mono text-xs">
+            <div class="text-center text-text-muted py-12">
+              <i class="fa-solid fa-terminal text-2xl mb-2 text-obsidian-border"></i>
+              <p>No active investigation running. Launch an investigation on the left or select a past case to inspect its model execution trace.</p>
+            </div>
+          </div>
+        </div>
+
         <!-- Tab Content: Article -->
-        <div id="tab-article" class="tab-pane flex-1 pt-4 overflow-y-auto max-h-[500px]">
+        <div id="tab-article" class="tab-pane hidden flex-1 pt-4 overflow-y-auto max-h-[500px]">
           <pre id="article-markdown" class="text-xs font-sans whitespace-pre-wrap text-text-secondary leading-relaxed bg-obsidian/50 p-4 rounded-xl border border-obsidian-border/50">
 No case selected. Choose an investigation on the left to read the forensic audit.
           </pre>
@@ -570,6 +762,226 @@ No case selected. Choose an investigation on the left to read the forensic audit
 
   <script>
     let activeCaseId = null;
+    let activeEvents = [];
+    let activeFilter = 'all';
+    let lastEventSeq = 0;
+    let liveEventsTimer = null;
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      if (typeof str !== 'string') {
+        try { str = JSON.stringify(str, null, 2); } catch (_) { str = String(str); }
+      }
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        if (btn.getAttribute('data-tab') === tabId) {
+          btn.classList.remove('border-transparent', 'text-text-muted');
+          btn.classList.add('border-emerald-audit', 'text-emerald-audit', 'font-semibold');
+        } else {
+          btn.classList.remove('border-emerald-audit', 'text-emerald-audit', 'font-semibold');
+          btn.classList.add('border-transparent', 'text-text-muted');
+        }
+      });
+      document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.add('hidden'));
+      const activePane = document.getElementById(tabId);
+      if (activePane) activePane.classList.remove('hidden');
+    }
+
+    function updateStepper(stage) {
+      const active = (stage || '').toLowerCase();
+      const stageMap = [
+        { id: 'step-pill-scout', label: '1. Scout' },
+        { id: 'step-pill-plan', label: '2. Plan' },
+        { id: 'step-pill-execute', label: '3. Tools' },
+        { id: 'step-pill-diligence', label: '4. Diligence' },
+        { id: 'step-pill-synthesis', label: '5. Synthesis' }
+      ];
+
+      let currentIndex = -1;
+      if (active.includes('scout')) currentIndex = 0;
+      else if (active.includes('plan')) currentIndex = 1;
+      else if (active.includes('exec') || active.includes('tool')) currentIndex = 2;
+      else if (active.includes('reflect') || active.includes('dilig') || active.includes('gate') || active.includes('committee')) currentIndex = 3;
+      else if (active.includes('synth') || active.includes('article') || active.includes('reel') || active.includes('video') || active.includes('complete')) currentIndex = 4;
+
+      stageMap.forEach((s, idx) => {
+        const el = document.getElementById(s.id);
+        if (!el) return;
+        const name = s.label.split('. ')[1];
+        if (idx < currentIndex) {
+          el.className = 'py-1 rounded bg-emerald-audit/10 border border-emerald-audit/40 text-emerald-audit text-[10px] font-semibold';
+          el.innerHTML = `✓ ${name}`;
+        } else if (idx === currentIndex) {
+          el.className = 'py-1 rounded bg-cyan-consensus/20 border border-cyan-consensus text-cyan-consensus text-[10px] font-bold animate-pulse';
+          el.innerHTML = `▶ ${name}`;
+        } else {
+          el.className = 'py-1 rounded bg-obsidian border border-obsidian-border text-text-muted text-[10px]';
+          el.innerHTML = s.label;
+        }
+      });
+    }
+
+    function createEventCard(event) {
+      const type = event.event_type || 'log';
+      const time = event.timestamp ? event.timestamp.slice(11, 19) : '';
+      const payload = event.payload || {};
+      const title = event.title || type;
+
+      let cardHtml = '';
+
+      if (type === 'llm_thinking') {
+        const thinkingText = payload.thinking || '';
+        cardHtml = `
+          <div class="event-card event-llm_thinking p-3 rounded-xl bg-purple-950/25 border border-purple-500/40 text-purple-200">
+            <div class="flex items-center justify-between mb-1.5">
+              <div class="flex items-center gap-2">
+                <span class="w-5 h-5 rounded-md bg-purple-500/20 text-purple-300 flex items-center justify-center text-xs">🧠</span>
+                <span class="font-bold text-[11px] text-purple-300">Model Reasoning & Thinking Trace</span>
+              </div>
+              <span class="text-[10px] text-purple-400/70 font-mono">${time}</span>
+            </div>
+            <div class="text-[11px] font-sans leading-relaxed text-purple-200/90 whitespace-pre-wrap bg-purple-950/40 p-2.5 rounded-lg border border-purple-500/20 max-h-64 overflow-y-auto">
+              ${escapeHtml(thinkingText)}
+            </div>
+          </div>
+        `;
+      } else if (type === 'tool_call') {
+        const ticker = payload.ticker ? `<span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">$${payload.ticker}</span>` : '';
+        const inputsJson = JSON.stringify(payload.inputs || {}, null, 2);
+        cardHtml = `
+          <div class="event-card event-tool_call p-3 rounded-xl bg-emerald-950/20 border border-emerald-500/40 text-emerald-100">
+            <div class="flex items-center justify-between mb-1.5">
+              <div class="flex items-center gap-2">
+                <span class="w-5 h-5 rounded-md bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs">🛠️</span>
+                <span class="font-bold text-[11px] text-emerald-300">${escapeHtml(title)}</span>
+                ${ticker}
+              </div>
+              <span class="text-[10px] text-emerald-400/70 font-mono">${time}</span>
+            </div>
+            <pre class="text-[10px] font-mono bg-obsidian/80 p-2 rounded border border-emerald-500/20 text-text-secondary overflow-x-auto max-h-36">${escapeHtml(inputsJson)}</pre>
+          </div>
+        `;
+      } else if (type === 'tool_result') {
+        const isError = payload.status === 'error';
+        const statusBadge = isError 
+          ? '<span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-warning border border-amber-500/30 text-[10px] font-bold">ERROR</span>'
+          : '<span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-audit border border-emerald-500/30 text-[10px] font-bold">OK</span>';
+        const text = payload.error || payload.output_preview || '';
+        cardHtml = `
+          <div class="event-card event-tool_result p-3 rounded-xl ${isError ? 'bg-amber-950/20 border border-amber-500/40 text-amber-200' : 'bg-obsidian-subtle border border-cyan-500/25 text-slate-200'}">
+            <div class="flex items-center justify-between mb-1.5">
+              <div class="flex items-center gap-2">
+                <span class="w-5 h-5 rounded-md ${isError ? 'bg-amber-500/20 text-amber-400' : 'bg-cyan-500/20 text-cyan-400'} flex items-center justify-center text-xs">${isError ? '⚠️' : '📥'}</span>
+                <span class="font-bold text-[11px] text-text-primary">${escapeHtml(title)}</span>
+                ${statusBadge}
+              </div>
+              <span class="text-[10px] text-text-muted font-mono">${time}</span>
+            </div>
+            <div class="text-[10px] font-mono bg-obsidian/90 p-2 rounded border border-obsidian-border max-h-36 overflow-y-auto whitespace-pre-wrap text-text-secondary">
+              ${escapeHtml(text)}
+            </div>
+          </div>
+        `;
+      } else if (type === 'llm_response') {
+        const calls = payload.tool_calls && payload.tool_calls.length ? `<div class="mt-1 text-[10px] text-cyan-300 font-mono">Tools Requested: <span class="font-bold">${payload.tool_calls.join(', ')}</span></div>` : '';
+        const preview = payload.content_preview ? `<div class="text-[11px] font-sans leading-relaxed text-cyan-100/90 whitespace-pre-wrap bg-cyan-950/40 p-2.5 rounded-lg border border-cyan-500/20 max-h-48 overflow-y-auto">${escapeHtml(payload.content_preview)}</div>` : '';
+        cardHtml = `
+          <div class="event-card event-llm_response p-3 rounded-xl bg-cyan-950/20 border border-cyan-500/30 text-cyan-100">
+            <div class="flex items-center justify-between mb-1.5">
+              <div class="flex items-center gap-2">
+                <span class="w-5 h-5 rounded-md bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-xs">💬</span>
+                <span class="font-bold text-[11px] text-cyan-300">${escapeHtml(title)}</span>
+              </div>
+              <span class="text-[10px] text-cyan-400/70 font-mono">${time}</span>
+            </div>
+            ${preview}
+            ${calls}
+          </div>
+        `;
+      } else if (type === 'stage') {
+        cardHtml = `
+          <div class="event-card event-stage p-2.5 rounded-xl bg-obsidian-card border border-obsidian-border flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-cyan-consensus"></span>
+              <span class="font-bold text-[11px] text-text-primary uppercase tracking-wider">${escapeHtml(title)}</span>
+            </div>
+            <span class="text-[10px] text-text-muted font-mono">${time}</span>
+          </div>
+        `;
+      } else {
+        cardHtml = `
+          <div class="event-card event-log p-2 rounded-lg bg-obsidian/60 border border-obsidian-border text-[11px] text-text-muted flex items-center justify-between font-mono">
+            <span>${escapeHtml(title)}</span>
+            <span class="text-[10px] text-text-muted/60">${time}</span>
+          </div>
+        `;
+      }
+
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = cardHtml.trim();
+      return wrapper.firstElementChild;
+    }
+
+    function applyFilter(filter) {
+      activeFilter = filter;
+      document.querySelectorAll('#trace-filter-group .filter-btn').forEach(btn => {
+        if (btn.getAttribute('data-filter') === filter) {
+          btn.className = 'filter-btn px-2.5 py-1 rounded-lg bg-emerald-audit/20 text-emerald-audit border border-emerald-audit/40 font-semibold';
+        } else {
+          btn.className = 'filter-btn px-2.5 py-1 rounded-lg bg-obsidian text-text-muted border border-obsidian-border hover:text-text-primary';
+        }
+      });
+
+      const cards = document.querySelectorAll('#trace-events-stream .event-card');
+      cards.forEach(card => {
+        if (filter === 'all' || card.classList.contains(`event-${filter}`)) {
+          card.classList.remove('hidden');
+        } else {
+          card.classList.add('hidden');
+        }
+      });
+    }
+
+    function renderEvents(events, append = true) {
+      const container = document.getElementById('trace-events-stream');
+      if (!append || !activeEvents.length) {
+        container.innerHTML = '';
+      }
+
+      if (!events.length && !activeEvents.length) {
+        container.innerHTML = '<div class="text-center text-text-muted py-12"><i class="fa-solid fa-terminal text-2xl mb-2 text-obsidian-border"></i><p>No model execution events recorded yet.</p></div>';
+        return;
+      }
+
+      events.forEach(ev => {
+        const card = createEventCard(ev);
+        if (activeFilter !== 'all' && !card.classList.contains(`event-${activeFilter}`)) {
+          card.classList.add('hidden');
+        }
+        container.appendChild(card);
+      });
+
+      document.getElementById('trace-event-counter').textContent = `${activeEvents.length} events`;
+      
+      const lastEvent = activeEvents[activeEvents.length - 1];
+      if (lastEvent) {
+        document.getElementById('trace-current-stage-title').textContent = lastEvent.title || lastEvent.stage;
+        updateStepper(lastEvent.stage);
+      }
+
+      const autoscroll = document.getElementById('check-autoscroll').checked;
+      if (autoscroll) {
+        container.scrollTop = container.scrollHeight;
+      }
+    }
 
     async function fetchCases() {
       try {
@@ -579,6 +991,13 @@ No case selected. Choose an investigation on the left to read the forensic audit
         if (data.job) {
           const badge = document.getElementById('job-status-text');
           badge.textContent = data.job.status;
+          const pulse = document.getElementById('trace-pulse-dot');
+          if (data.job.status === 'running' || data.job.status === 'rendering_video') {
+            pulse.classList.remove('hidden');
+            startLiveEventStream();
+          } else {
+            pulse.classList.add('hidden');
+          }
         }
       } catch (err) {
         console.error('Failed to load cases', err);
@@ -628,22 +1047,76 @@ No case selected. Choose an investigation on the left to read the forensic audit
       } catch (err) {
         console.error('Failed to load case', err);
       }
+
+      // Load case events for model trace inspection
+      try {
+        const evRes = await fetch(`/api/case/${caseId}/events`);
+        const evData = await evRes.json();
+        if (evData.events && evData.events.length) {
+          activeEvents = evData.events;
+          lastEventSeq = activeEvents.length;
+          renderEvents(activeEvents, false);
+        } else {
+          activeEvents = [];
+          lastEventSeq = 0;
+          renderEvents([], false);
+        }
+      } catch (err) {
+        console.debug('No historical events for case', err);
+      }
+    }
+
+    function startLiveEventStream() {
+      if (liveEventsTimer) return;
+      liveEventsTimer = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/job-events?since=${lastEventSeq}`);
+          const data = await res.json();
+          if (data.events && data.events.length) {
+            data.events.forEach(ev => activeEvents.push(ev));
+            lastEventSeq = data.next_seq;
+            renderEvents(data.events, true);
+          }
+          if (data.status === 'completed' || data.status === 'failed') {
+            stopLiveEventStream();
+            fetchCases();
+            if (data.case_id) selectCase(data.case_id);
+          }
+        } catch (err) {
+          console.debug('Polling job events error', err);
+        }
+      }, 600);
+    }
+
+    function stopLiveEventStream() {
+      if (liveEventsTimer) {
+        clearInterval(liveEventsTimer);
+        liveEventsTimer = null;
+      }
+      document.getElementById('trace-pulse-dot').classList.add('hidden');
     }
 
     // Tabs switching
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => {
-          b.classList.remove('border-emerald-audit', 'text-emerald-audit', 'font-semibold');
-          b.classList.add('border-transparent', 'text-text-muted');
-        });
-        btn.classList.remove('border-transparent', 'text-text-muted');
-        btn.classList.add('border-emerald-audit', 'text-emerald-audit', 'font-semibold');
-
         const target = btn.getAttribute('data-tab');
-        document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.add('hidden'));
-        document.getElementById(target).classList.remove('hidden');
+        switchTab(target);
       });
+    });
+
+    // Trace filter toolbar
+    document.querySelectorAll('#trace-filter-group .filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const filter = btn.getAttribute('data-filter');
+        applyFilter(filter);
+      });
+    });
+
+    // Clear trace screen
+    document.getElementById('btn-clear-trace').addEventListener('click', () => {
+      activeEvents = [];
+      lastEventSeq = 0;
+      renderEvents([], false);
     });
 
     // Run Stage 1 (Article only)
@@ -653,12 +1126,19 @@ No case selected. Choose an investigation on the left to read the forensic audit
       const duo = document.getElementById('input-duo').value;
       const depth = document.getElementById('input-depth').value;
 
+      activeEvents = [];
+      lastEventSeq = 0;
+      renderEvents([], false);
+      switchTab('tab-trace');
+      document.getElementById('trace-pulse-dot').classList.remove('hidden');
+
       await fetch('/api/run-research', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticker, query, character_pair: duo, depth, with_video: false })
       });
-      pollStatus();
+      startLiveEventStream();
+      fetchCases();
     });
 
     // Run One-Shot (Article + Video)
@@ -668,24 +1148,39 @@ No case selected. Choose an investigation on the left to read the forensic audit
       const duo = document.getElementById('input-duo').value;
       const depth = document.getElementById('input-depth').value;
 
+      activeEvents = [];
+      lastEventSeq = 0;
+      renderEvents([], false);
+      switchTab('tab-trace');
+      document.getElementById('trace-pulse-dot').classList.remove('hidden');
+
       await fetch('/api/run-research', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticker, query, character_pair: duo, depth, with_video: true })
       });
-      pollStatus();
+      startLiveEventStream();
+      fetchCases();
     });
 
     // Generate video for selected case
     document.getElementById('btn-generate-video-step').addEventListener('click', async () => {
       if (!activeCaseId) return alert('Select a case first');
       const duo = document.getElementById('input-duo').value;
+
+      activeEvents = [];
+      lastEventSeq = 0;
+      renderEvents([], false);
+      switchTab('tab-trace');
+      document.getElementById('trace-pulse-dot').classList.remove('hidden');
+
       await fetch('/api/run-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ case_id: activeCaseId, character_pair: duo })
       });
-      pollStatus();
+      startLiveEventStream();
+      fetchCases();
     });
 
     // Publish button
@@ -720,21 +1215,6 @@ No case selected. Choose an investigation on the left to read the forensic audit
         outcome.innerHTML = `<span class="text-amber-warning">Error: ${err.message}</span>`;
       }
     });
-
-    function pollStatus() {
-      const timer = setInterval(async () => {
-        const res = await fetch('/api/cases');
-        const data = await res.json();
-        renderCasesList(data.cases);
-        if (data.job) {
-          document.getElementById('job-status-text').textContent = data.job.status;
-          if (data.job.status === 'completed' || data.job.status === 'failed') {
-            clearInterval(timer);
-            if (data.job.case_id) selectCase(data.job.case_id);
-          }
-        }
-      }, 2000);
-    }
 
     document.getElementById('btn-refresh').addEventListener('click', fetchCases);
     fetchCases();

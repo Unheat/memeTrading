@@ -14,8 +14,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
+from app.agent.callbacks import InvestigationCallbackHandler
 from app.agent.gate import evaluate_publication_readiness
 from app.agent.graph import create_research_graph
 from app.agent.grounded_synthesis import materialize_evidence_records
@@ -65,6 +66,7 @@ def run_investigation(
     render_video: bool | None = None,
     character_pair: str | None = None,
     config: AppConfig | None = None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
     # Legacy parameter preserved for backward compatibility
     generate_media: bool | None = None,
 ) -> InvestigationResult:
@@ -79,6 +81,7 @@ def run_investigation(
         render_video: Whether to invoke the Faceless Node.js pipeline for .mp4 rendering.
         character_pair: Optional media character pair.
         config: Optional preloaded configuration.
+        event_callback: Optional listener receiving real-time InvestigationEvent dicts.
         generate_media: Legacy flag. True enables article + video script.
 
     Returns:
@@ -163,17 +166,39 @@ def run_investigation(
         graph = create_research_graph(
             runtime.model, tools, context_policy=runtime.context_policy, token_counter=runtime.token_counter,
         )
+        callback_handler = (
+            InvestigationCallbackHandler(event_callback=event_callback, case_id=case_id)
+            if event_callback
+            else None
+        )
+        if callback_handler:
+            callback_handler.emit_stage(
+                "planner",
+                f"Starting deep investigation for {ticker}",
+                {"query": effective_request.query, "depth": effective_request.depth},
+            )
+
         logger.info(
             "pipeline.start case_id=%s ticker=%s depth=%s budget=%s intent=%s",
             case_id, ticker, effective_request.depth, budget.max_total_tool_calls, initial_state["research_intent"],
         )
         max_concurrency = getattr(cfg.research, "max_concurrency", 6)
-        final_state = dict(graph.invoke(initial_state, config={"recursion_limit": 100, "max_concurrency": max_concurrency}))
+        graph_config: dict[str, Any] = {"recursion_limit": 100, "max_concurrency": max_concurrency}
+        if callback_handler:
+            graph_config["callbacks"] = [callback_handler]
+        final_state = dict(graph.invoke(initial_state, config=graph_config))
         logger.info(
             "pipeline.graph_complete case_id=%s status=%s tool_calls=%s candidates=%s receipts=%s evidence=%s",
             case_id, final_state.get("status"), final_state.get("tool_calls"), len(final_state.get("candidates") or {}),
             len(final_state.get("searches_performed") or []), len(final_state.get("evidence") or []),
         )
+
+        if callback_handler:
+            callback_handler.emit_stage(
+                "synthesis",
+                "Synthesizing evidence and structuring research memo",
+                {"candidates": list((final_state.get("candidates") or {}).keys()), "tool_calls": final_state.get("tool_calls", 0)},
+            )
 
         messages = final_state.get("messages", [])
         last_message = messages[-1] if messages else None
@@ -212,6 +237,8 @@ def run_investigation(
 
         # Stage A: Article generation
         if effective_article and publication_allowed:
+            if callback_handler:
+                callback_handler.emit_stage("article", f"Generating cited Substack article for {case_id}")
             try:
                 article_md = generate_article_markdown(memo_md, final_state, model=runtime.model)
                 (target_case_dir / "article.md").write_text(article_md, encoding="utf-8")
@@ -224,6 +251,8 @@ def run_investigation(
 
         # Stage B: Video script generation
         if effective_video and publication_allowed:
+            if callback_handler:
+                callback_handler.emit_stage("reel_script", f"Generating dialogue script ({effective_pair})")
             try:
                 source_text = article_md or memo_md
                 dialogue_json, reel_script_text, caption_text = generate_reel_script(
@@ -244,6 +273,8 @@ def run_investigation(
 
                 # Stage C: Video rendering via Faceless bridge (subprocess to external Node.js)
                 if effective_render:
+                    if callback_handler:
+                        callback_handler.emit_stage("video_rendering", "Rendering full video reel via Faceless Node.js")
                     clean_ticker = (ticker or "").strip().lower()
                     if clean_ticker and clean_ticker not in {"research", "unknown"}:
                         slug_cand = re.sub(r"[^a-z0-9]+", "-", clean_ticker).strip("-")
@@ -284,6 +315,21 @@ def run_investigation(
                 if cand.get("sec_financials"):
                     total_evidence += 1
 
+        if callback_handler:
+            try:
+                (target_case_dir / "events.json").write_text(
+                    json.dumps(callback_handler.events, indent=2, default=str),
+                    encoding="utf-8",
+                )
+                artifacts_list.append("events.json")
+                callback_handler.emit_stage(
+                    "completed",
+                    f"Investigation completed successfully ({case_id})",
+                    {"case_id": case_id, "status": final_state.get("status")},
+                )
+            except Exception as err:
+                logger.debug("Failed to write events.json: %s", err)
+
         manifest.update({
             "status": "completed", "finished_at": datetime.now(timezone.utc).isoformat(),
             "last_stage": "rendered", "research_status": final_state["status"],
@@ -297,6 +343,19 @@ def run_investigation(
         write_run_manifest(target_case_dir, manifest)
         return InvestigationResult(case_id, ticker, final_state["status"], memo_md, final_state, article_md)
     except Exception as exc:
+        if callback_handler:
+            try:
+                callback_handler.emit_stage(
+                    "failed",
+                    f"Investigation failed: {exc}",
+                    {"error": str(exc)},
+                )
+                (target_case_dir / "events.json").write_text(
+                    json.dumps(callback_handler.events, indent=2, default=str),
+                    encoding="utf-8",
+                )
+            except Exception:
+                pass
         manifest.update({
             "status": "failed", "finished_at": datetime.now(timezone.utc).isoformat(),
             "last_stage": manifest.get("last_stage", "allocated"),

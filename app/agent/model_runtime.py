@@ -58,7 +58,7 @@ class UniversalChatModel(BaseChatModel):
         """Return a runnable that invokes the model and parses structured output into schema."""
         from langchain_core.runnables import RunnableLambda
 
-        def _invoke_structured(messages: Any) -> Any:
+        def _invoke_structured(messages: Any, config: Any = None) -> Any:
             schema_json = schema.model_json_schema() if hasattr(schema, "model_json_schema") else (schema.schema() if hasattr(schema, "schema") else {})
             instruction = f"\nYou MUST respond strictly in valid JSON conforming to this JSON schema:\n{json.dumps(schema_json, indent=2)}\nDo not include any commentary, prose, or markdown outside the single JSON object."
 
@@ -75,7 +75,7 @@ class UniversalChatModel(BaseChatModel):
                 msgs = [HumanMessage(content=str(messages) + instruction)]
 
             bound = self.bind(response_format={"type": "json_object"})
-            res = bound.invoke(msgs)
+            res = bound.invoke(msgs, config=config) if config else bound.invoke(msgs)
             raw = getattr(res, "content", "")
             if isinstance(raw, str):
                 cleaned = raw.strip()
@@ -190,6 +190,14 @@ class UniversalChatModel(BaseChatModel):
                 res = litellm.completion(**call_kwargs)
                 choice = res.choices[0]
                 content = choice.message.content or ""
+                reasoning = (
+                    getattr(choice.message, "reasoning_content", None)
+                    or getattr(choice.message, "thinking", None)
+                    or ""
+                )
+                if not isinstance(reasoning, str):
+                    reasoning = str(reasoning) if reasoning else ""
+
                 tool_calls_list = []
                 if hasattr(choice.message, "tool_calls") and choice.message.tool_calls:
                     for tc in choice.message.tool_calls:
@@ -206,8 +214,24 @@ class UniversalChatModel(BaseChatModel):
                             "id": getattr(tc, "id", ""),
                             "type": "tool_call",
                         })
-                ai_msg = AIMessage(content=content, tool_calls=tool_calls_list)
-                return ChatResult(generations=[ChatGeneration(message=ai_msg)])
+
+                additional_kwargs: dict[str, Any] = {}
+                if reasoning:
+                    additional_kwargs["reasoning_content"] = reasoning
+
+                ai_msg = AIMessage(
+                    content=content,
+                    tool_calls=tool_calls_list,
+                    additional_kwargs=additional_kwargs,
+                )
+                chat_result = ChatResult(generations=[ChatGeneration(message=ai_msg)])
+                if run_manager and hasattr(run_manager, "on_llm_end"):
+                    try:
+                        run_manager.on_llm_end(chat_result)
+                    except Exception as rm_err:
+                        logger.debug("run_manager.on_llm_end failed: %s", rm_err)
+
+                return chat_result
             except Exception as exc:
                 logger.warning("LLM endpoint #%d (%s @ %s) failed: %s; trying next fallback...", idx + 1, m_name, b_url or "default", exc)
                 last_error = exc
