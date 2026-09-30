@@ -109,6 +109,46 @@ def get_all_cases(cases_root: str = "cases") -> list[dict[str, Any]]:
     return results
 
 
+def generate_article_for_case(case_path: Path) -> str:
+    """Generate and persist article.md for an existing case using the citation correction loop."""
+    from app.config import load_config
+    from app.agent.model_runtime import create_default_model_runtime
+    from app.agent.media import generate_article_markdown
+    from app.storage.cases import write_run_manifest
+
+    memo_path = case_path / "memo.md"
+    inv_path = case_path / "investigation.json"
+    if not memo_path.exists() or not inv_path.exists():
+        raise FileNotFoundError(f"Case {case_path.name} missing memo.md or investigation.json")
+
+    memo_text = memo_path.read_text(encoding="utf-8")
+    inv_data = json.loads(inv_path.read_text(encoding="utf-8"))
+
+    cfg = load_config()
+    runtime = create_default_model_runtime(
+        model=cfg.llm.model,
+        base_url=cfg.llm.base_url,
+        temperature=cfg.llm.temperature,
+        endpoints=cfg.llm.models,
+    )
+
+    article_md = generate_article_markdown(memo_text, inv_data, model=runtime.model)
+    (case_path / "article.md").write_text(article_md, encoding="utf-8")
+
+    # Update manifest
+    manifest_path = case_path / "run-manifest.json"
+    if manifest_path.exists():
+        try:
+            man = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if "article.md" not in man.get("artifacts", []):
+                man.setdefault("artifacts", []).append("article.md")
+                write_run_manifest(case_path, man)
+        except Exception:
+            pass
+
+    return article_md
+
+
 class StudioHandler(BaseHTTPRequestHandler):
     """HTTP request handler for Local Studio."""
 
@@ -374,6 +414,94 @@ class StudioHandler(BaseHTTPRequestHandler):
 
             threading.Thread(target=_background_worker, daemon=True).start()
             self._send_json({"status": "started", "message": "Research job dispatched", "job_id": job_id})
+            return
+
+        if path == "/api/run-article":
+            case_id = req_data.get("case_id", "").strip()
+            if not case_id:
+                self._send_json({"error": "case_id is required"}, status=400)
+                return
+
+            try:
+                case_path = find_case_dir(case_id)
+            except Exception as e:
+                self._send_json({"error": f"Case not found: {e}"}, status=404)
+                return
+
+            inv_path = case_path / "investigation.json"
+            memo_path = case_path / "memo.md"
+            if not inv_path.exists() or not memo_path.exists():
+                self._send_json({"error": f"Case {case_id} lacks investigation.json or memo.md."}, status=400)
+                return
+
+            try:
+                inv_data = json.loads(inv_path.read_text(encoding="utf-8"))
+            except Exception as e:
+                self._send_json({"error": f"Invalid investigation.json for {case_id}: {e}"}, status=400)
+                return
+
+            pub = inv_data.get("publication_readiness") or {}
+            if pub.get("status") != "publishable" or not pub.get("passed"):
+                reasons = pub.get("reasons") or ["Case publication readiness is not publishable"]
+                self._send_json(
+                    {
+                        "error": f"Case {case_id} is blocked from article publication: {'; '.join(reasons)}",
+                        "publication_readiness": pub,
+                    },
+                    status=400,
+                )
+                return
+
+            with _JOB_LOCK:
+                if _ACTIVE_JOB["status"] in {"running", "rendering_video"}:
+                    self._send_json({"error": "A job is already actively running"}, status=409)
+                    return
+                job_id = f"article-{int(datetime.now(timezone.utc).timestamp()*1000)}"
+                _ACTIVE_JOB["status"] = "running"
+                _ACTIVE_JOB["job_id"] = job_id
+                _ACTIVE_JOB["case_id"] = case_id
+                _ACTIVE_JOB["events"] = [
+                    {
+                        "seq": 1,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "event_type": "stage",
+                        "stage": "article",
+                        "title": f"Compiling publication article for {case_id}",
+                        "payload": {"case_id": case_id},
+                    }
+                ]
+                _ACTIVE_JOB["log"] = [f"Compiling publication article for {case_id}..."]
+
+            def _article_worker():
+                try:
+                    art = generate_article_for_case(case_path)
+                    with _JOB_LOCK:
+                        _ACTIVE_JOB["status"] = "completed"
+                        _ACTIVE_JOB["case_id"] = case_id
+                        _ACTIVE_JOB["log"].append("Article compiled successfully with verified citations")
+                        _ACTIVE_JOB.setdefault("events", []).append({
+                            "seq": len(_ACTIVE_JOB.get("events", [])) + 1,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "event_type": "stage",
+                            "stage": "completed",
+                            "title": "Article compiled and verified successfully",
+                            "payload": {"article_length": len(art)},
+                        })
+                except Exception as e:
+                    with _JOB_LOCK:
+                        _ACTIVE_JOB["status"] = "failed"
+                        _ACTIVE_JOB["log"].append(f"Article compilation failed: {e}")
+                        _ACTIVE_JOB.setdefault("events", []).append({
+                            "seq": len(_ACTIVE_JOB.get("events", [])) + 1,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "event_type": "stage",
+                            "stage": "failed",
+                            "title": f"Article Compilation Failed: {e}",
+                            "payload": {"error": str(e)},
+                        })
+
+            threading.Thread(target=_article_worker, daemon=True).start()
+            self._send_json({"status": "started", "message": "Article compilation dispatched", "job_id": job_id})
             return
 
         if path == "/api/run-video":
@@ -757,10 +885,39 @@ def get_studio_html() -> str:
         </div>
 
         <!-- Tab Content: Article -->
-        <div id="tab-article" class="tab-pane hidden flex-1 pt-4 overflow-y-auto max-h-[500px]">
-          <pre id="article-markdown" class="text-xs font-sans whitespace-pre-wrap text-text-secondary leading-relaxed bg-obsidian/50 p-4 rounded-xl border border-obsidian-border/50">
+        <div id="tab-article" class="tab-pane hidden flex-1 pt-4 flex flex-col space-y-3">
+          <div class="flex items-center justify-between pb-2 border-b border-obsidian-border/60">
+            <div class="flex items-center gap-2 text-xs font-mono text-text-muted">
+              <i class="fa-solid fa-file-signature text-emerald-audit"></i>
+              <span id="article-status-label">Cited Publication Draft</span>
+            </div>
+            <button id="btn-generate-article-step" class="px-3 py-1.5 rounded-xl bg-emerald-audit/20 hover:bg-emerald-audit/30 text-emerald-audit border border-emerald-audit/40 text-xs font-mono font-bold flex items-center gap-2 transition-all">
+              <i class="fa-solid fa-arrows-rotate"></i>
+              <span>Re-compile Article</span>
+            </button>
+          </div>
+
+          <!-- Empty State when article.md does not exist yet -->
+          <div id="article-empty-container" class="hidden flex-1 flex flex-col items-center justify-center p-8 bg-obsidian/40 border border-obsidian-border/50 rounded-xl text-center space-y-4 my-auto">
+            <div class="w-14 h-14 rounded-2xl bg-obsidian-card border border-obsidian-border flex items-center justify-center text-text-muted text-2xl shadow-inner">
+              <i class="fa-solid fa-file-lines text-emerald-audit/70"></i>
+            </div>
+            <div class="max-w-md space-y-1">
+              <h4 class="text-sm font-bold text-text-primary">No Cited Article Compiled Yet</h4>
+              <p class="text-xs text-text-muted leading-relaxed">The institutional research memo and evidence receipts exist for this case. Click below to compile the publication-ready Substack article with our citation self-correction feedback loop.</p>
+            </div>
+            <button id="btn-generate-article-empty" class="px-5 py-2.5 rounded-xl bg-emerald-audit/20 hover:bg-emerald-audit/30 text-emerald-audit border border-emerald-audit/40 text-xs font-mono font-bold flex items-center gap-2 transition-all shadow-glowEmerald">
+              <i class="fa-solid fa-wand-magic-sparkles"></i>
+              <span>Compile Substack Article for this Case</span>
+            </button>
+          </div>
+
+          <!-- Article Content View -->
+          <div id="article-content-container" class="flex-1 overflow-y-auto max-h-[500px]">
+            <pre id="article-markdown" class="text-xs font-sans whitespace-pre-wrap text-text-secondary leading-relaxed bg-obsidian/50 p-4 rounded-xl border border-obsidian-border/50">
 No case selected. Choose an investigation on the left to read the forensic audit.
-          </pre>
+            </pre>
+          </div>
         </div>
 
         <!-- Tab Content: Video -->
@@ -1224,7 +1381,25 @@ No case selected. Choose an investigation on the left to read the forensic audit
         const data = await res.json();
 
         // Populate article preview
-        document.getElementById('article-markdown').textContent = data.article || 'No article.md found';
+        const articleText = (data.article || '').trim();
+        const emptyBox = document.getElementById('article-empty-container');
+        const contentBox = document.getElementById('article-content-container');
+        const actionBtn = document.getElementById('btn-generate-article-step');
+
+        if (articleText) {
+          document.getElementById('article-markdown').textContent = articleText;
+          if (emptyBox) emptyBox.classList.add('hidden');
+          if (contentBox) contentBox.classList.remove('hidden');
+          if (actionBtn) {
+            actionBtn.classList.remove('hidden');
+            actionBtn.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i><span>Re-compile Article</span>';
+          }
+        } else {
+          document.getElementById('article-markdown').textContent = '';
+          if (emptyBox) emptyBox.classList.remove('hidden');
+          if (contentBox) contentBox.classList.add('hidden');
+          if (actionBtn) actionBtn.classList.add('hidden');
+        }
 
         // Populate video tab
         const vContainer = document.getElementById('video-container');
@@ -1363,6 +1538,38 @@ No case selected. Choose an investigation on the left to read the forensic audit
       startLiveEventStream();
       fetchCases();
     });
+
+    // Generate article for selected case
+    async function triggerArticleGeneration() {
+      if (!activeCaseId) return alert('Select a case first');
+
+      activeEvents = [];
+      lastEventSeq = 0;
+      renderEvents([], false);
+      switchTab('tab-trace');
+      document.getElementById('trace-pulse-dot').classList.remove('hidden');
+
+      try {
+        const res = await fetch('/api/run-article', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ case_id: activeCaseId })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alert('Article compilation failed: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('Network error: ' + err);
+      }
+      startLiveEventStream();
+      fetchCases();
+    }
+
+    const btnGenArt = document.getElementById('btn-generate-article-step');
+    if (btnGenArt) btnGenArt.addEventListener('click', triggerArticleGeneration);
+    const btnGenArtEmpty = document.getElementById('btn-generate-article-empty');
+    if (btnGenArtEmpty) btnGenArtEmpty.addEventListener('click', triggerArticleGeneration);
 
     // Generate video for selected case
     document.getElementById('btn-generate-video-step').addEventListener('click', async () => {

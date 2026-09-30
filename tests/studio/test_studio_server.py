@@ -239,6 +239,41 @@ def test_normalize_legacy_stage_events_passes_through_canonical() -> None:
     """Canonical runs must pass through the normalizer untouched."""
     from app.agent.callbacks import normalize_legacy_stage_events
 
+    canonical = [
+        {"seq": 1, "event_type": "stage", "stage": "planner", "title": "Scout", "payload": {}},
+        {"seq": 2, "event_type": "stage", "stage": "executor", "title": "Loop", "payload": {}},
+        {"seq": 3, "event_type": "stage", "stage": "ingest", "title": "Ingestion", "payload": {}},
+        {"seq": 4, "event_type": "stage", "stage": "reflect", "title": "Reflection", "payload": {}},
+        {"seq": 5, "event_type": "stage", "stage": "diligence", "title": "Verdict", "payload": {}},
+    ]
+    assert normalize_legacy_stage_events(canonical) == canonical
+
+
+def test_generate_article_for_case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify generate_article_for_case compiles article.md and updates manifest."""
+    from app.studio.server import generate_article_for_case
+
+    case_dir = tmp_path / "TEST-CASE-001"
+    case_dir.mkdir()
+    (case_dir / "memo.md").write_text("# Test Memo\nInstitutional content.", encoding="utf-8")
+    (case_dir / "investigation.json").write_text(json.dumps({"ticker": "TEST"}), encoding="utf-8")
+    (case_dir / "run-manifest.json").write_text(json.dumps({"status": "completed", "artifacts": ["memo.md", "investigation.json"]}), encoding="utf-8")
+
+    monkeypatch.setattr(
+        "app.agent.media.generate_article_markdown",
+        lambda memo, inv, model: "# Compiled Article [1]\nGenerated successfully.",
+    )
+
+    art = generate_article_for_case(case_dir)
+    assert "Compiled Article" in art
+    assert (case_dir / "article.md").exists()
+    assert (case_dir / "article.md").read_text(encoding="utf-8") == art
+
+    manifest = json.loads((case_dir / "run-manifest.json").read_text(encoding="utf-8"))
+    assert "article.md" in manifest["artifacts"]
+
+    from app.agent.callbacks import normalize_legacy_stage_events
+
     canonical_events = [
         {"seq": 1, "event_type": "stage", "stage": "planner", "title": "Stage 1", "payload": {}},
         {"seq": 2, "event_type": "tool_call", "stage": "executor", "title": "Calling investigate_sec",
