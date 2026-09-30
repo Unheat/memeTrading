@@ -194,3 +194,57 @@ def test_job_events_server_endpoint() -> None:
             _ACTIVE_JOB["log"] = []
 
 
+
+
+def test_normalize_legacy_stage_events() -> None:
+    """Verify pre-stage-tracking runs are re-labeled deterministically on replay."""
+    from app.agent.callbacks import normalize_legacy_stage_events
+
+    legacy_events = [
+        {"seq": 1, "event_type": "stage", "stage": "planner", "title": "Launching investigation", "payload": {}},
+        {"seq": 2, "event_type": "llm_start", "stage": "planner", "title": "Chat Model Turn", "payload": {}},
+        {"seq": 3, "event_type": "tool_call", "stage": "planner", "title": "Calling screen_stocks",
+         "payload": {"tool": "screen_stocks"}},
+        {"seq": 4, "event_type": "tool_call", "stage": "planner", "title": "Calling search_web",
+         "payload": {"tool": "search_web"}},
+        {"seq": 5, "event_type": "llm_start", "stage": "planner", "title": "Chat Model Turn", "payload": {}},
+        {"seq": 6, "event_type": "tool_call", "stage": "planner", "title": "Calling get_market_data",
+         "payload": {"tool": "get_market_data", "ticker": "SMCI"}},
+        {"seq": 7, "event_type": "tool_call", "stage": "planner", "title": "Calling investigate_sec",
+         "payload": {"tool": "investigate_sec", "ticker": "SMCI"}},
+        {"seq": 8, "event_type": "stage", "stage": "synthesis", "title": "Synthesizing memo", "payload": {}},
+        {"seq": 9, "event_type": "stage", "stage": "article", "title": "Rendering article", "payload": {}},
+    ]
+
+    normalized = normalize_legacy_stage_events(legacy_events)
+
+    # Scout-phase events stay planner
+    assert normalized[0]["stage"] == "planner"
+    assert normalized[2]["stage"] == "planner"
+    assert normalized[3]["stage"] == "planner"
+
+    # First non-scout tool call (seq 6) starts the executor phase
+    assert normalized[5]["stage"] == "executor"
+    assert normalized[6]["stage"] == "executor"
+
+    # Legacy synthesis maps to diligence; article stays post-pipeline
+    assert normalized[7]["stage"] == "diligence"
+    assert normalized[8]["stage"] == "article"
+
+    # Input list must not be mutated
+    assert legacy_events[6]["stage"] == "planner"
+
+
+def test_normalize_legacy_stage_events_passes_through_canonical() -> None:
+    """Canonical runs must pass through the normalizer untouched."""
+    from app.agent.callbacks import normalize_legacy_stage_events
+
+    canonical_events = [
+        {"seq": 1, "event_type": "stage", "stage": "planner", "title": "Stage 1", "payload": {}},
+        {"seq": 2, "event_type": "tool_call", "stage": "executor", "title": "Calling investigate_sec",
+         "payload": {"tool": "investigate_sec", "ticker": "SMCI"}},
+        {"seq": 3, "event_type": "stage", "stage": "ingest", "title": "Stage 3", "payload": {}},
+    ]
+
+    normalized = normalize_legacy_stage_events(canonical_events)
+    assert normalized == canonical_events

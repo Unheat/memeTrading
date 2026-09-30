@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from app.agent.callbacks import normalize_legacy_stage_events
 from app.agent.runner import run_investigation
 from app.agent.state import ResearchRequest
 from app.cli.publish import publish_case
@@ -190,7 +191,9 @@ class StudioHandler(BaseHTTPRequestHandler):
                     case_dir = find_case_dir(case_id)
                     events_file = case_dir / "events.json"
                     if events_file.exists():
-                        events_data = json.loads(events_file.read_text(encoding="utf-8"))
+                        events_data = normalize_legacy_stage_events(
+                            json.loads(events_file.read_text(encoding="utf-8"))
+                        )
                     else:
                         events_data = []
                         inv_file = case_dir / "investigation.json"

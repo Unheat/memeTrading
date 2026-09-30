@@ -19,6 +19,58 @@ from langchain_core.outputs import ChatResult, LLMResult
 
 logger = logging.getLogger(__name__)
 
+# Scout-phase discovery tools the planner may invoke before handing off to the executor.
+LEGACY_SCOUT_TOOLS = frozenset({"screen_stocks", "search_web", "search_articles", "search_social"})
+# Canonical stage keys introduced with per-node stage tracking.
+_CANONICAL_STAGES = frozenset({"executor", "ingest", "reflect", "diligence"})
+
+
+def normalize_legacy_stage_events(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Re-label event streams recorded before per-node stage tracking existed.
+
+    Legacy runs (prior to the stage-tracking fix) tagged every graph-phase event
+    with the initial 'planner' stage, so executor tool calls such as
+    ``investigate_sec`` replay with a misleading planner chip. This function
+    deterministically re-labels such streams:
+
+    - Runs that already contain any canonical stage key pass through untouched.
+    - The executor boundary is the first ``tool_call`` for a non-scout tool;
+      events from that point on are re-labeled ``executor``.
+    - Legacy ``synthesis`` stage events map to ``diligence`` (Final Memo & Verdict).
+
+    Args:
+        events: Event dicts as persisted in a case ``events.json``.
+
+    Returns:
+        A new list with corrected stage labels; input list is not mutated.
+    """
+    if not events:
+        return events
+
+    stages_present = {str(e.get("stage") or "").lower() for e in events}
+    if stages_present & _CANONICAL_STAGES:
+        return events
+
+    boundary_seq: Optional[int] = None
+    for event in events:
+        if event.get("event_type") == "tool_call":
+            tool_name = str((event.get("payload") or {}).get("tool") or "").strip()
+            if tool_name and tool_name not in LEGACY_SCOUT_TOOLS:
+                boundary_seq = event.get("seq")
+                break
+
+    relabeled: List[Dict[str, Any]] = []
+    for event in events:
+        corrected = dict(event)
+        stage = str(event.get("stage") or "").lower()
+        if stage == "synthesis":
+            corrected["stage"] = "diligence"
+        elif stage in {"planner", ""}:
+            if boundary_seq is not None and (event.get("seq") or 0) >= boundary_seq:
+                corrected["stage"] = "executor"
+        relabeled.append(corrected)
+    return relabeled
+
 
 def _clean_for_json(val: Any, max_str_len: int = 1200) -> Any:
     """Recursively convert LangChain messages and non-primitives into clean JSON-serializable primitives."""
