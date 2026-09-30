@@ -229,8 +229,8 @@ def create_research_graph(
         if str(query).strip() and not ticker and not company:
             try:
                 if cb:
-                    cb.set_stage("scout")
-                    cb.emit_stage("scout", "Preliminary Discovery Scouting (Tavily AI Search)")
+                    cb.set_stage("planner")
+                    cb.emit_stage("planner", "Stage 1 — Scout Assessment & Discovery (Tavily/Screener/Social)")
                 assessment = assess_scout_need(model, str(query), ticker=ticker, company=company)
                 if assessment.needs_scouting and assessment.scout_queries:
                     lines = []
@@ -283,8 +283,8 @@ def create_research_graph(
         max_calls = budget_dict.get("max_total_tool_calls") or budget_dict.get("max_tool_calls", 50)
 
         if cb:
-            cb.set_stage("plan")
-            cb.emit_stage("plan", "Structuring Research Plan & Seeding Candidates")
+            cb.set_stage("planner")
+            cb.emit_stage("planner", "Stage 1 — Plan Synthesis & Candidate Workspace Hydration")
 
         if not hasattr(model, "with_structured_output"):
             plan = ResearchPlanSchema(
@@ -418,8 +418,8 @@ def create_research_graph(
         cb = _extract_callback_handler(config)
         turn_num = (state.get("tool_calls", 0) // 5) + 1
         if cb:
-            cb.set_stage("execute")
-            cb.emit_stage("execute", f"Main Executor: Turn {turn_num} (Selecting & Running Tools)")
+            cb.set_stage("executor")
+            cb.emit_stage("executor", f"Stage 2 — Deep Research Agent Loop: Turn {turn_num}")
 
         prepared = prepare_context(
             [build_research_system_prompt(state), *state.get("messages", [])],
@@ -443,7 +443,7 @@ def create_research_graph(
         """Ingest trailing tool results into durable candidate and evidence ledgers."""
         cb = _extract_callback_handler(config)
         if cb:
-            cb.set_stage("execute")
+            cb.set_stage("ingest")
 
         messages = state.get("messages", [])
         start = len(messages)
@@ -510,8 +510,8 @@ def create_research_graph(
         new_budget["reflection_count"] = ref_count
 
         if cb:
-            cb.set_stage("diligence")
-            cb.emit_stage("diligence", f"Reflection Gap Analysis (Round {ref_count})")
+            cb.set_stage("reflect")
+            cb.emit_stage("reflect", f"Stage 4 — Gap Reflection (Round {ref_count})")
 
         plans = state.get("research_plan") or [{}]
         plan_obj = ResearchPlanSchema(**plans[-1]) if plans[-1] else ResearchPlanSchema(brief="General research")
@@ -618,7 +618,7 @@ def create_research_graph(
         cb = _extract_callback_handler(config)
         if cb:
             cb.set_stage("diligence")
-            cb.emit_stage("diligence", "Forensic Accounting & Valuation Gates Review")
+            cb.emit_stage("diligence", "Stage 5 — Governance Gates & Investment Committee (The Boardroom)")
 
         outcome = evaluate_research_completeness(state)
         updates: dict[str, Any] = {"evidence_gate": outcome, "status": outcome["status"]}

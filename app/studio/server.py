@@ -144,6 +144,9 @@ class StudioHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(html)))
+            # Always revalidate the Studio shell so UI updates land on refresh
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_header("Pragma", "no-cache")
             self.end_headers()
             self.wfile.write(html)
             return
@@ -674,30 +677,30 @@ def get_studio_html() -> str:
               </div>
               <span id="trace-event-counter" class="text-[10px] font-mono text-text-muted whitespace-nowrap">0 events</span>
             </div>
-            <!-- Progress rail: 5 nodes connected by a hairline -->
+            <!-- Progress rail: 5 canonical pipeline stages (PIPELINE_ARCHITECTURE.md) -->
             <div class="relative mt-3.5 mb-1.5 mx-1">
               <div class="absolute left-0 right-0 top-[5px] h-px bg-obsidian-border"></div>
               <div id="trace-rail-progress" class="absolute left-0 top-[5px] h-px bg-emerald-audit transition-all duration-500" style="width:0%"></div>
               <div class="relative flex justify-between">
-                <div class="flex flex-col items-center gap-1.5 w-16" data-step="scout">
+                <div class="flex flex-col items-center gap-1.5 w-24" data-step="planner">
                   <div class="step-node w-[11px] h-[11px] rounded-full border-2 border-obsidian-border bg-obsidian-card transition-all duration-300"></div>
-                  <span class="step-label text-[9px] uppercase tracking-wider text-text-muted">Scout</span>
+                  <span class="step-label text-[9px] uppercase tracking-wider text-text-muted text-center">Plan &amp; Discovery</span>
                 </div>
-                <div class="flex flex-col items-center gap-1.5 w-16" data-step="plan">
+                <div class="flex flex-col items-center gap-1.5 w-24" data-step="executor">
                   <div class="step-node w-[11px] h-[11px] rounded-full border-2 border-obsidian-border bg-obsidian-card transition-all duration-300"></div>
-                  <span class="step-label text-[9px] uppercase tracking-wider text-text-muted">Plan</span>
+                  <span class="step-label text-[9px] uppercase tracking-wider text-text-muted text-center">Research Loop</span>
                 </div>
-                <div class="flex flex-col items-center gap-1.5 w-16" data-step="execute">
+                <div class="flex flex-col items-center gap-1.5 w-24" data-step="ingest">
                   <div class="step-node w-[11px] h-[11px] rounded-full border-2 border-obsidian-border bg-obsidian-card transition-all duration-300"></div>
-                  <span class="step-label text-[9px] uppercase tracking-wider text-text-muted">Tools</span>
+                  <span class="step-label text-[9px] uppercase tracking-wider text-text-muted text-center">Ingestion</span>
                 </div>
-                <div class="flex flex-col items-center gap-1.5 w-16" data-step="diligence">
+                <div class="flex flex-col items-center gap-1.5 w-24" data-step="reflect">
                   <div class="step-node w-[11px] h-[11px] rounded-full border-2 border-obsidian-border bg-obsidian-card transition-all duration-300"></div>
-                  <span class="step-label text-[9px] uppercase tracking-wider text-text-muted">Diligence</span>
+                  <span class="step-label text-[9px] uppercase tracking-wider text-text-muted text-center">Reflection</span>
                 </div>
-                <div class="flex flex-col items-center gap-1.5 w-16" data-step="synthesis">
+                <div class="flex flex-col items-center gap-1.5 w-24" data-step="diligence">
                   <div class="step-node w-[11px] h-[11px] rounded-full border-2 border-obsidian-border bg-obsidian-card transition-all duration-300"></div>
-                  <span class="step-label text-[9px] uppercase tracking-wider text-text-muted">Synthesis</span>
+                  <span class="step-label text-[9px] uppercase tracking-wider text-text-muted text-center">Governance &amp; Verdict</span>
                 </div>
               </div>
             </div>
@@ -819,37 +822,49 @@ No case selected. Choose an investigation on the left to read the forensic audit
       if (activePane) activePane.classList.remove('hidden');
     }
 
+    // Canonical pipeline stages per PIPELINE_ARCHITECTURE.md:
+    // 1 Plan & Discovery (planner) -> 2 Research Loop (executor) -> 3 Ingestion (ingest)
+    // -> 4 Reflection (reflect) -> 5 Governance & Verdict (diligence) -> Memo & media render
     const STAGE_COLORS = {
-      scout: '#F59E0B',
-      plan: '#8B7CF6',
-      execute: '#3DDBA5',
-      diligence: '#22D3EE',
-      synthesis: '#F5C542',
+      planner: '#F59E0B',
+      executor: '#3DDBA5',
+      ingest: '#22D3EE',
+      reflect: '#8B7CF6',
+      diligence: '#F5C542',
       complete: '#3DDBA5',
       failed: '#F87171'
     };
-    const STAGE_ORDER = ['scout', 'plan', 'execute', 'diligence', 'synthesis'];
+    const STAGE_ORDER = ['planner', 'executor', 'ingest', 'reflect', 'diligence'];
+
+    function canonicalStage(stage) {
+      const s = (stage || '').toLowerCase();
+      if (s.includes('scout') || s.includes('plan')) return 'planner';
+      if (s.includes('exec') || s.includes('tool')) return 'executor';
+      if (s.includes('ingest')) return 'ingest';
+      if (s.includes('reflect')) return 'reflect';
+      if (s.includes('dilig') || s.includes('gate') || s.includes('committee') || s.includes('synth') || s.includes('verdict')) return 'diligence';
+      if (s.includes('article') || s.includes('reel') || s.includes('video') || s.includes('complete')) return 'complete';
+      if (s.includes('fail')) return 'failed';
+      return '';
+    }
 
     function stageColor(stage) {
-      const s = (stage || '').toLowerCase();
-      if (s.includes('scout')) return STAGE_COLORS.scout;
-      if (s.includes('plan')) return STAGE_COLORS.plan;
-      if (s.includes('exec') || s.includes('tool')) return STAGE_COLORS.execute;
-      if (s.includes('reflect') || s.includes('dilig') || s.includes('gate') || s.includes('committee')) return STAGE_COLORS.diligence;
-      if (s.includes('synth') || s.includes('article') || s.includes('reel') || s.includes('video') || s.includes('complete')) return STAGE_COLORS.synthesis;
-      if (s.includes('fail')) return STAGE_COLORS.failed;
+      const c = canonicalStage(stage);
+      if (c && STAGE_COLORS[c]) return STAGE_COLORS[c];
       return '#7D8590';
     }
 
+    function stageNumber(stage) {
+      const c = canonicalStage(stage);
+      const idx = STAGE_ORDER.indexOf(c);
+      return idx; // -1 for unknown/complete/failed
+    }
+
     function updateStepper(stage) {
-      const s = (stage || '').toLowerCase();
-      let currentIndex = -1;
-      if (s.includes('scout')) currentIndex = 0;
-      else if (s.includes('plan')) currentIndex = 1;
-      else if (s.includes('exec') || s.includes('tool')) currentIndex = 2;
-      else if (s.includes('reflect') || s.includes('dilig') || s.includes('gate') || s.includes('committee')) currentIndex = 3;
-      else if (s.includes('synth') || s.includes('article') || s.includes('reel') || s.includes('video') || s.includes('complete')) currentIndex = 4;
-      else if (s.includes('fail') || s.includes('error')) currentIndex = -2;
+      const c = canonicalStage(stage);
+      const isComplete = c === 'complete';
+      const isFailed = c === 'failed';
+      const currentIndex = STAGE_ORDER.indexOf(c); // -1 unless a canonical stage
 
       const nodes = document.querySelectorAll('.step-node');
       const labels = document.querySelectorAll('.step-label');
@@ -857,15 +872,15 @@ No case selected. Choose an investigation on the left to read the forensic audit
 
       nodes.forEach((node, idx) => {
         const color = STAGE_COLORS[STAGE_ORDER[idx]];
-        if (currentIndex === -2) {
-          node.style.borderColor = '#7D8590';
-          node.style.background = '#151A20';
+        if (isFailed) {
+          node.style.borderColor = STAGE_COLORS.failed;
+          node.style.background = idx === 0 ? STAGE_COLORS.failed : '#151A20';
           node.classList.remove('animate-pulse');
-        } else if (idx < currentIndex) {
+        } else if (isComplete || (currentIndex !== -1 && idx < currentIndex)) {
           node.style.borderColor = color;
           node.style.background = color;
           node.classList.remove('animate-pulse');
-        } else if (idx === currentIndex) {
+        } else if (currentIndex !== -1 && idx === currentIndex) {
           node.style.borderColor = color;
           node.style.background = color;
           node.classList.add('animate-pulse');
@@ -878,10 +893,10 @@ No case selected. Choose an investigation on the left to read the forensic audit
 
       labels.forEach((label, idx) => {
         const color = STAGE_COLORS[STAGE_ORDER[idx]];
-        if (idx === currentIndex) {
+        if (idx === currentIndex && !isComplete && !isFailed) {
           label.style.color = color;
           label.classList.add('font-bold');
-        } else if (idx < currentIndex) {
+        } else if (isComplete || (currentIndex !== -1 && idx < currentIndex)) {
           label.style.color = '#A8B1BC';
           label.classList.remove('font-bold');
         } else {
@@ -891,7 +906,7 @@ No case selected. Choose an investigation on the left to read the forensic audit
       });
 
       if (rail) {
-        const pct = currentIndex < 0 ? 0 : Math.min(100, (currentIndex / (STAGE_ORDER.length - 1)) * 100);
+        const pct = isComplete ? 100 : (currentIndex <= 0 ? 0 : (currentIndex / (STAGE_ORDER.length - 1)) * 100);
         rail.style.width = `${pct}%`;
       }
     }

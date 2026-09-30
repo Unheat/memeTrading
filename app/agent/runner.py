@@ -174,7 +174,7 @@ def run_investigation(
         if callback_handler:
             callback_handler.emit_stage(
                 "planner",
-                f"Starting deep investigation for {ticker}",
+                f"Launching investigation for {ticker}",
                 {"query": effective_request.query, "depth": effective_request.depth},
             )
 
@@ -195,8 +195,8 @@ def run_investigation(
 
         if callback_handler:
             callback_handler.emit_stage(
-                "synthesis",
-                "Synthesizing evidence and structuring research memo",
+                "diligence",
+                "Final Memo & Verdict — synthesizing governance-gated research report",
                 {"candidates": list((final_state.get("candidates") or {}).keys()), "tool_calls": final_state.get("tool_calls", 0)},
             )
 
@@ -238,7 +238,7 @@ def run_investigation(
         # Stage A: Article generation
         if effective_article and publication_allowed:
             if callback_handler:
-                callback_handler.emit_stage("article", f"Generating cited Substack article for {case_id}")
+                callback_handler.emit_stage("article", f"Post-Pipeline — rendering cited Substack article for {case_id}")
             try:
                 article_md = generate_article_markdown(memo_md, final_state, model=runtime.model)
                 (target_case_dir / "article.md").write_text(article_md, encoding="utf-8")
@@ -252,7 +252,7 @@ def run_investigation(
         # Stage B: Video script generation
         if effective_video and publication_allowed:
             if callback_handler:
-                callback_handler.emit_stage("reel_script", f"Generating dialogue script ({effective_pair})")
+                callback_handler.emit_stage("reel_script", f"Post-Pipeline — generating dialogue script ({effective_pair})")
             try:
                 source_text = article_md or memo_md
                 dialogue_json, reel_script_text, caption_text = generate_reel_script(
@@ -274,7 +274,7 @@ def run_investigation(
                 # Stage C: Video rendering via Faceless bridge (subprocess to external Node.js)
                 if effective_render:
                     if callback_handler:
-                        callback_handler.emit_stage("video_rendering", "Rendering full video reel via Faceless Node.js")
+                        callback_handler.emit_stage("video_rendering", "Post-Pipeline — rendering full video reel via Faceless Node.js")
                     clean_ticker = (ticker or "").strip().lower()
                     if clean_ticker and clean_ticker not in {"research", "unknown"}:
                         slug_cand = re.sub(r"[^a-z0-9]+", "-", clean_ticker).strip("-")
