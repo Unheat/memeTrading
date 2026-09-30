@@ -22,15 +22,69 @@ from app.agent.media import (
     STEWIE_VOICE_ID,
     RICK_VOICE_ID,
     MORTY_VOICE_ID,
+    generate_article_markdown,
     generate_reel_script,
     validate_article_body_citations,
 )
 from app.agent.model_runtime import create_default_model_runtime
 from app.config import load_config
 from app.media.faceless_bridge import FacelessBridge
-from app.storage.cases import find_case_dir
+from app.storage.cases import find_case_dir, write_run_manifest
 
 logger = logging.getLogger(__name__)
+
+
+def generate_article_for_case(case_dir: Path | str) -> Path:
+    """Generate cited Substack article (article.md) for an existing case using the citation correction loop.
+
+    Args:
+        case_dir: Path to case directory or case ID string.
+
+    Returns:
+        Path to generated article.md.
+
+    Raises:
+        FileNotFoundError: If memo.md or investigation.json are absent.
+        ValueError: If publication readiness is blocked.
+    """
+    case_path = Path(case_dir)
+    inv_file = case_path / "investigation.json"
+    memo_file = case_path / "memo.md"
+    if not inv_file.exists():
+        raise FileNotFoundError(f"investigation.json not found in {case_path}; cannot verify publication readiness.")
+    if not memo_file.exists():
+        raise FileNotFoundError(f"memo.md not found in {case_path}; cannot generate article without research memo.")
+
+    inv_data: dict[str, Any] = json.loads(inv_file.read_text(encoding="utf-8"))
+    pub_readiness = inv_data.get("publication_readiness") or {}
+    if pub_readiness.get("status") != "publishable" or not pub_readiness.get("passed"):
+        reasons = pub_readiness.get("reasons") or ["case publication readiness is not publishable"]
+        raise ValueError(f"Case {case_path.name} is blocked from article generation: {'; '.join(reasons)}")
+
+    cfg = load_config()
+    runtime = create_default_model_runtime(
+        model=cfg.llm.model,
+        base_url=cfg.llm.base_url,
+        temperature=cfg.llm.temperature,
+        endpoints=cfg.llm.models,
+    )
+    memo_text = memo_file.read_text(encoding="utf-8")
+    article_md = generate_article_markdown(memo_text, inv_data, model=runtime.model)
+    article_path = case_path / "article.md"
+    article_path.write_text(article_md, encoding="utf-8")
+
+    # Update manifest
+    manifest_path = case_path / "run-manifest.json"
+    if manifest_path.exists():
+        try:
+            man = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if "article.md" not in man.get("artifacts", []):
+                man.setdefault("artifacts", []).append("article.md")
+                write_run_manifest(case_path, man)
+        except Exception:
+            pass
+
+    return article_path
 
 
 def generate_video_for_case(

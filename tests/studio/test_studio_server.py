@@ -251,23 +251,26 @@ def test_normalize_legacy_stage_events_passes_through_canonical() -> None:
 
 def test_generate_article_for_case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify generate_article_for_case compiles article.md and updates manifest."""
-    from app.studio.server import generate_article_for_case
+    from app.media.cli import generate_article_for_case
 
     case_dir = tmp_path / "TEST-CASE-001"
     case_dir.mkdir()
     (case_dir / "memo.md").write_text("# Test Memo\nInstitutional content.", encoding="utf-8")
-    (case_dir / "investigation.json").write_text(json.dumps({"ticker": "TEST"}), encoding="utf-8")
+    (case_dir / "investigation.json").write_text(
+        json.dumps({"ticker": "TEST", "publication_readiness": {"status": "publishable", "passed": True}}),
+        encoding="utf-8",
+    )
     (case_dir / "run-manifest.json").write_text(json.dumps({"status": "completed", "artifacts": ["memo.md", "investigation.json"]}), encoding="utf-8")
 
     monkeypatch.setattr(
-        "app.agent.media.generate_article_markdown",
+        "app.media.cli.generate_article_markdown",
         lambda memo, inv, model: "# Compiled Article [1]\nGenerated successfully.",
     )
 
-    art = generate_article_for_case(case_dir)
-    assert "Compiled Article" in art
-    assert (case_dir / "article.md").exists()
-    assert (case_dir / "article.md").read_text(encoding="utf-8") == art
+    art_path = generate_article_for_case(case_dir)
+    assert art_path.exists()
+    assert "Compiled Article" in art_path.read_text(encoding="utf-8")
+    assert (case_dir / "article.md") == art_path
 
     manifest = json.loads((case_dir / "run-manifest.json").read_text(encoding="utf-8"))
     assert "article.md" in manifest["artifacts"]

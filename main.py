@@ -125,6 +125,12 @@ def parse_args() -> argparse.Namespace:
         help="Publish a specific existing case ID (or 'latest') to the Cloudflare website",
     )
     publish_group.add_argument(
+        "--article-for-case",
+        type=str,
+        default=None,
+        help="Compile cited Substack article for a specific existing case ID (or 'latest')",
+    )
+    publish_group.add_argument(
         "--video-for-case",
         type=str,
         default=None,
@@ -204,6 +210,20 @@ def main() -> int:
         from app.studio.server import run_studio
         run_studio()
         return 0
+
+    # Fast path 1.5: Direct article compilation for an existing case
+    if args.article_for_case:
+        from app.media.cli import generate_article_for_case
+        from app.storage.cases import find_case_dir
+        try:
+            target_case = find_case_dir(args.article_for_case)
+            rendered = generate_article_for_case(target_case)
+            if rendered:
+                print(f"\n✅ Article compiled successfully: {rendered}")
+            return 0
+        except Exception as exc:
+            print(f"\n❌ Error compiling article: {exc}", file=sys.stderr)
+            return 1
 
     # Fast path 2: Direct video rendering for an existing case
     if args.video_for_case:

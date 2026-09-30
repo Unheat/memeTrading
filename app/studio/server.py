@@ -23,7 +23,7 @@ from app.agent.callbacks import normalize_legacy_stage_events
 from app.agent.runner import run_investigation
 from app.agent.state import ResearchRequest
 from app.cli.publish import publish_case
-from app.media.cli import generate_video_for_case
+from app.media.cli import generate_article_for_case, generate_video_for_case
 from app.storage.cases import find_case_dir
 
 logger = logging.getLogger(__name__)
@@ -107,46 +107,6 @@ def get_all_cases(cases_root: str = "cases") -> list[dict[str, Any]]:
 
     results.sort(key=lambda c: c["mtime"], reverse=True)
     return results
-
-
-def generate_article_for_case(case_path: Path) -> str:
-    """Generate and persist article.md for an existing case using the citation correction loop."""
-    from app.config import load_config
-    from app.agent.model_runtime import create_default_model_runtime
-    from app.agent.media import generate_article_markdown
-    from app.storage.cases import write_run_manifest
-
-    memo_path = case_path / "memo.md"
-    inv_path = case_path / "investigation.json"
-    if not memo_path.exists() or not inv_path.exists():
-        raise FileNotFoundError(f"Case {case_path.name} missing memo.md or investigation.json")
-
-    memo_text = memo_path.read_text(encoding="utf-8")
-    inv_data = json.loads(inv_path.read_text(encoding="utf-8"))
-
-    cfg = load_config()
-    runtime = create_default_model_runtime(
-        model=cfg.llm.model,
-        base_url=cfg.llm.base_url,
-        temperature=cfg.llm.temperature,
-        endpoints=cfg.llm.models,
-    )
-
-    article_md = generate_article_markdown(memo_text, inv_data, model=runtime.model)
-    (case_path / "article.md").write_text(article_md, encoding="utf-8")
-
-    # Update manifest
-    manifest_path = case_path / "run-manifest.json"
-    if manifest_path.exists():
-        try:
-            man = json.loads(manifest_path.read_text(encoding="utf-8"))
-            if "article.md" not in man.get("artifacts", []):
-                man.setdefault("artifacts", []).append("article.md")
-                write_run_manifest(case_path, man)
-        except Exception:
-            pass
-
-    return article_md
 
 
 class StudioHandler(BaseHTTPRequestHandler):
