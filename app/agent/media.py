@@ -10,7 +10,7 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from app.agent.gate import evaluate_publication_readiness
 from app.agent.memo import extract_terminal_model_decision
@@ -870,10 +870,13 @@ Instructions:
 6. Explain the common-sense intuition behind financial metrics (like Reverse DCF and DSO) before quoting the figures.
 7. CITATION MANDATE: Every substantive body paragraph discussing the business, operations, or figures MUST include at least one citation tag [1], [2], etc.
 """
-    response = model.invoke([
+    MAX_CITATION_RETRIES = 2
+    conversation_messages: list[Any] = [
         SystemMessage(content=MEDIA_ARTICLE_SYSTEM_PROMPT),
         HumanMessage(content=article_prompt),
-    ])
+    ]
+
+    response = model.invoke(conversation_messages)
     article_raw = getattr(response, "content", "")
 
     # Strip any model-generated trailing bibliography to avoid duplicates or hallucinated links
@@ -885,9 +888,50 @@ Instructions:
 
     # Deterministically validate article body citations
     validation = validate_article_body_citations(clean_article, cards)
+
+    # Self-correction feedback loop with safety limit cap
+    retry_count = 0
+    while not validation["passed"] and retry_count < MAX_CITATION_RETRIES:
+        retry_count += 1
+        errors_summary = "\n- ".join(validation["errors"][:8])
+        logger.warning(
+            "Article draft failed citation validation (attempt %d/%d). Prompting model to correct citations: %s",
+            retry_count,
+            MAX_CITATION_RETRIES,
+            errors_summary,
+        )
+        correction_prompt = (
+            f"Your generated article draft failed our strict regulatory citation audit with the following errors:\n"
+            f"- {errors_summary}\n\n"
+            f"AVAILABLE VERIFIED CITATION INDICES: {sorted(validation['valid_indices'])}\n\n"
+            "MANDATORY CORRECTION INSTRUCTIONS:\n"
+            "1. Retain the exact same article analysis, depth, tone, and headings.\n"
+            "2. Ensure that EVERY factual paragraph, company description, or data assertion carries at least one valid citation bracket like [1], [2], etc., matching the available verified citation indices above.\n"
+            "3. Do NOT delete or truncate paragraphs to avoid citing them; simply attach the relevant citation bracket to the sentence or paragraph.\n"
+            "4. Return ONLY the corrected complete Markdown article text without any trailing bibliography (it is appended deterministically by code)."
+        )
+        conversation_messages.append(AIMessage(content=clean_article))
+        conversation_messages.append(HumanMessage(content=correction_prompt))
+
+        try:
+            retry_resp = model.invoke(conversation_messages)
+            retry_raw = getattr(retry_resp, "content", "")
+            if retry_raw and retry_raw.strip():
+                clean_article = re.split(
+                    r"\n##\s*(?:Primary Sources|Regulatory Receipts|References|Sources)",
+                    retry_raw,
+                    flags=re.IGNORECASE,
+                )[0].strip()
+                validation = validate_article_body_citations(clean_article, cards)
+                if validation["passed"]:
+                    logger.info("Article citation correction succeeded on retry %d", retry_count)
+                    break
+        except Exception as retry_exc:
+            logger.warning("Citation correction retry %d failed with error: %s", retry_count, retry_exc)
+
     if not validation["passed"]:
         reasons_str = "; ".join(validation["errors"])
-        raise ValueError(f"Article failed citation validation: {reasons_str}")
+        raise ValueError(f"Article failed citation validation after {retry_count} correction retries: {reasons_str}")
 
     # Deterministically append the authoritative bibliography from the verified Python cards
     bibliography = format_bibliography_markdown(cards)

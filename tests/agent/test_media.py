@@ -592,3 +592,73 @@ In official filings, working capital contracted [1].
     result = validate_article_body_citations(article, cards)
     assert result["passed"] is True
     assert result["errors"] == []
+
+
+def _mock_publishable_state(case_id: str) -> dict:
+    req = ResearchRequest(query="Audit Micron", ticker="MU")
+    state = create_initial_state(req, case_id=case_id)
+    state["status"] = "completed"
+    state["sec_financials"] = {
+        "status": "ok",
+        "provider": "0001193125-26-123456",
+        "periods": ["2026Q3"],
+        "revenue": {"2026Q3": 34800000000.0},
+        "gross_margin_pct": {"2026Q3": 0.362},
+    }
+    state["consensus_snapshot"] = {"target_mean_price": 1500.0}
+    state["market_context"] = {"quote": {"price": 900.0, "market_cap": 1000e9}}
+    state["evidence_gate"] = {"passed": True}
+    state["accounting_gate"] = {"passed": True}
+    state["valuation_gate"] = {"passed": True}
+    state["asymmetry_gate"] = {"passed": True}
+    state["publication_readiness"] = {"status": "publishable", "passed": True, "reasons": []}
+    return state
+
+
+def test_generate_article_markdown_recovers_via_correction_loop():
+    """When the initial draft has uncited paragraphs, the correction feedback loop prompts the model to fix them."""
+    class RetryingArticleModel:
+        def __init__(self):
+            self.calls = 0
+
+        def invoke(self, messages):
+            self.calls += 1
+            if self.calls == 1:
+                # First turn: model forgot citations on the second paragraph
+                return AIMessage(content="""# Micron Tech Report
+The memory boom is surging [1].
+
+Micron expanded its manufacturing footprint significantly this year without disclosure.
+""")
+            # Second turn: model corrected by adding citation [1]
+            return AIMessage(content="""# Micron Tech Report
+The memory boom is surging [1].
+
+Micron expanded its manufacturing footprint significantly this year according to disclosures [1].
+""")
+
+    state = _mock_publishable_state("retry_art")
+    model = RetryingArticleModel()
+    art = generate_article_markdown("# Memo", state, model=model)
+    assert model.calls == 2
+    assert "disclosures [1]" in art
+    assert "## Primary Sources & Regulatory Receipts" in art
+
+
+def test_generate_article_markdown_fails_after_max_retries():
+    """If the model stubbornly omits citations across all retries, fail closed with ValueError."""
+    class StubbornArticleModel:
+        def __init__(self):
+            self.calls = 0
+
+        def invoke(self, messages):
+            self.calls += 1
+            return AIMessage(content="""# Micron Tech Report
+Uncited paragraph that never gets fixed.
+""")
+
+    state = _mock_publishable_state("stubborn_art")
+    model = StubbornArticleModel()
+    with pytest.raises(ValueError, match="after 2 correction retries"):
+        generate_article_markdown("# Memo", state, model=model)
+    assert model.calls == 3  # Initial + 2 retries
