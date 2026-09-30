@@ -116,7 +116,11 @@ class StudioHandler(BaseHTTPRequestHandler):
         return
 
     def _send_json(self, data: Any, status: int = 200) -> None:
-        payload = json.dumps(data).encode("utf-8")
+        try:
+            payload = json.dumps(data, default=str).encode("utf-8")
+        except Exception as exc:
+            logger.error("Failed to JSON-serialize response payload: %s", exc)
+            payload = json.dumps({"error": f"Serialization error: {exc}"}).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
@@ -660,22 +664,42 @@ def get_studio_html() -> str:
 
         <!-- Tab Content: Live Execution & Model Trace -->
         <div id="tab-trace" class="tab-pane flex-1 pt-4 flex flex-col space-y-3 min-h-[500px]">
-          <!-- Stage Progress Stepper Bar -->
-          <div class="bg-obsidian/70 border border-obsidian-border rounded-xl p-3 text-[11px] font-mono">
-            <div class="flex items-center justify-between text-text-muted mb-1.5">
-              <span class="font-bold text-text-primary text-xs uppercase flex items-center gap-1.5">
-                <i class="fa-solid fa-diagram-project text-cyan-consensus"></i>
-                <span id="trace-current-stage-title">Pipeline Ready</span>
-              </span>
-              <span id="trace-event-counter" class="text-[10px] px-2 py-0.5 rounded bg-obsidian border border-obsidian-border text-emerald-audit font-bold">0 events</span>
+          <!-- Status Bar: current stage + progress rail + counter -->
+          <div class="trace-shell border border-obsidian-border rounded-xl px-4 py-3">
+            <div class="flex items-center justify-between gap-3">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <span id="trace-pulse-dot" class="w-2 h-2 rounded-full bg-emerald-audit animate-pulse hidden"></span>
+                <span class="text-[10px] uppercase tracking-[0.14em] text-text-muted font-semibold">Pipeline</span>
+                <span id="trace-current-stage-title" class="text-[12px] font-bold text-text-primary truncate">Ready — launch an investigation</span>
+              </div>
+              <span id="trace-event-counter" class="text-[10px] font-mono text-text-muted whitespace-nowrap">0 events</span>
             </div>
-            <!-- Visual Pipeline Stage Pills -->
-            <div class="grid grid-cols-5 gap-1.5 pt-1 text-center text-[10px]">
-              <div id="step-pill-scout" class="py-1 rounded bg-obsidian border border-obsidian-border text-text-muted transition-all">1. Scout</div>
-              <div id="step-pill-plan" class="py-1 rounded bg-obsidian border border-obsidian-border text-text-muted transition-all">2. Plan</div>
-              <div id="step-pill-execute" class="py-1 rounded bg-obsidian border border-obsidian-border text-text-muted transition-all">3. Tools</div>
-              <div id="step-pill-diligence" class="py-1 rounded bg-obsidian border border-obsidian-border text-text-muted transition-all">4. Diligence</div>
-              <div id="step-pill-synthesis" class="py-1 rounded bg-obsidian border border-obsidian-border text-text-muted transition-all">5. Synthesis</div>
+            <!-- Progress rail: 5 nodes connected by a hairline -->
+            <div class="relative mt-3.5 mb-1.5 mx-1">
+              <div class="absolute left-0 right-0 top-[5px] h-px bg-obsidian-border"></div>
+              <div id="trace-rail-progress" class="absolute left-0 top-[5px] h-px bg-emerald-audit transition-all duration-500" style="width:0%"></div>
+              <div class="relative flex justify-between">
+                <div class="flex flex-col items-center gap-1.5 w-16" data-step="scout">
+                  <div class="step-node w-[11px] h-[11px] rounded-full border-2 border-obsidian-border bg-obsidian-card transition-all duration-300"></div>
+                  <span class="step-label text-[9px] uppercase tracking-wider text-text-muted">Scout</span>
+                </div>
+                <div class="flex flex-col items-center gap-1.5 w-16" data-step="plan">
+                  <div class="step-node w-[11px] h-[11px] rounded-full border-2 border-obsidian-border bg-obsidian-card transition-all duration-300"></div>
+                  <span class="step-label text-[9px] uppercase tracking-wider text-text-muted">Plan</span>
+                </div>
+                <div class="flex flex-col items-center gap-1.5 w-16" data-step="execute">
+                  <div class="step-node w-[11px] h-[11px] rounded-full border-2 border-obsidian-border bg-obsidian-card transition-all duration-300"></div>
+                  <span class="step-label text-[9px] uppercase tracking-wider text-text-muted">Tools</span>
+                </div>
+                <div class="flex flex-col items-center gap-1.5 w-16" data-step="diligence">
+                  <div class="step-node w-[11px] h-[11px] rounded-full border-2 border-obsidian-border bg-obsidian-card transition-all duration-300"></div>
+                  <span class="step-label text-[9px] uppercase tracking-wider text-text-muted">Diligence</span>
+                </div>
+                <div class="flex flex-col items-center gap-1.5 w-16" data-step="synthesis">
+                  <div class="step-node w-[11px] h-[11px] rounded-full border-2 border-obsidian-border bg-obsidian-card transition-all duration-300"></div>
+                  <span class="step-label text-[9px] uppercase tracking-wider text-text-muted">Synthesis</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -683,10 +707,10 @@ def get_studio_html() -> str:
           <div class="flex items-center justify-between gap-2 text-[11px] font-mono flex-wrap bg-obsidian/40 p-2 rounded-xl border border-obsidian-border/60">
             <div class="flex items-center gap-1.5 overflow-x-auto" id="trace-filter-group">
               <button class="filter-btn px-2.5 py-1 rounded-lg bg-emerald-audit/20 text-emerald-audit border border-emerald-audit/40 font-semibold" data-filter="all">All</button>
-              <button class="filter-btn px-2.5 py-1 rounded-lg bg-obsidian text-text-muted border border-obsidian-border hover:text-text-primary" data-filter="llm_thinking">🧠 Thinking</button>
+              <button class="filter-btn px-2.5 py-1 rounded-lg bg-obsidian text-text-muted border border-obsidian-border hover:text-text-primary" data-filter="llm_thinking">🧠 Reasoning</button>
               <button class="filter-btn px-2.5 py-1 rounded-lg bg-obsidian text-text-muted border border-obsidian-border hover:text-text-primary" data-filter="tool_call">🛠️ Calls</button>
               <button class="filter-btn px-2.5 py-1 rounded-lg bg-obsidian text-text-muted border border-obsidian-border hover:text-text-primary" data-filter="tool_result">📥 Returns</button>
-              <button class="filter-btn px-2.5 py-1 rounded-lg bg-obsidian text-text-muted border border-obsidian-border hover:text-text-primary" data-filter="llm_response">💬 Response</button>
+              <button class="filter-btn px-2.5 py-1 rounded-lg bg-obsidian text-text-muted border border-obsidian-border hover:text-text-primary" data-filter="llm_response">💬 Decisions</button>
             </div>
             <div class="flex items-center gap-3">
               <label class="flex items-center gap-1.5 text-text-muted text-[10px] cursor-pointer">
@@ -699,11 +723,11 @@ def get_studio_html() -> str:
             </div>
           </div>
 
-          <!-- Live Event Cards Container -->
-          <div id="trace-events-stream" class="flex-1 overflow-y-auto max-h-[460px] space-y-2.5 pr-1 font-mono text-xs">
+          <!-- Chat-style event stream: grouped by agent with avatars -->
+          <div id="trace-events-stream" class="flex-1 overflow-y-auto max-h-[460px] px-1 pr-2 text-xs">
             <div class="text-center text-text-muted py-12">
               <i class="fa-solid fa-terminal text-2xl mb-2 text-obsidian-border"></i>
-              <p>No active investigation running. Launch an investigation on the left or select a past case to inspect its model execution trace.</p>
+              <p>No active investigation. Launch one on the left, or select a past case to replay its trace.</p>
             </div>
           </div>
         </div>
@@ -795,139 +819,237 @@ No case selected. Choose an investigation on the left to read the forensic audit
       if (activePane) activePane.classList.remove('hidden');
     }
 
+    const STAGE_COLORS = {
+      scout: '#F59E0B',
+      plan: '#8B7CF6',
+      execute: '#3DDBA5',
+      diligence: '#22D3EE',
+      synthesis: '#F5C542',
+      complete: '#3DDBA5',
+      failed: '#F87171'
+    };
+    const STAGE_ORDER = ['scout', 'plan', 'execute', 'diligence', 'synthesis'];
+
+    function stageColor(stage) {
+      const s = (stage || '').toLowerCase();
+      if (s.includes('scout')) return STAGE_COLORS.scout;
+      if (s.includes('plan')) return STAGE_COLORS.plan;
+      if (s.includes('exec') || s.includes('tool')) return STAGE_COLORS.execute;
+      if (s.includes('reflect') || s.includes('dilig') || s.includes('gate') || s.includes('committee')) return STAGE_COLORS.diligence;
+      if (s.includes('synth') || s.includes('article') || s.includes('reel') || s.includes('video') || s.includes('complete')) return STAGE_COLORS.synthesis;
+      if (s.includes('fail')) return STAGE_COLORS.failed;
+      return '#7D8590';
+    }
+
     function updateStepper(stage) {
-      const active = (stage || '').toLowerCase();
-      const stageMap = [
-        { id: 'step-pill-scout', label: '1. Scout' },
-        { id: 'step-pill-plan', label: '2. Plan' },
-        { id: 'step-pill-execute', label: '3. Tools' },
-        { id: 'step-pill-diligence', label: '4. Diligence' },
-        { id: 'step-pill-synthesis', label: '5. Synthesis' }
-      ];
-
+      const s = (stage || '').toLowerCase();
       let currentIndex = -1;
-      if (active.includes('scout')) currentIndex = 0;
-      else if (active.includes('plan')) currentIndex = 1;
-      else if (active.includes('exec') || active.includes('tool')) currentIndex = 2;
-      else if (active.includes('reflect') || active.includes('dilig') || active.includes('gate') || active.includes('committee')) currentIndex = 3;
-      else if (active.includes('synth') || active.includes('article') || active.includes('reel') || active.includes('video') || active.includes('complete')) currentIndex = 4;
+      if (s.includes('scout')) currentIndex = 0;
+      else if (s.includes('plan')) currentIndex = 1;
+      else if (s.includes('exec') || s.includes('tool')) currentIndex = 2;
+      else if (s.includes('reflect') || s.includes('dilig') || s.includes('gate') || s.includes('committee')) currentIndex = 3;
+      else if (s.includes('synth') || s.includes('article') || s.includes('reel') || s.includes('video') || s.includes('complete')) currentIndex = 4;
+      else if (s.includes('fail') || s.includes('error')) currentIndex = -2;
 
-      stageMap.forEach((s, idx) => {
-        const el = document.getElementById(s.id);
-        if (!el) return;
-        const name = s.label.split('. ')[1];
-        if (idx < currentIndex) {
-          el.className = 'py-1 rounded bg-emerald-audit/10 border border-emerald-audit/40 text-emerald-audit text-[10px] font-semibold';
-          el.innerHTML = `✓ ${name}`;
+      const nodes = document.querySelectorAll('.step-node');
+      const labels = document.querySelectorAll('.step-label');
+      const rail = document.getElementById('trace-rail-progress');
+
+      nodes.forEach((node, idx) => {
+        const color = STAGE_COLORS[STAGE_ORDER[idx]];
+        if (currentIndex === -2) {
+          node.style.borderColor = '#7D8590';
+          node.style.background = '#151A20';
+          node.classList.remove('animate-pulse');
+        } else if (idx < currentIndex) {
+          node.style.borderColor = color;
+          node.style.background = color;
+          node.classList.remove('animate-pulse');
         } else if (idx === currentIndex) {
-          el.className = 'py-1 rounded bg-cyan-consensus/20 border border-cyan-consensus text-cyan-consensus text-[10px] font-bold animate-pulse';
-          el.innerHTML = `▶ ${name}`;
+          node.style.borderColor = color;
+          node.style.background = color;
+          node.classList.add('animate-pulse');
         } else {
-          el.className = 'py-1 rounded bg-obsidian border border-obsidian-border text-text-muted text-[10px]';
-          el.innerHTML = s.label;
+          node.style.borderColor = '#1E2638';
+          node.style.background = '#151A20';
+          node.classList.remove('animate-pulse');
         }
       });
+
+      labels.forEach((label, idx) => {
+        const color = STAGE_COLORS[STAGE_ORDER[idx]];
+        if (idx === currentIndex) {
+          label.style.color = color;
+          label.classList.add('font-bold');
+        } else if (idx < currentIndex) {
+          label.style.color = '#A8B1BC';
+          label.classList.remove('font-bold');
+        } else {
+          label.style.color = '#7D8590';
+          label.classList.remove('font-bold');
+        }
+      });
+
+      if (rail) {
+        const pct = currentIndex < 0 ? 0 : Math.min(100, (currentIndex / (STAGE_ORDER.length - 1)) * 100);
+        rail.style.width = `${pct}%`;
+      }
+    }
+
+    // Chat-style agent identity map for the trace stream
+    const AGENT_PROFILE = {
+      llm_thinking: { name: 'Reasoning', icon: 'fa-brain', color: '#A78BFA', bg: 'rgba(139,124,246,0.14)' },
+      llm_start: { name: 'Model Turn', icon: 'fa-paper-plane', color: '#A78BFA', bg: 'rgba(139,124,246,0.14)' },
+      llm_response: { name: 'Decision', icon: 'fa-comment-dots', color: '#22D3EE', bg: 'rgba(34,211,238,0.13)' },
+      tool_call: { name: 'Tool Call', icon: 'fa-screwdriver-wrench', color: '#3DDBA5', bg: 'rgba(61,219,165,0.13)' },
+      tool_result: { name: 'Tool Output', icon: 'fa-inbox', color: '#8B949E', bg: 'rgba(139,148,158,0.12)' },
+      stage: { name: 'Pipeline', icon: 'fa-flag-checkered', color: '#F5C542', bg: 'rgba(245,197,66,0.12)' },
+      log: { name: 'Log', icon: 'fa-terminal', color: '#8B949E', bg: 'rgba(139,148,158,0.10)' }
+    };
+
+    function shortArgs(inputs) {
+      if (inputs === null || inputs === undefined) return '';
+      if (typeof inputs === 'string') return inputs;
+      try {
+        const parts = [];
+        for (const [k, v] of Object.entries(inputs)) {
+          const s = typeof v === 'string' ? v : JSON.stringify(v);
+          parts.push(`${k}=${s.length > 80 ? s.slice(0, 77) + '…' : s}`);
+        }
+        return parts.join('  ·  ');
+      } catch (_) {
+        return JSON.stringify(inputs);
+      }
     }
 
     function createEventCard(event) {
       const type = event.event_type || 'log';
+      const stage = event.stage || '';
+      const stageHex = stageColor(stage);
       const time = event.timestamp ? event.timestamp.slice(11, 19) : '';
       const payload = event.payload || {};
       const title = event.title || type;
+      const profile = AGENT_PROFILE[type] || AGENT_PROFILE.log;
 
-      let cardHtml = '';
+      const isThought = type === 'llm_thinking';
+      const isError = type === 'tool_result' && payload.status === 'error';
 
-      if (type === 'llm_thinking') {
-        const thinkingText = payload.thinking || '';
-        cardHtml = `
-          <div class="event-card event-llm_thinking p-3 rounded-xl bg-purple-950/25 border border-purple-500/40 text-purple-200">
-            <div class="flex items-center justify-between mb-1.5">
-              <div class="flex items-center gap-2">
-                <span class="w-5 h-5 rounded-md bg-purple-500/20 text-purple-300 flex items-center justify-center text-xs">🧠</span>
-                <span class="font-bold text-[11px] text-purple-300">Model Reasoning & Thinking Trace</span>
-              </div>
-              <span class="text-[10px] text-purple-400/70 font-mono">${time}</span>
+      // Stage transitions render as centered divider chips
+      if (type === 'stage') {
+        const html = `
+          <div class="event-card event-stage flex items-center gap-3 py-1.5 my-1" data-filter="stage">
+            <div class="h-px flex-1 bg-obsidian-border"></div>
+            <div class="flex items-center gap-2 px-3 py-1 rounded-full border bg-obsidian-card" style="border-color:${stageHex}44">
+              <span class="w-1.5 h-1.5 rounded-full" style="background:${stageHex}"></span>
+              <span class="text-[10px] font-bold uppercase tracking-[0.12em]" style="color:${stageHex}">${escapeHtml(title)}</span>
             </div>
-            <div class="text-[11px] font-sans leading-relaxed text-purple-200/90 whitespace-pre-wrap bg-purple-950/40 p-2.5 rounded-lg border border-purple-500/20 max-h-64 overflow-y-auto">
-              ${escapeHtml(thinkingText)}
-            </div>
-          </div>
-        `;
-      } else if (type === 'tool_call') {
-        const ticker = payload.ticker ? `<span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">$${payload.ticker}</span>` : '';
-        const inputsJson = JSON.stringify(payload.inputs || {}, null, 2);
-        cardHtml = `
-          <div class="event-card event-tool_call p-3 rounded-xl bg-emerald-950/20 border border-emerald-500/40 text-emerald-100">
-            <div class="flex items-center justify-between mb-1.5">
-              <div class="flex items-center gap-2">
-                <span class="w-5 h-5 rounded-md bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs">🛠️</span>
-                <span class="font-bold text-[11px] text-emerald-300">${escapeHtml(title)}</span>
-                ${ticker}
-              </div>
-              <span class="text-[10px] text-emerald-400/70 font-mono">${time}</span>
-            </div>
-            <pre class="text-[10px] font-mono bg-obsidian/80 p-2 rounded border border-emerald-500/20 text-text-secondary overflow-x-auto max-h-36">${escapeHtml(inputsJson)}</pre>
-          </div>
-        `;
-      } else if (type === 'tool_result') {
-        const isError = payload.status === 'error';
-        const statusBadge = isError 
-          ? '<span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-warning border border-amber-500/30 text-[10px] font-bold">ERROR</span>'
-          : '<span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-audit border border-emerald-500/30 text-[10px] font-bold">OK</span>';
-        const text = payload.error || payload.output_preview || '';
-        cardHtml = `
-          <div class="event-card event-tool_result p-3 rounded-xl ${isError ? 'bg-amber-950/20 border border-amber-500/40 text-amber-200' : 'bg-obsidian-subtle border border-cyan-500/25 text-slate-200'}">
-            <div class="flex items-center justify-between mb-1.5">
-              <div class="flex items-center gap-2">
-                <span class="w-5 h-5 rounded-md ${isError ? 'bg-amber-500/20 text-amber-400' : 'bg-cyan-500/20 text-cyan-400'} flex items-center justify-center text-xs">${isError ? '⚠️' : '📥'}</span>
-                <span class="font-bold text-[11px] text-text-primary">${escapeHtml(title)}</span>
-                ${statusBadge}
-              </div>
-              <span class="text-[10px] text-text-muted font-mono">${time}</span>
-            </div>
-            <div class="text-[10px] font-mono bg-obsidian/90 p-2 rounded border border-obsidian-border max-h-36 overflow-y-auto whitespace-pre-wrap text-text-secondary">
-              ${escapeHtml(text)}
-            </div>
-          </div>
-        `;
-      } else if (type === 'llm_response') {
-        const calls = payload.tool_calls && payload.tool_calls.length ? `<div class="mt-1 text-[10px] text-cyan-300 font-mono">Tools Requested: <span class="font-bold">${payload.tool_calls.join(', ')}</span></div>` : '';
-        const preview = payload.content_preview ? `<div class="text-[11px] font-sans leading-relaxed text-cyan-100/90 whitespace-pre-wrap bg-cyan-950/40 p-2.5 rounded-lg border border-cyan-500/20 max-h-48 overflow-y-auto">${escapeHtml(payload.content_preview)}</div>` : '';
-        cardHtml = `
-          <div class="event-card event-llm_response p-3 rounded-xl bg-cyan-950/20 border border-cyan-500/30 text-cyan-100">
-            <div class="flex items-center justify-between mb-1.5">
-              <div class="flex items-center gap-2">
-                <span class="w-5 h-5 rounded-md bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-xs">💬</span>
-                <span class="font-bold text-[11px] text-cyan-300">${escapeHtml(title)}</span>
-              </div>
-              <span class="text-[10px] text-cyan-400/70 font-mono">${time}</span>
-            </div>
-            ${preview}
-            ${calls}
-          </div>
-        `;
-      } else if (type === 'stage') {
-        cardHtml = `
-          <div class="event-card event-stage p-2.5 rounded-xl bg-obsidian-card border border-obsidian-border flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <span class="w-2 h-2 rounded-full bg-cyan-consensus"></span>
-              <span class="font-bold text-[11px] text-text-primary uppercase tracking-wider">${escapeHtml(title)}</span>
-            </div>
-            <span class="text-[10px] text-text-muted font-mono">${time}</span>
-          </div>
-        `;
-      } else {
-        cardHtml = `
-          <div class="event-card event-log p-2 rounded-lg bg-obsidian/60 border border-obsidian-border text-[11px] text-text-muted flex items-center justify-between font-mono">
-            <span>${escapeHtml(title)}</span>
-            <span class="text-[10px] text-text-muted/60">${time}</span>
-          </div>
-        `;
+            <span class="text-[10px] font-mono text-text-muted">${time}</span>
+            <div class="h-px flex-1 bg-obsidian-border"></div>
+          </div>`;
+        return htmlToNode(html);
       }
 
+      // Quiet single-line logs
+      if (type === 'log') {
+        const html = `
+          <div class="event-card event-log flex items-center gap-2 py-1 px-1" data-filter="log">
+            <span class="w-4 text-center text-[9px] text-text-muted"><i class="fa-solid fa-terminal"></i></span>
+            <span class="flex-1 truncate text-[11px] text-text-muted">${escapeHtml(title)}</span>
+            <span class="text-[10px] font-mono text-text-muted/60">${time}</span>
+          </div>`;
+        return htmlToNode(html);
+      }
+
+      const avatar = `
+        <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] shrink-0" style="background:${profile.bg};color:${profile.color}">
+          <i class="fa-solid ${profile.icon}"></i>
+        </div>`;
+
+      let body = '';
+
+      if (isThought) {
+        body = `
+          <div class="event-body rounded-lg border border-purple-400/25 bg-purple-500/[0.06]">
+            <button class="think-toggle w-full flex items-center gap-2 px-3 py-2 text-left" onclick="toggleThink(this)">
+              <i class="fa-solid fa-chevron-right text-[9px] text-purple-300/70 transition-transform"></i>
+              <span class="text-[10px] font-semibold text-purple-300/90">Show reasoning</span>
+              <span class="ml-auto text-[9px] font-mono text-purple-300/50">${(payload.thinking || '').length} chars</span>
+            </button>
+            <div class="think-content hidden px-3 pb-2.5 text-[11px] leading-relaxed text-purple-100/85 whitespace-pre-wrap max-h-60 overflow-y-auto">${escapeHtml(payload.thinking || '')}</div>
+          </div>`;
+      } else if (type === 'tool_call') {
+        const ticker = payload.ticker ? `<span class="px-1.5 py-0.5 rounded font-bold text-[10px]" style="background:rgba(61,219,165,0.15);color:#3DDBA5">$${escapeHtml(payload.ticker)}</span>` : '';
+        const args = shortArgs(payload.inputs);
+        body = `
+          <div class="event-body rounded-lg border border-emerald-400/25 bg-emerald-500/[0.05]">
+            <div class="flex items-center gap-2 px-3 py-2 flex-wrap">
+              <span class="text-[11px] font-bold font-mono text-emerald-300">${escapeHtml(payload.tool || title)}</span>
+              ${ticker}
+              ${args ? `<span class="text-[10px] font-mono text-text-muted truncate max-w-[340px]" title="${escapeHtml(args)}">${escapeHtml(args)}</span>` : ''}
+            </div>
+          </div>`;
+      } else if (type === 'tool_result') {
+        const badge = isError
+          ? '<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/15 text-amber-warning border border-amber-500/30">ERROR</span>'
+          : '<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-audit border border-emerald-500/30">OK</span>';
+        const text = payload.error || payload.output_preview || '';
+        body = `
+          <div class="event-body rounded-lg border ${isError ? 'border-amber-400/30 bg-amber-500/[0.05]' : 'border-obsidian-border bg-obsidian/60'}">
+            <div class="flex items-center gap-2 px-3 py-1.5">
+              <span class="text-[10px] font-semibold text-text-secondary">Returned</span>
+              ${badge}
+              <span class="ml-auto text-[9px] font-mono text-text-muted">${(text || '').length} chars</span>
+            </div>
+            <div class="px-3 pb-2.5 text-[10px] font-mono text-text-secondary whitespace-pre-wrap max-h-40 overflow-y-auto leading-relaxed">${escapeHtml(text)}</div>
+          </div>`;
+      } else if (type === 'llm_response') {
+        const calls = (payload.tool_calls || []).map(c =>
+          `<span class="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold" style="background:rgba(34,211,238,0.13);color:#22D3EE">${escapeHtml(c)}</span>`
+        ).join(' ');
+        const preview = payload.content_preview
+          ? `<div class="text-[11px] leading-relaxed text-text-secondary whitespace-pre-wrap max-h-44 overflow-y-auto">${escapeHtml(payload.content_preview)}</div>`
+          : '';
+        body = `
+          <div class="event-body rounded-lg border border-cyan-400/20 bg-cyan-500/[0.05] px-3 py-2.5 space-y-1.5">
+            ${preview}
+            ${calls ? `<div class="flex items-center gap-1.5 flex-wrap"><span class="text-[9px] uppercase tracking-wider text-text-muted font-semibold">Dispatch</span>${calls}</div>` : ''}
+          </div>`;
+      } else {
+        body = `
+          <div class="event-body rounded-lg border border-obsidian-border bg-obsidian/50 px-3 py-2 text-[11px] text-text-secondary">
+            ${escapeHtml(title)}
+          </div>`;
+      }
+
+      const html = `
+        <div class="event-card event-${type} flex gap-2.5 py-1.5" data-filter="${type}">
+          ${avatar}
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-[10px] font-bold uppercase tracking-wider" style="color:${profile.color}">${profile.name}</span>
+              <span class="text-[9px] font-mono px-1.5 rounded" style="color:${stageHex};background:${stageHex}1A">${escapeHtml(stage || 'run')}</span>
+              <span class="ml-auto text-[9px] font-mono text-text-muted">${time}</span>
+            </div>
+            ${body}
+          </div>
+        </div>`;
+      return htmlToNode(html);
+    }
+
+    function htmlToNode(html) {
       const wrapper = document.createElement('div');
-      wrapper.innerHTML = cardHtml.trim();
+      wrapper.innerHTML = html.trim();
       return wrapper.firstElementChild;
+    }
+
+    function toggleThink(btn) {
+      const content = btn.nextElementSibling;
+      const icon = btn.querySelector('i');
+      const label = btn.querySelector('span');
+      content.classList.toggle('hidden');
+      const isOpen = !content.classList.contains('hidden');
+      if (icon) icon.style.transform = isOpen ? 'rotate(90deg)' : 'rotate(0deg)';
+      if (label) label.textContent = isOpen ? 'Hide reasoning' : 'Show reasoning';
     }
 
     function applyFilter(filter) {
@@ -950,6 +1072,9 @@ No case selected. Choose an investigation on the left to read the forensic audit
       });
     }
 
+    // DOM cap: keep the stream fast during very long runs (backend ledger keeps full history)
+    const TRACE_DOM_CAP = 350;
+
     function renderEvents(events, append = true) {
       const container = document.getElementById('trace-events-stream');
       if (!append || !activeEvents.length) {
@@ -962,19 +1087,35 @@ No case selected. Choose an investigation on the left to read the forensic audit
       }
 
       events.forEach(ev => {
-        const card = createEventCard(ev);
+        let card;
+        try {
+          card = createEventCard(ev);
+        } catch (err) {
+          console.error('Trace render error on event', ev && ev.seq, err);
+          return;
+        }
+        if (!card) return;
         if (activeFilter !== 'all' && !card.classList.contains(`event-${activeFilter}`)) {
           card.classList.add('hidden');
         }
         container.appendChild(card);
       });
 
+      // Trim oldest nodes when over the render cap
+      while (container.childElementCount > TRACE_DOM_CAP) {
+        container.removeChild(container.firstElementChild);
+      }
+
       document.getElementById('trace-event-counter').textContent = `${activeEvents.length} events`;
-      
-      const lastEvent = activeEvents[activeEvents.length - 1];
-      if (lastEvent) {
-        document.getElementById('trace-current-stage-title').textContent = lastEvent.title || lastEvent.stage;
-        updateStepper(lastEvent.stage);
+
+      // Stage banner should follow the most recent stage transition, not just the newest event
+      let stageEvent = null;
+      for (let i = activeEvents.length - 1; i >= 0; i--) {
+        if (activeEvents[i].event_type === 'stage') { stageEvent = activeEvents[i]; break; }
+      }
+      if (stageEvent) {
+        document.getElementById('trace-current-stage-title').textContent = stageEvent.title || stageEvent.stage;
+        updateStepper(stageEvent.stage);
       }
 
       const autoscroll = document.getElementById('check-autoscroll').checked;

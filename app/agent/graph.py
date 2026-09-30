@@ -15,6 +15,7 @@ from collections.abc import Mapping
 from typing import Any, Literal, Sequence
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
@@ -166,6 +167,28 @@ def should_continue_reflection(state: InvestigationState) -> Literal["executor",
     return "committee"
 
 
+def _extract_callback_handler(config: Any) -> Any:
+    """Extract InvestigationCallbackHandler from execution config if present."""
+    if not config:
+        return None
+    callbacks = config.get("callbacks") if isinstance(config, dict) else getattr(config, "callbacks", None)
+    if callbacks is None:
+        return None
+
+    if hasattr(callbacks, "handlers"):
+        # CallbackManager instance carries a .handlers list of actual handlers
+        candidates = list(callbacks.handlers)
+    elif isinstance(callbacks, (list, tuple)):
+        candidates = list(callbacks)
+    else:
+        candidates = [callbacks]
+
+    for cb in candidates:
+        if hasattr(cb, "set_stage"):
+            return cb
+    return None
+
+
 def create_research_graph(
     model: Any,
     tools: Sequence[BaseTool],
@@ -188,11 +211,12 @@ def create_research_graph(
     model_with_tools = model.bind_tools(tools) if hasattr(model, "bind_tools") else model
     policy = context_policy or ModelContextPolicy()
 
-    def planner_node(state: InvestigationState) -> dict[str, Any]:
+    def planner_node(state: InvestigationState, config: RunnableConfig = None) -> dict[str, Any]:
         """Stage 1: Generate structured ResearchPlanSchema using structured output and scout intelligence."""
         if state.get("research_plan"):
             return {}
 
+        cb = _extract_callback_handler(config)
         query = (state.get("trigger") or {}).get("query") or (state.get("messages", [HumanMessage(content="")])[0].content)
         ticker = state.get("ticker") or None
         company = state.get("company") or None
@@ -204,6 +228,9 @@ def create_research_graph(
         tool_map = {getattr(t, "name", ""): t for t in tools}
         if str(query).strip() and not ticker and not company:
             try:
+                if cb:
+                    cb.set_stage("scout")
+                    cb.emit_stage("scout", "Preliminary Discovery Scouting (Tavily AI Search)")
                 assessment = assess_scout_need(model, str(query), ticker=ticker, company=company)
                 if assessment.needs_scouting and assessment.scout_queries:
                     lines = []
@@ -254,6 +281,10 @@ def create_research_graph(
 
         budget_dict = state.get("budget_state") or {}
         max_calls = budget_dict.get("max_total_tool_calls") or budget_dict.get("max_tool_calls", 50)
+
+        if cb:
+            cb.set_stage("plan")
+            cb.emit_stage("plan", "Structuring Research Plan & Seeding Candidates")
 
         if not hasattr(model, "with_structured_output"):
             plan = ResearchPlanSchema(
@@ -382,8 +413,14 @@ def create_research_graph(
             ],
         }
 
-    def executor_node(state: InvestigationState) -> dict[str, Any]:
+    def executor_node(state: InvestigationState, config: RunnableConfig = None) -> dict[str, Any]:
         """Stage 2: Model invokes research tools guided by the active plan and candidate workspaces."""
+        cb = _extract_callback_handler(config)
+        turn_num = (state.get("tool_calls", 0) // 5) + 1
+        if cb:
+            cb.set_stage("execute")
+            cb.emit_stage("execute", f"Main Executor: Turn {turn_num} (Selecting & Running Tools)")
+
         prepared = prepare_context(
             [build_research_system_prompt(state), *state.get("messages", [])],
             policy=policy,
@@ -402,8 +439,12 @@ def create_research_graph(
         )
         return {"messages": [response], "tool_calls": state.get("tool_calls", 0) + len(allowed)}
 
-    def ingest_node(state: InvestigationState) -> dict[str, Any]:
+    def ingest_node(state: InvestigationState, config: RunnableConfig = None) -> dict[str, Any]:
         """Ingest trailing tool results into durable candidate and evidence ledgers."""
+        cb = _extract_callback_handler(config)
+        if cb:
+            cb.set_stage("execute")
+
         messages = state.get("messages", [])
         start = len(messages)
         while start and isinstance(messages[start - 1], ToolMessage):
@@ -460,12 +501,17 @@ def create_research_graph(
         )
         return updates
 
-    def reflection_node(state: InvestigationState) -> dict[str, Any]:
+    def reflection_node(state: InvestigationState, config: RunnableConfig = None) -> dict[str, Any]:
         """Stage 3: Gap analysis reflecting on collected evidence against the plan."""
+        cb = _extract_callback_handler(config)
         budget = state.get("budget_state", {})
         ref_count = budget.get("reflection_count", 0) + 1
         new_budget = dict(budget)
         new_budget["reflection_count"] = ref_count
+
+        if cb:
+            cb.set_stage("diligence")
+            cb.emit_stage("diligence", f"Reflection Gap Analysis (Round {ref_count})")
 
         plans = state.get("research_plan") or [{}]
         plan_obj = ResearchPlanSchema(**plans[-1]) if plans[-1] else ResearchPlanSchema(brief="General research")
@@ -567,8 +613,13 @@ def create_research_graph(
 
         return {"budget_state": new_budget}
 
-    def diligence_node(state: InvestigationState) -> dict[str, Any]:
+    def diligence_node(state: InvestigationState, config: RunnableConfig = None) -> dict[str, Any]:
         """Execute diligence lenses and committee deliberation if evidence passed."""
+        cb = _extract_callback_handler(config)
+        if cb:
+            cb.set_stage("diligence")
+            cb.emit_stage("diligence", "Forensic Accounting & Valuation Gates Review")
+
         outcome = evaluate_research_completeness(state)
         updates: dict[str, Any] = {"evidence_gate": outcome, "status": outcome["status"]}
 

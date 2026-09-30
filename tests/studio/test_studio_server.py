@@ -51,11 +51,12 @@ def test_get_studio_html() -> None:
     assert "btn-publish-submit" in html
     assert "tab-trace" in html
     assert "Live Model Trace" in html
-    assert "step-pill-scout" in html
-    assert "step-pill-plan" in html
+    assert "trace-rail-progress" in html
     assert "trace-events-stream" in html
     assert "trace-pulse-dot" in html
     assert "llm_thinking" in html
+    assert "AGENT_PROFILE" in html
+    assert "toggleThink" in html
 
 
 def test_get_active_job_snapshot() -> None:

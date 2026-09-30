@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Union
 from uuid import UUID
@@ -17,6 +18,28 @@ from langchain_core.messages import BaseMessage
 from langchain_core.outputs import ChatResult, LLMResult
 
 logger = logging.getLogger(__name__)
+
+
+def _clean_for_json(val: Any, max_str_len: int = 1200) -> Any:
+    """Recursively convert LangChain messages and non-primitives into clean JSON-serializable primitives."""
+    if val is None or isinstance(val, (int, float, bool)):
+        return val
+    if isinstance(val, str):
+        return val[:max_str_len]
+    if hasattr(val, "content"):
+        content = getattr(val, "content", "")
+        if isinstance(content, str):
+            try:
+                parsed = json.loads(content)
+                return _clean_for_json(parsed, max_str_len=max_str_len)
+            except Exception:
+                return str(content)[:max_str_len]
+        return _clean_for_json(content, max_str_len=max_str_len)
+    if isinstance(val, Mapping):
+        return {str(k): _clean_for_json(v, max_str_len=max_str_len) for k, v in val.items()}
+    if isinstance(val, (list, tuple, set)):
+        return [_clean_for_json(item, max_str_len=max_str_len) for item in val]
+    return str(val)[:max_str_len]
 
 
 class InvestigationCallbackHandler(BaseCallbackHandler):
@@ -71,6 +94,7 @@ class InvestigationCallbackHandler(BaseCallbackHandler):
         Returns:
             The recorded event dictionary.
         """
+        clean_payload = _clean_for_json(payload or {}, max_str_len=1200)
         now = datetime.now(timezone.utc).isoformat()
         with self._lock:
             self._seq += 1
@@ -84,7 +108,7 @@ class InvestigationCallbackHandler(BaseCallbackHandler):
                 "event_type": event_type,
                 "stage": active_stage,
                 "title": title,
-                "payload": payload or {},
+                "payload": clean_payload,
             }
             self._events.append(event)
 
@@ -242,9 +266,10 @@ class InvestigationCallbackHandler(BaseCallbackHandler):
             except Exception:
                 pass
 
+        clean_inputs = _clean_for_json(args_payload, max_str_len=500)
         target_ticker = ""
-        if isinstance(args_payload, dict):
-            target_ticker = args_payload.get("ticker") or args_payload.get("symbol") or ""
+        if isinstance(clean_inputs, dict):
+            target_ticker = clean_inputs.get("ticker") or clean_inputs.get("symbol") or ""
 
         ticker_tag = f" (${target_ticker.upper()})" if target_ticker else ""
         self.emit(
@@ -253,7 +278,7 @@ class InvestigationCallbackHandler(BaseCallbackHandler):
             payload={
                 "tool": tool_name,
                 "ticker": target_ticker,
-                "inputs": args_payload,
+                "inputs": clean_inputs,
                 "run_id": str(run_id),
             },
         )
@@ -267,15 +292,25 @@ class InvestigationCallbackHandler(BaseCallbackHandler):
         **kwargs: Any,
     ) -> None:
         """Handle successful tool execution completion."""
-        out_str = str(output) if output is not None else ""
-        preview = out_str[:1200]
+        raw_val = output.content if hasattr(output, "content") else output
+        if isinstance(raw_val, str):
+            clean_text = raw_val.strip()
+            try:
+                parsed_json = json.loads(clean_text)
+                preview = json.dumps(parsed_json, indent=2)[:600]
+            except Exception:
+                preview = clean_text[:600]
+        elif isinstance(raw_val, Mapping):
+            preview = json.dumps(dict(raw_val), indent=2, default=str)[:600]
+        else:
+            preview = str(raw_val)[:600]
+
         self.emit(
             event_type="tool_result",
             title="Tool Output Received",
             payload={
                 "status": "ok",
                 "output_preview": preview,
-                "output_length": len(out_str),
                 "run_id": str(run_id),
             },
         )
