@@ -163,3 +163,26 @@ def test_candidate_allocation_schema() -> None:
     assert len(plan.candidate_allocations) == 1
     assert plan.candidate_allocations[0].ticker == "NVDA"
 
+
+def test_research_request_auto_routes_conversational_ticker_to_query() -> None:
+    """When a user passes a sentence/query in the ticker field, normalize ticker to None and treat as query."""
+    from app.agent.state import ResearchRequest
+
+    req = ResearchRequest(
+        ticker="FIND ME BEST TECH STOCK TO INVEST RIGHT NOW",
+        query="",
+    )
+    assert req.ticker is None
+    assert req.query == "FIND ME BEST TECH STOCK TO INVEST RIGHT NOW"
+    intent = req.resolve_intent()
+    assert intent.requires_candidate_workspaces is True
+
+    # Real single ticker remains unaffected
+    req_real = ResearchRequest(
+        ticker="NVDA",
+        query="Forensic balance sheet audit",
+    )
+    assert req_real.ticker == "NVDA"
+    assert req_real.query == "Forensic balance sheet audit"
+
+

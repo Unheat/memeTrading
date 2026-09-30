@@ -121,12 +121,38 @@ class ResearchRequest:
 
     def __post_init__(self) -> None:
         """Validate input and normalize explicit identifiers."""
-        if not self.query or not isinstance(self.query, str) or not self.query.strip():
-            raise ValueError("query must be a non-empty string")
-        if self.ticker is not None and self.ticker.strip():
-            object.__setattr__(self, "ticker", self.ticker.strip().upper())
+        raw_ticker = (self.ticker or "").strip()
+        curr_query = (self.query or "").strip()
+
+        # Defensive check: if the ticker field contains spaces, multi-word sentences,
+        # or conversational search queries, auto-route it to query and clear ticker.
+        if raw_ticker:
+            has_spaces = " " in raw_ticker or "\t" in raw_ticker or "\n" in raw_ticker
+            is_too_long = len(raw_ticker) > 10
+            is_prompt_phrase = any(
+                w in raw_ticker.upper().split()
+                for w in ("FIND", "BEST", "INVEST", "STOCK", "STOCKS", "RIGHT", "NOW", "WHAT", "HOW", "WHICH", "TECH")
+            )
+            if has_spaces or is_too_long or is_prompt_phrase:
+                # Treat raw_ticker as a natural language query
+                if not curr_query or curr_query.lower().startswith("forensic equity diligence on"):
+                    curr_query = raw_ticker
+                else:
+                    curr_query = f"{raw_ticker} — {curr_query}"
+                object.__setattr__(self, "query", curr_query)
+                object.__setattr__(self, "ticker", None)
+            else:
+                object.__setattr__(self, "ticker", raw_ticker.upper())
+                if not curr_query:
+                    curr_query = f"Forensic equity diligence on {raw_ticker.upper()}"
+                    object.__setattr__(self, "query", curr_query)
         else:
             object.__setattr__(self, "ticker", None)
+
+        if not curr_query:
+            raise ValueError("query must be a non-empty string")
+        object.__setattr__(self, "query", curr_query)
+
         effective_date = (self.as_of_date or self.time_boundary or "").strip() or None
         object.__setattr__(self, "as_of_date", effective_date)
         object.__setattr__(self, "time_boundary", effective_date)

@@ -287,11 +287,28 @@ class StudioHandler(BaseHTTPRequestHandler):
             req_data = {}
 
         if path == "/api/run-research":
-            ticker = req_data.get("ticker", "").strip()
-            query = req_data.get("query", "").strip()
+            raw_ticker = req_data.get("ticker", "").strip()
+            raw_query = req_data.get("query", "").strip()
             depth = req_data.get("depth", "deep")
             with_video = bool(req_data.get("with_video", False))
             character_pair = req_data.get("character_pair", "rick_morty")
+
+            # Auto-route multi-word phrases or conversational prompts from ticker into query
+            ticker = raw_ticker
+            query = raw_query
+            if ticker:
+                has_spaces = " " in ticker or "\t" in ticker or "\n" in ticker
+                is_too_long = len(ticker) > 10
+                is_prompt = any(
+                    w in ticker.upper().split()
+                    for w in ("FIND", "BEST", "INVEST", "STOCK", "STOCKS", "RIGHT", "NOW", "WHAT", "HOW", "WHICH", "TECH")
+                )
+                if has_spaces or is_too_long or is_prompt:
+                    if not query:
+                        query = ticker
+                    else:
+                        query = f"{ticker} — {query}"
+                    ticker = ""
 
             if not query and not ticker:
                 self._send_json({"error": "Ticker or Query is required"}, status=400)
@@ -578,13 +595,13 @@ def get_studio_html() -> str:
 
         <div class="space-y-4 text-xs font-mono">
           <div>
-            <label class="text-text-muted block mb-1">Ticker Symbol</label>
-            <input id="input-ticker" type="text" placeholder="e.g. AAPL, MSFT, GOOGL" class="w-full bg-obsidian border border-obsidian-border rounded-lg px-3 py-2 text-text-primary focus:border-emerald-audit focus:outline-none uppercase font-bold" />
+            <label class="text-text-muted block mb-1">Target Ticker <span class="text-[10px] text-text-muted/70">(Optional — leave blank to screen universe)</span></label>
+            <input id="input-ticker" type="text" placeholder="e.g. NVDA (or blank for wide screening)" class="w-full bg-obsidian border border-obsidian-border rounded-lg px-3 py-2 text-text-primary focus:border-emerald-audit focus:outline-none uppercase font-bold" />
           </div>
 
           <div>
-            <label class="text-text-muted block mb-1">Research Prompt / Thesis Query</label>
-            <textarea id="input-query" rows="2" placeholder="e.g. Audit balance sheet inventory drift, gross margin trajectory, and reverse DCF..." class="w-full bg-obsidian border border-obsidian-border rounded-lg px-3 py-2 text-text-primary focus:border-emerald-audit focus:outline-none"></textarea>
+            <label class="text-text-muted block mb-1">Research Prompt / Screening Mandate</label>
+            <textarea id="input-query" rows="2" placeholder="e.g. Find best high-growth tech stocks to invest right now, or audit inventory drift..." class="w-full bg-obsidian border border-obsidian-border rounded-lg px-3 py-2 text-text-primary focus:border-emerald-audit focus:outline-none"></textarea>
           </div>
 
           <div class="grid grid-cols-2 gap-3">
@@ -717,6 +734,7 @@ def get_studio_html() -> str:
               <button class="filter-btn px-2.5 py-1 rounded-lg bg-obsidian text-text-muted border border-obsidian-border hover:text-text-primary" data-filter="tool_call">🛠️ Calls</button>
               <button class="filter-btn px-2.5 py-1 rounded-lg bg-obsidian text-text-muted border border-obsidian-border hover:text-text-primary" data-filter="tool_result">📥 Returns</button>
               <button class="filter-btn px-2.5 py-1 rounded-lg bg-obsidian text-text-muted border border-obsidian-border hover:text-text-primary" data-filter="llm_response">💬 Decisions</button>
+              <button class="filter-btn px-2.5 py-1 rounded-lg bg-obsidian text-text-muted border border-obsidian-border hover:text-text-primary" data-filter="gate">🎯 Gates</button>
             </div>
             <div class="flex items-center gap-3">
               <label class="flex items-center gap-1.5 text-text-muted text-[10px] cursor-pointer">
@@ -921,6 +939,7 @@ No case selected. Choose an investigation on the left to read the forensic audit
       llm_response: { name: 'Decision', icon: 'fa-comment-dots', color: '#22D3EE', bg: 'rgba(34,211,238,0.13)' },
       tool_call: { name: 'Tool Call', icon: 'fa-screwdriver-wrench', color: '#3DDBA5', bg: 'rgba(61,219,165,0.13)' },
       tool_result: { name: 'Tool Output', icon: 'fa-inbox', color: '#8B949E', bg: 'rgba(139,148,158,0.12)' },
+      gate: { name: 'Quant Gate', icon: 'fa-filter', color: '#F59E0B', bg: 'rgba(245,158,11,0.14)' },
       stage: { name: 'Pipeline', icon: 'fa-flag-checkered', color: '#F5C542', bg: 'rgba(245,197,66,0.12)' },
       log: { name: 'Log', icon: 'fa-terminal', color: '#8B949E', bg: 'rgba(139,148,158,0.10)' }
     };
@@ -1031,6 +1050,17 @@ No case selected. Choose an investigation on the left to read the forensic audit
           <div class="event-body rounded-lg border border-cyan-400/20 bg-cyan-500/[0.05] px-3 py-2.5 space-y-1.5">
             ${preview}
             ${calls ? `<div class="flex items-center gap-1.5 flex-wrap"><span class="text-[9px] uppercase tracking-wider text-text-muted font-semibold">Dispatch</span>${calls}</div>` : ''}
+          </div>`;
+      } else if (type === 'gate') {
+        const shortlisted = (payload.shortlisted || []).map(t =>
+          `<span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/15 text-amber-warning border border-amber-500/30">$${escapeHtml(t)}</span>`
+        ).join(' ');
+        body = `
+          <div class="event-body rounded-lg border border-amber-400/30 bg-amber-500/[0.08] px-3 py-2.5 space-y-2">
+            <div class="flex items-center gap-2">
+              <span class="text-[11px] font-bold text-amber-300 font-mono"><i class="fa-solid fa-filter mr-1.5"></i>${escapeHtml(title)}</span>
+            </div>
+            ${shortlisted ? `<div class="flex items-center gap-1.5 flex-wrap pt-1"><span class="text-[9px] uppercase tracking-wider text-text-muted font-semibold">Shortlist:</span>${shortlisted}</div>` : ''}
           </div>`;
       } else {
         body = `
@@ -1280,10 +1310,16 @@ No case selected. Choose an investigation on the left to read the forensic audit
 
     // Run Stage 1 (Article only)
     document.getElementById('btn-run-article').addEventListener('click', async () => {
-      const ticker = document.getElementById('input-ticker').value;
-      const query = document.getElementById('input-query').value;
+      let ticker = (document.getElementById('input-ticker').value || '').trim();
+      let query = (document.getElementById('input-query').value || '').trim();
       const duo = document.getElementById('input-duo').value;
       const depth = document.getElementById('input-depth').value;
+
+      // Auto-route conversational prompts or multi-word sentences to query
+      if (ticker && (ticker.includes(' ') || ticker.length > 10)) {
+        query = query ? `${ticker} — ${query}` : ticker;
+        ticker = '';
+      }
 
       activeEvents = [];
       lastEventSeq = 0;
@@ -1302,10 +1338,16 @@ No case selected. Choose an investigation on the left to read the forensic audit
 
     // Run One-Shot (Article + Video)
     document.getElementById('btn-run-all').addEventListener('click', async () => {
-      const ticker = document.getElementById('input-ticker').value;
-      const query = document.getElementById('input-query').value;
+      let ticker = (document.getElementById('input-ticker').value || '').trim();
+      let query = (document.getElementById('input-query').value || '').trim();
       const duo = document.getElementById('input-duo').value;
       const depth = document.getElementById('input-depth').value;
+
+      // Auto-route conversational prompts or multi-word sentences to query
+      if (ticker && (ticker.includes(' ') || ticker.length > 10)) {
+        query = query ? `${ticker} — ${query}` : ticker;
+        ticker = '';
+      }
 
       activeEvents = [];
       lastEventSeq = 0;

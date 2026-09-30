@@ -259,7 +259,14 @@ def create_research_graph(
                                     "limit": min(max(int(getattr(sq, "limit", 10) or 10), 1), 10),
                                 }
 
-                            raw_out = tool_to_use.invoke(tool_args)
+                            if cb:
+                                cb.emit(
+                                    event_type="tool_call",
+                                    title=f"Calling {sq.tool_name}",
+                                    payload={"tool": sq.tool_name, "inputs": tool_args},
+                                    stage="planner",
+                                )
+                            raw_out = tool_to_use.invoke(tool_args, config=config) if config else tool_to_use.invoke(tool_args)
                             if not raw_out:
                                 continue
                             data = json.loads(raw_out) if isinstance(raw_out, str) else raw_out
@@ -269,6 +276,16 @@ def create_research_graph(
                                 or data.get("results", [])
                                 or data.get("posts", [])
                             )
+                            if cb:
+                                cb.emit(
+                                    event_type="tool_result",
+                                    title="Tool Output Received",
+                                    payload={
+                                        "status": "ok",
+                                        "output_preview": json.dumps(data, indent=2, default=str)[:600] if isinstance(data, dict) else str(raw_out)[:600],
+                                    },
+                                    stage="planner",
+                                )
                             for item in items:
                                 if not isinstance(item, dict):
                                     continue
@@ -282,6 +299,13 @@ def create_research_graph(
                                 if t_str or s_str:
                                     lines.append(f"- {t_str}: {s_str}")
                         except Exception as sub_exc:
+                            if cb:
+                                cb.emit(
+                                    event_type="tool_result",
+                                    title=f"Tool Execution Failed ({sq.tool_name})",
+                                    payload={"status": "error", "error": str(sub_exc)},
+                                    stage="planner",
+                                )
                             logger.debug("Scout tool %s query '%s' failed: %s", sq.tool_name, sq.query, sub_exc)
 
                     context_blocks: list[str] = []
