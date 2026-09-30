@@ -10,6 +10,9 @@ Keep specs updated — If requirements or design decisions change during impleme
 
 Do not jump directly into implementation when requirements are unclear. Treat the spec as the source of truth and keep code, tests, and documentation consistent with it.
 
+## Diagnosis First: Report Findings Before Auto-Fixing
+When diagnosing unexpected behavior, anomalies, or user questions about why something happened: explain the root cause and findings clearly to the user first. Do not implement code changes unprompted when the issue might just be an input or usage mistake that requires user clarification.
+
 ## LLM Structured Outputs vs Deterministic Pipeline Boundary
 
 - **Never use regex or keyword heuristics on language**: Never use regex pattern matching, substring searching, or hand-rolled heuristics on natural language user queries or LLM responses (e.g., do NOT use patterns like `_REQUESTED_RANKING_PATTERN` or word lists to infer intent, ranking counts, entities, or position requests).
