@@ -676,11 +676,17 @@ export function compute(model) {
       fcf_yield_pct: fcfYield !== null ? `${fcfYield}%` : null,
       is_asset_light: isAssetLight,
       dcf_divergence_flagged: isDcfDivergent,
+      expectations_matrix: {
+        spread_to_market_pct: inputs.current_price && dcfBase ? `${round(((dcfBase - inputs.current_price) / inputs.current_price) * 100, 1)}%` : null,
+        spread_to_consensus_pct: consensusTarget && dcfBase ? `${round(((dcfBase - consensusTarget) / consensusTarget) * 100, 1)}%` : null,
+      },
     };
   }
 
-  const effectiveBase = triangulation?.blended_fair_value ?? dcfRange.base;
+  // Intrinsic valuation is anchored on fundamental discounted cash flows (dcfRange.base).
+  // Multi-method multiple triangulation is retained for comparison and when DCF divergence is flagged.
   const isDiv = Boolean(triangulation?.dcf_divergence_flagged);
+  const effectiveBase = isDiv ? (triangulation?.blended_fair_value ?? dcfRange.base) : (triangulation?.dcf_base ?? dcfRange.base);
   const effectiveLow = isDiv && triangulation?.tangible_asset_floor ? round(triangulation.tangible_asset_floor) : dcfRange.low;
   const effectiveHigh = isDiv && triangulation?.multiple_valuation ? round(triangulation.multiple_valuation) : dcfRange.high;
 

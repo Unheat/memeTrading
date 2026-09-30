@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from collections.abc import Mapping
 from typing import Any, Literal, Sequence
 
@@ -288,12 +289,14 @@ def create_research_graph(
                     # Deterministic first cut: rank the full screener pool in code,
                     # so deep-dive candidates come from a wide net, not a 5-row glance.
                     if screen_rows:
-                        shortlist = build_deterministic_shortlist(screen_rows, top_n=8)
+                        # Elastic shortlist ceiling scaling logarithmically with tool budget
+                        shortlist_limit = min(15, max(5, int(2.5 * math.log(max(max_calls, 10)))))
+                        shortlist = build_deterministic_shortlist(screen_rows, top_n=shortlist_limit)
                         if shortlist:
                             shortlist_lines = [
                                 f"{idx}. ${r['ticker']} — composite {r['composite_score']:.2f} "
-                                f"(value {r['value_score']:.2f}, conviction {r['conviction_score']:.2f}, "
-                                f"size {r['size_score']:.2f}) | Cap ${r['market_cap'] / 1e9:.1f}B | "
+                                f"(value {r['value_score']:.2f}, quality {r['quality_score']:.2f}, "
+                                f"momentum {r['momentum_score']:.2f}, size {r['size_score']:.2f}) | Cap ${r['market_cap'] / 1e9:.1f}B | "
                                 f"Fwd P/E {r['forward_pe'] if r['forward_pe'] is not None else r['trailing_pe']} | "
                                 f"Consensus {r['analyst_rating'] or 'n/a'}"
                                 for idx, r in enumerate(shortlist, 1)
@@ -376,16 +379,41 @@ def create_research_graph(
         plan_dict = plan.model_dump() if hasattr(plan, "model_dump") else plan.dict()
         intent = ResearchIntent.from_plan(plan_dict, explicit_subjects=tuple(s for s in (ticker, company) if s))
 
-        # Auto-seed candidate workspaces to prevent entity_conflict on early tool calls
+        # Logarithmic candidate envelope k_max(B): prevents breadth explosion on large budgets
+        if ticker:
+            max_candidates_allowed = 1
+        else:
+            log_bound = max(2, int(1 + 1.8 * math.log(max(max_calls, 10))))
+            req_count = plan.ranking_count or intent_dict.get("requested_ranking_count")
+            max_candidates_allowed = min(req_count, log_bound) if req_count else log_bound
+            max_candidates_allowed = min(8, max_candidates_allowed)
+
+        # Extract tier allocations from plan if supplied
+        tier_allocations: dict[str, str] = {}
+        for alloc in getattr(plan, "candidate_allocations", []) or []:
+            if isinstance(alloc, Mapping):
+                t = str(alloc.get("ticker") or "").strip().upper()
+                if t:
+                    tier_allocations[t] = str(alloc.get("priority") or "tier1_deep")
+            elif hasattr(alloc, "ticker"):
+                t = str(alloc.ticker or "").strip().upper()
+                if t:
+                    tier_allocations[t] = str(getattr(alloc, "priority", "tier1_deep"))
+
+        # Auto-seed candidate workspaces to prevent entity_conflict on early tool calls,
+        # capped by the elastic candidate envelope k_max(B).
         seeded_candidates = dict(state.get("candidates") or {})
-        for c_ticker in plan.candidate_entities or []:
+        candidate_list = list(plan.candidate_entities or [])[:max_candidates_allowed]
+        for idx, c_ticker in enumerate(candidate_list):
             clean_c = c_ticker.strip().upper()
             cid = f"cand_{clean_c.lower()}"
+            alloc_tier = tier_allocations.get(clean_c) or ("tier1_deep" if idx < 3 else "tier2_light")
             if cid not in seeded_candidates:
                 seeded_candidates[cid] = {
                     "candidate_id": cid,
                     "ticker": clean_c,
                     "company": "",
+                    "diligence_tier": alloc_tier,
                     "sec_corpora": [],
                     "evidence": [],
                     "contradictions": [],
@@ -400,6 +428,7 @@ def create_research_graph(
                     "candidate_id": cid,
                     "ticker": clean_t,
                     "company": str(company or ""),
+                    "diligence_tier": "tier1_deep",
                     "sec_corpora": [],
                     "evidence": [],
                     "contradictions": [],

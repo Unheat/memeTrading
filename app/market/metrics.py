@@ -111,18 +111,35 @@ def compute_fractional_kelly(
     fraction: float = 0.25,
     max_position_cap: float = 0.08,
     max_loss_budget: float = 0.05,
+    shrink_probability: bool = False,
+    tail_risk_haircut: bool = False,
 ) -> float:
-    """Calculate institutional position size via Fractional Kelly Criterion.
+    """Calculate institutional position size via Fractional Kelly Criterion with Bayesian shrinkage.
 
     Donor provenance: adapted from reference/investment-research/references/HEDGE_FUND_ORGANIZATIONAL_MANUAL.md:50-70.
     Enforces Quarter-Kelly scaling (0.25), hard single-name cap (8%), and maximum portfolio loss budget (5%).
+    Incorporate Bayesian probability shrinkage toward 50% prior and downside tail-risk haircuts.
     """
     if upside_pct <= 0 or downside_pct <= 0 or win_prob <= 0 or win_prob >= 1.0:
         return 0.0
 
-    b = upside_pct / downside_pct  # payoff ratio
-    q = 1.0 - win_prob
-    full_kelly = (win_prob * b - q) / b
+    # 1. Empirical Bayesian shrinkage toward uninformative p0 = 0.50 prior (shrinkage weight lambda = 0.30)
+    p = (0.30 * win_prob + 0.70 * 0.50) if shrink_probability else win_prob
+
+    # 2. Downside fat-tail jump risk haircut: penalize downside by 1.4x and haircut upside by 0.85x
+    if tail_risk_haircut:
+        effective_up = upside_pct * 0.85
+        effective_down = downside_pct * 1.40
+    else:
+        effective_up = upside_pct
+        effective_down = downside_pct
+
+    b = effective_up / effective_down  # Calibrated payoff ratio
+    if b <= 0:
+        return 0.0
+
+    q = 1.0 - p
+    full_kelly = (p * b - q) / b
 
     if full_kelly <= 0:
         return 0.0

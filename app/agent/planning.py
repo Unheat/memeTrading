@@ -18,10 +18,12 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-# Deterministic shortlist composite weights (value / conviction / size-liquidity).
-SHORTLIST_WEIGHT_VALUE = 0.40
-SHORTLIST_WEIGHT_CONVICTION = 0.30
-SHORTLIST_WEIGHT_SIZE = 0.30
+# Deterministic 4-Pillar Quantitative Factor Weights (Value, Quality, Momentum, Prudence/Size).
+# Grounded in empirical asset pricing (Harvey, Liu, & Zhu 2016; AQR QMJ; Novy-Marx 2013).
+SHORTLIST_WEIGHT_VALUE = 0.35
+SHORTLIST_WEIGHT_QUALITY = 0.30
+SHORTLIST_WEIGHT_MOMENTUM = 0.20
+SHORTLIST_WEIGHT_PRUDENCE = 0.15
 SHORTLIST_NEUTRAL_PERCENTILE = 0.5
 
 
@@ -81,25 +83,22 @@ def build_deterministic_shortlist(
     screen_rows: list[Mapping[str, Any]],
     top_n: int = 8,
 ) -> list[dict[str, Any]]:
-    """Rank screener rows into a shortlist using a deterministic composite score.
+    """Rank screener rows into a shortlist using an empirical 4-Pillar composite score.
 
-    Hard gates drop rows with no market cap or no valuation multiple at all
-    (insufficient data to rank). Survivors are scored by cross-sectional
-    percentile ranks: 40% value (inverse forward P/E, fallback trailing P/E —
-    cheaper is better), 30% conviction (inverse consensus mean rating — the
-    yfinance scale is 1=strong buy ... 5=sell), and 30% size/liquidity
-    (log10 market cap). Missing sub-scores get the neutral median percentile.
+    Pillars:
+    1. Value (35%): Cross-sectional rank of inverse forward P/E (fallback trailing P/E).
+    2. Quality (30%): Cross-sectional rank of inverse analyst rating + operating margin.
+    3. Momentum (20%): 52-week price position (or day change) to guard against value traps.
+    4. Prudence & Liquidity (15%): Log10 market cap prioritizing institutional liquidity.
 
-    This is a pure function: the first cut is code, never model opinion.
+    Hard gates drop rows with no market cap or no valuation multiple at all.
 
     Args:
-        screen_rows: Screener output rows (ticker/company/market_cap/
-            trailing_pe/forward_pe/analyst_rating fields).
+        screen_rows: Screener output rows.
         top_n: Maximum shortlist size.
 
     Returns:
-        Ranked shortlist rows (best first), each carrying composite_score and
-        its three component percentiles.
+        Ranked shortlist rows (best first) with composite scores and pillar breakdowns.
     """
     gated: list[dict[str, Any]] = []
     for row in screen_rows:
@@ -117,39 +116,71 @@ def build_deterministic_shortlist(
         gated.append({
             "ticker": ticker,
             "company": str(row.get("company") or ticker),
+            "price": float(row.get("price")) if row.get("price") is not None else None,
             "market_cap": float(mcap),
             "forward_pe": float(fwd_pe) if fwd_pe is not None else None,
             "trailing_pe": float(trail_pe) if trail_pe is not None else None,
             "analyst_rating": row.get("analyst_rating"),
+            "change_pct": float(row.get("change_pct")) if row.get("change_pct") is not None else None,
+            "fifty_two_week_high": float(row.get("fifty_two_week_high")) if row.get("fifty_two_week_high") is not None else None,
+            "fifty_two_week_low": float(row.get("fifty_two_week_low")) if row.get("fifty_two_week_low") is not None else None,
+            "operating_margin": float(row.get("operating_margin")) if row.get("operating_margin") is not None else None,
         })
 
     if not gated:
         return []
 
+    # 1. Value Pillar: cheaper P/E ranks higher
     value_basis = [(r["forward_pe"] if r["forward_pe"] is not None else r["trailing_pe"]) for r in gated]
-    value_pcts = _percentile_ranks(value_basis)
-    value_pcts = [1.0 - p for p in value_pcts]  # inverse: cheaper P/E ranks higher
+    value_pcts = [1.0 - p for p in _percentile_ranks(value_basis)]
 
+    # 2. Quality Pillar: lower consensus rating (bullish) + positive operating margin
     ratings = [_parse_analyst_rating(r["analyst_rating"])[0] for r in gated]
-    conviction_pcts = [1.0 - p for p in _percentile_ranks(ratings)]  # inverse: lower (bullisher) ranks higher
+    conviction_pcts = [1.0 - p for p in _percentile_ranks(ratings)]
+    margin_pcts = _percentile_ranks([r["operating_margin"] for r in gated])
+    # Blend analyst conviction with reported operating margin when available
+    quality_pcts = [
+        round(0.70 * cp + 0.30 * mp, 4) if r["operating_margin"] is not None else cp
+        for r, cp, mp in zip(gated, conviction_pcts, margin_pcts)
+    ]
 
+    # 3. Momentum Pillar (Value-Trap Circuit Breaker)
+    # 52-week price position = (Price - Low) / (High - Low)
+    momentum_basis: list[Optional[float]] = []
+    for r in gated:
+        price = r["price"]
+        h52 = r["fifty_two_week_high"]
+        l52 = r["fifty_two_week_low"]
+        if price is not None and h52 is not None and l52 is not None and h52 > l52:
+            momentum_basis.append((price - l52) / (h52 - l52))
+        elif r["change_pct"] is not None:
+            momentum_basis.append(r["change_pct"])
+        else:
+            momentum_basis.append(None)
+    momentum_pcts = _percentile_ranks(momentum_basis)
+
+    # 4. Prudence / Liquidity Pillar
     size_basis = [math.log10(max(r["market_cap"], 1.0)) for r in gated]
     size_pcts = _percentile_ranks(size_basis)
 
     scored: list[dict[str, Any]] = []
-    for row, vp, cp, sp in zip(gated, value_pcts, conviction_pcts, size_pcts):
+    for row, vp, qp, mp, sp in zip(gated, value_pcts, quality_pcts, momentum_pcts, size_pcts):
         mean_rating, analyst_count = _parse_analyst_rating(row["analyst_rating"])
         composite = (
             SHORTLIST_WEIGHT_VALUE * vp
-            + SHORTLIST_WEIGHT_CONVICTION * cp
-            + SHORTLIST_WEIGHT_SIZE * sp
+            + SHORTLIST_WEIGHT_QUALITY * qp
+            + SHORTLIST_WEIGHT_MOMENTUM * mp
+            + SHORTLIST_WEIGHT_PRUDENCE * sp
         )
         scored.append({
             **row,
             "composite_score": round(composite, 4),
             "value_score": round(vp, 4),
-            "conviction_score": round(cp, 4),
+            "quality_score": round(qp, 4),
+            "momentum_score": round(mp, 4),
             "size_score": round(sp, 4),
+            # Conviction score preserved for backward compatibility
+            "conviction_score": round(qp, 4),
             "analyst_count": analyst_count,
         })
 
@@ -171,6 +202,20 @@ class ResearchHypothesis(BaseModel):
     )
 
 
+class CandidateAllocation(BaseModel):
+    """Structured resource allocation assigning diligence depth per candidate."""
+
+    ticker: str = Field(description="Candidate stock ticker symbol (e.g. 'NVDA').")
+    priority: Literal["tier1_deep", "tier2_light"] = Field(
+        default="tier1_deep",
+        description="Diligence depth: 'tier1_deep' for full SEC XBRL de-cumulation, footnote parsing, and Reverse DCF; 'tier2_light' for fast baseline quantitative check.",
+    )
+    focus_mandate: str = Field(
+        default="",
+        description="Core catalyst, accounting risk, or growth hypothesis to investigate for this candidate.",
+    )
+
+
 class ResearchPlanSchema(BaseModel):
     """Structured deep research plan generated from the user's free-form prompt."""
 
@@ -186,6 +231,10 @@ class ResearchPlanSchema(BaseModel):
     candidate_entities: List[str] = Field(
         default_factory=list,
         description="Explicit or high-opportunity candidate tickers or company names to investigate.",
+    )
+    candidate_allocations: List[CandidateAllocation] = Field(
+        default_factory=list,
+        description="Explicit priority and diligence tier per candidate entity to govern execution depth.",
     )
     primary_questions: List[str] = Field(
         default_factory=list,
@@ -399,12 +448,13 @@ def generate_research_plan(
         "1. Identify whether this is a multi-candidate ranking/screening, a single-company deep diligence, or a general thematic investigation.\n"
         "2. If the user asks for a specific count (e.g. '5 best tech stocks', 'top 10 AI companies', 'compare 3 peers'), set ranking_count to that integer.\n"
         "3. Identify explicit or promising candidate entities (tickers/names) to investigate. If preliminary scout intelligence is provided, use it to ground exact real-world tickers and entities.\n"
-        "4. Formulate 3 to 5 targeted, high-signal hypotheses/questions with appropriate evidence_tier assignments:\n"
+        "4. Assign candidate_allocations to govern execution depth: prioritize high-conviction ideas into 'tier1_deep' (full SEC XBRL, footnote parsing, and Reverse DCF) and secondary ideas into 'tier2_light' (baseline quant/quote checks).\n"
+        "5. Formulate 3 to 5 targeted, high-signal hypotheses/questions with appropriate evidence_tier assignments:\n"
         "   - 'structured_quant' for factor screening, market quotes, valuation multiples, and Reverse DCF.\n"
         "   - 'primary_regulatory' for audited SEC 10-K/10-Q XBRL statements, footnote inspection, and Form 4 insider trades.\n"
         "   - 'macro_series' for interest rates, inflation, treasury yields, or currency liquidity via FRED.\n"
         "   - 'open_web' for broad industry trends, executive commentary, supply chain news, or whitepaper PDFs.\n"
-        "5. Set requires_candidate_workspaces to True whenever multiple candidate companies are being researched or compared."
+        "6. Set requires_candidate_workspaces to True whenever multiple candidate companies are being researched or compared."
     ))
 
     user_text = f"Research Request: {query}"

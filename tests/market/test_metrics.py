@@ -118,3 +118,30 @@ def test_benchmark_relative_return():
     assert benchmark_relative_return(0.05, 0.01) == pytest.approx(0.04)
     assert benchmark_relative_return(None, 0.01) is None
     assert benchmark_relative_return(0.05, None) is None
+
+
+def test_compute_fractional_kelly_bayesian_shrinkage():
+    """Verify Bayesian shrinkage toward 50% prior and downside tail-risk haircuts."""
+    from app.market.metrics import compute_fractional_kelly
+
+    # Raw 60% win prob shrinks toward 50%: p_cal = 0.30 * 0.60 + 0.70 * 0.50 = 0.53
+    # Haircut: upside * 0.85, downside * 1.40
+    size = compute_fractional_kelly(
+        upside_pct=0.45,
+        downside_pct=0.15,
+        win_prob=0.60,
+        fraction=0.25,
+        shrink_probability=True,
+        tail_risk_haircut=True,
+    )
+    # Calibrated size lands safely in institutional sweet spot (3% - 8%)
+    assert 0.03 <= size <= 0.08
+
+    # Unfavorable setup produces zero allocation
+    zero_size = compute_fractional_kelly(
+        upside_pct=0.05,
+        downside_pct=0.20,
+        win_prob=0.50,
+    )
+    assert zero_size == 0.0
+

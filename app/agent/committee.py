@@ -241,6 +241,22 @@ def run_investment_committee(state: InvestigationState, model: Any) -> dict[str,
         ratio = round(upside_dollar / downside_dollar, 2)
         passing_checks["asymmetry_gate"] = "PASS" if ratio >= asymmetry_hurdle else f"FAIL ({ratio:.1f}x < {asymmetry_hurdle:.1f}x)"
         if ratio >= asymmetry_hurdle and is_liquid and not is_blackout:
+            # Evidence-backed win probability estimation (Bayesian shrinkage in metrics.py)
+            forensic_rep = state.get("forensic_report") or {}
+            moat_rep = state.get("moat_report") or {}
+            is_clean_forensic = "CLEAN" in str(forensic_rep.get("verdict") or "").upper()
+            moat_rating = str((moat_rep.get("analysis") or {}).get("moat_rating") or "").lower()
+            is_wide_moat = "wide" in moat_rating or "strong" in moat_rating
+            has_severe_objections = bool(adversarial and len(adversarial.falsifiable_objections) >= 3)
+
+            evidence_p = 0.50
+            if is_clean_forensic:
+                evidence_p += 0.04
+            if is_wide_moat:
+                evidence_p += 0.04
+            if has_severe_objections:
+                evidence_p -= 0.06
+
             # Tiered sizing: half-Kelly only at exceptional asymmetry with fully
             # available debate reports; quarter-Kelly otherwise (Batch D).
             half_tier = ratio >= half_kelly_ratio and _specialist_reports_clean(state)
@@ -248,7 +264,7 @@ def run_investment_committee(state: InvestigationState, model: Any) -> dict[str,
             kelly_size = compute_fractional_kelly(
                 upside_pct=upside_dollar / current_price,
                 downside_pct=downside_dollar / current_price,
-                win_prob=0.60,
+                win_prob=evidence_p,
                 fraction=tier_fraction,
                 max_position_cap=HALF_TIER_POSITION_CAP if half_tier else QUARTER_TIER_POSITION_CAP,
                 max_loss_budget=0.05,

@@ -114,3 +114,52 @@ def test_scout_query_limit_schema_bounds() -> None:
         PlannerScoutQuery(tool_name="screen_stocks", limit=50)
     with pytest.raises(Exception):
         PlannerScoutQuery(tool_name="search_web", limit=0)
+
+
+def test_shortlist_4_pillar_momentum_and_quality() -> None:
+    """Verify momentum (52W position) and operating margin quality are reflected in scores."""
+    rows = [
+        {
+            "ticker": "HIGH_MOM",
+            "company": "High Momentum Inc",
+            "price": 95.0,
+            "fifty_two_week_high": 100.0,
+            "fifty_two_week_low": 50.0,
+            "market_cap": 20e9,
+            "forward_pe": 25.0,
+            "analyst_rating": "2.0 Buy (15)",
+            "operating_margin": 0.28,
+        },
+        {
+            "ticker": "LOW_MOM",
+            "company": "Falling Knife Corp",
+            "price": 52.0,
+            "fifty_two_week_high": 100.0,
+            "fifty_two_week_low": 50.0,
+            "market_cap": 20e9,
+            "forward_pe": 25.0,
+            "analyst_rating": "2.0 Buy (15)",
+            "operating_margin": 0.05,
+        },
+    ]
+    shortlist = build_deterministic_shortlist(rows, top_n=8)
+    by_ticker = {r["ticker"]: r for r in shortlist}
+    assert by_ticker["HIGH_MOM"]["momentum_score"] > by_ticker["LOW_MOM"]["momentum_score"]
+    assert by_ticker["HIGH_MOM"]["quality_score"] > by_ticker["LOW_MOM"]["quality_score"]
+    assert shortlist[0]["ticker"] == "HIGH_MOM"
+
+
+def test_candidate_allocation_schema() -> None:
+    """Verify CandidateAllocation is part of ResearchPlanSchema."""
+    from app.agent.planning import CandidateAllocation, ResearchPlanSchema
+
+    alloc = CandidateAllocation(ticker="NVDA", priority="tier1_deep", focus_mandate="CapEx ROI")
+    assert alloc.priority == "tier1_deep"
+    plan = ResearchPlanSchema(
+        brief="Test",
+        candidate_entities=["NVDA"],
+        candidate_allocations=[alloc],
+    )
+    assert len(plan.candidate_allocations) == 1
+    assert plan.candidate_allocations[0].ticker == "NVDA"
+

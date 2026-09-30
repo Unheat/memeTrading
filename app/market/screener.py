@@ -201,6 +201,11 @@ def _format_quotes(quotes: Sequence[Mapping[str, Any]], limit: int) -> list[dict
         fwd_pe = q.get("forwardPE")
         rating = q.get("averageAnalystRating")
         exchange = q.get("fullExchangeName") or q.get("exchange") or "US"
+        change_pct = q.get("regularMarketChangePercent")
+        volume = q.get("regularMarketVolume")
+        high_52 = q.get("fiftyTwoWeekHigh")
+        low_52 = q.get("fiftyTwoWeekLow")
+        op_margin = q.get("operatingMargins")
 
         summary_parts = [f"{name} ({ticker}) on {exchange}"]
         if price is not None:
@@ -212,6 +217,8 @@ def _format_quotes(quotes: Sequence[Mapping[str, Any]], limit: int) -> list[dict
             summary_parts.append(f"Trailing P/E: {float(pe):.1f}")
         if rating:
             summary_parts.append(f"Consensus: {rating}")
+        if change_pct is not None:
+            summary_parts.append(f"Day Change: {float(change_pct):+.2f}%")
 
         formatted.append({
             "ticker": ticker,
@@ -221,6 +228,11 @@ def _format_quotes(quotes: Sequence[Mapping[str, Any]], limit: int) -> list[dict
             "trailing_pe": float(pe) if pe is not None else None,
             "forward_pe": float(fwd_pe) if fwd_pe is not None else None,
             "analyst_rating": str(rating) if rating else None,
+            "change_pct": float(change_pct) if change_pct is not None else None,
+            "volume": float(volume) if volume is not None else None,
+            "fifty_two_week_high": float(high_52) if high_52 is not None else None,
+            "fifty_two_week_low": float(low_52) if low_52 is not None else None,
+            "operating_margin": float(op_margin) if op_margin is not None else None,
             "exchange": str(exchange),
             "summary": "; ".join(summary_parts),
         })
