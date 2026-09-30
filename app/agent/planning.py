@@ -8,12 +8,153 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+import re
+from collections.abc import Mapping
 from typing import Any, List, Literal, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+# Deterministic shortlist composite weights (value / conviction / size-liquidity).
+SHORTLIST_WEIGHT_VALUE = 0.40
+SHORTLIST_WEIGHT_CONVICTION = 0.30
+SHORTLIST_WEIGHT_SIZE = 0.30
+SHORTLIST_NEUTRAL_PERCENTILE = 0.5
+
+
+def _percentile_ranks(values: list[Optional[float]]) -> list[float]:
+    """Compute cross-sectional percentile ranks in [0, 1] for a value list.
+
+    Missing (None) entries receive the neutral median percentile. Rank-based
+    scoring is robust to outliers, standard practice for composite factor
+    screens.
+
+    Args:
+        values: Numeric values; None marks a missing observation.
+
+    Returns:
+        Percentile rank per input position, ascending (higher value -> higher rank).
+    """
+    n = len(values)
+    if n == 0:
+        return []
+    if n == 1:
+        return [SHORTLIST_NEUTRAL_PERCENTILE]
+
+    indexed = [(i, v) for i, v in enumerate(values) if v is not None]
+    ranks = [SHORTLIST_NEUTRAL_PERCENTILE] * n
+    if len(indexed) < 2:
+        return ranks
+
+    indexed.sort(key=lambda pair: pair[1])
+    denom = len(indexed) - 1
+    for pos, (i, _v) in enumerate(indexed):
+        ranks[i] = pos / denom
+    return ranks
+
+
+def _parse_analyst_rating(rating: Any) -> tuple[Optional[float], Optional[int]]:
+    """Parse a yfinance consensus rating string like '2.3 Buy (15)'.
+
+    The yfinance scale is 1=strong buy ... 5=sell, so LOWER mean rating is
+    MORE bullish conviction.
+
+    Args:
+        rating: Raw analyst rating string (or None).
+
+    Returns:
+        (mean_rating, analyst_count) with None for unparseable parts.
+    """
+    if not rating or not isinstance(rating, str):
+        return None, None
+    mean_match = re.search(r"^\s*(\d+(?:\.\d+)?)", rating)
+    count_match = re.search(r"\((\d+)\)\s*$", rating)
+    mean_val = float(mean_match.group(1)) if mean_match else None
+    count_val = int(count_match.group(1)) if count_match else None
+    return mean_val, count_val
+
+
+def build_deterministic_shortlist(
+    screen_rows: list[Mapping[str, Any]],
+    top_n: int = 8,
+) -> list[dict[str, Any]]:
+    """Rank screener rows into a shortlist using a deterministic composite score.
+
+    Hard gates drop rows with no market cap or no valuation multiple at all
+    (insufficient data to rank). Survivors are scored by cross-sectional
+    percentile ranks: 40% value (inverse forward P/E, fallback trailing P/E —
+    cheaper is better), 30% conviction (inverse consensus mean rating — the
+    yfinance scale is 1=strong buy ... 5=sell), and 30% size/liquidity
+    (log10 market cap). Missing sub-scores get the neutral median percentile.
+
+    This is a pure function: the first cut is code, never model opinion.
+
+    Args:
+        screen_rows: Screener output rows (ticker/company/market_cap/
+            trailing_pe/forward_pe/analyst_rating fields).
+        top_n: Maximum shortlist size.
+
+    Returns:
+        Ranked shortlist rows (best first), each carrying composite_score and
+        its three component percentiles.
+    """
+    gated: list[dict[str, Any]] = []
+    for row in screen_rows:
+        if not isinstance(row, Mapping):
+            continue
+        ticker = str(row.get("ticker") or "").strip().upper()
+        if not ticker:
+            continue
+        mcap = row.get("market_cap")
+        fwd_pe = row.get("forward_pe")
+        trail_pe = row.get("trailing_pe")
+        # Hard gates: insufficient data to rank meaningfully.
+        if mcap is None or (fwd_pe is None and trail_pe is None):
+            continue
+        gated.append({
+            "ticker": ticker,
+            "company": str(row.get("company") or ticker),
+            "market_cap": float(mcap),
+            "forward_pe": float(fwd_pe) if fwd_pe is not None else None,
+            "trailing_pe": float(trail_pe) if trail_pe is not None else None,
+            "analyst_rating": row.get("analyst_rating"),
+        })
+
+    if not gated:
+        return []
+
+    value_basis = [(r["forward_pe"] if r["forward_pe"] is not None else r["trailing_pe"]) for r in gated]
+    value_pcts = _percentile_ranks(value_basis)
+    value_pcts = [1.0 - p for p in value_pcts]  # inverse: cheaper P/E ranks higher
+
+    ratings = [_parse_analyst_rating(r["analyst_rating"])[0] for r in gated]
+    conviction_pcts = [1.0 - p for p in _percentile_ranks(ratings)]  # inverse: lower (bullisher) ranks higher
+
+    size_basis = [math.log10(max(r["market_cap"], 1.0)) for r in gated]
+    size_pcts = _percentile_ranks(size_basis)
+
+    scored: list[dict[str, Any]] = []
+    for row, vp, cp, sp in zip(gated, value_pcts, conviction_pcts, size_pcts):
+        mean_rating, analyst_count = _parse_analyst_rating(row["analyst_rating"])
+        composite = (
+            SHORTLIST_WEIGHT_VALUE * vp
+            + SHORTLIST_WEIGHT_CONVICTION * cp
+            + SHORTLIST_WEIGHT_SIZE * sp
+        )
+        scored.append({
+            **row,
+            "composite_score": round(composite, 4),
+            "value_score": round(vp, 4),
+            "conviction_score": round(cp, 4),
+            "size_score": round(sp, 4),
+            "analyst_count": analyst_count,
+        })
+
+    scored.sort(key=lambda r: (-r["composite_score"], -(r["analyst_count"] or 0), r["ticker"]))
+    return scored[:top_n]
 
 
 class ResearchHypothesis(BaseModel):
@@ -99,6 +240,12 @@ class PlannerScoutQuery(BaseModel):
         default=None,
         description="Optional preset when tool_name is 'screen_stocks' (e.g. 'growth_technology_stocks', 'undervalued_large_caps', 'most_actives').",
     )
+    limit: int = Field(
+        default=10,
+        ge=1,
+        le=20,
+        description="Maximum rows/results to request. Use 20 for 'screen_stocks' (widest net) and up to 10 for web/article/social queries.",
+    )
 
 
 class PlannerScoutAssessment(BaseModel):
@@ -110,7 +257,7 @@ class PlannerScoutAssessment(BaseModel):
     )
     scout_queries: List[PlannerScoutQuery] = Field(
         default_factory=list,
-        description="Up to 2 targeted discovery queries. Empty if explicit companies or tickers were already provided.",
+        description="Up to 4 targeted discovery queries (prefer 1-2 screen_stocks presets to widen the net plus 1-2 web/article/social queries). Empty if explicit companies or tickers were already provided.",
     )
 
 
@@ -198,13 +345,14 @@ def assess_scout_need(
             "Rules:\n"
             "1. If the user names specific target companies/tickers (e.g., 'Analyze AAPL' or 'Compare MSFT and GOOGL'), scouting is NOT needed (needs_scouting=False).\n"
             "2. If the user request is open-ended, thematic, or asks for screening/recommendations (e.g., 'find best 2 stocks in tech', 'top defense stocks 2026', 'trending AI hardware plays'), set needs_scouting=True.\n"
-            "3. When scouting is needed, formulate 1 to 2 concise, keyword-optimized search queries (NOT conversational sentences).\n"
+            "3. When scouting is needed, WIDEN FIRST: formulate 1 to 2 'screen_stocks' queries (preset and/or sector filters matching the theme, limit=20) plus 1 to 2 web/article/social queries for thematic names the screener cannot express. Use concise, keyword-optimized queries (NOT conversational sentences).\n"
             "4. Choose the best tool for each query:\n"
             "   - 'screen_stocks': for quantitative screening by sector or preset (e.g. sector='Technology', or preset='growth_technology_stocks' / 'undervalued_large_caps'). Prioritize this when looking for stocks in a sector or category.\n"
             "   - 'search_web': for general industry rankings, analyst commentary, or sector leaders.\n"
             "   - 'search_articles': for recent news, earnings announcements, M&A, or regulatory catalysts.\n"
             "   - 'search_social': for retail buzz, meme stocks, or sentiment spikes on Reddit/ApeWisdom/StockTwits.\n"
-            "5. Maximum 2 queries total."
+            "5. Set limit=20 for screen_stocks queries and limit<=10 for web/article/social queries.\n"
+            "6. Maximum 4 queries total."
         )
     )
     user_text = f"Research Request: {query}"

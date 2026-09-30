@@ -34,6 +34,7 @@ from app.agent.gate import (
 from app.agent.ledger import ResearchWorkItem
 from app.agent.planning import (
     assess_scout_need,
+    build_deterministic_shortlist,
     generate_research_plan,
     reflect_on_research_gaps,
     ResearchPlanSchema,
@@ -223,7 +224,7 @@ def create_research_graph(
         intent_dict = state.get("research_intent") or {}
         as_of = state.get("as_of_date")
 
-        # Stage 1a: Model-driven preliminary discovery scouting
+        # Stage 1a: Model-driven preliminary discovery scouting (wide net)
         scout_context = ""
         tool_map = {getattr(t, "name", ""): t for t in tools}
         if str(query).strip() and not ticker and not company:
@@ -234,7 +235,8 @@ def create_research_graph(
                 assessment = assess_scout_need(model, str(query), ticker=ticker, company=company)
                 if assessment.needs_scouting and assessment.scout_queries:
                     lines = []
-                    for sq in assessment.scout_queries[:2]:
+                    screen_rows: list[dict[str, Any]] = []
+                    for sq in assessment.scout_queries[:4]:
                         tool_to_use = (
                             tool_map.get(sq.tool_name)
                             or tool_map.get("screen_stocks")
@@ -248,10 +250,13 @@ def create_research_graph(
                                 tool_args = {
                                     "preset": getattr(sq, "preset", None),
                                     "sector": getattr(sq, "sector", None) or (getattr(sq, "query", None) if not getattr(sq, "preset", None) else None),
-                                    "limit": 5,
+                                    "limit": min(max(int(getattr(sq, "limit", 20) or 20), 1), 20),
                                 }
                             else:
-                                tool_args = {"query": str(getattr(sq, "query", ""))[:180], "limit": 5}
+                                tool_args = {
+                                    "query": str(getattr(sq, "query", ""))[:180],
+                                    "limit": min(max(int(getattr(sq, "limit", 10) or 10), 1), 10),
+                                }
 
                             raw_out = tool_to_use.invoke(tool_args)
                             if not raw_out:
@@ -264,18 +269,68 @@ def create_research_graph(
                                 or data.get("posts", [])
                             )
                             for item in items:
-                                if isinstance(item, dict):
-                                    t_str = item.get("title") or item.get("ticker") or ""
-                                    s_str = item.get("summary") or item.get("snippet") or item.get("text") or ""
-                                    if not s_str and item.get("company"):
-                                        s_str = f"{item.get('company')} - Market Cap: {item.get('market_cap')}"
-                                    if t_str or s_str:
-                                        lines.append(f"- {t_str}: {s_str}")
+                                if not isinstance(item, dict):
+                                    continue
+                                if sq.tool_name == "screen_stocks" and item.get("ticker"):
+                                    screen_rows.append(item)
+                                    continue
+                                t_str = item.get("title") or item.get("ticker") or ""
+                                s_str = item.get("summary") or item.get("snippet") or item.get("text") or ""
+                                if not s_str and item.get("company"):
+                                    s_str = f"{item.get('company')} - Market Cap: {item.get('market_cap')}"
+                                if t_str or s_str:
+                                    lines.append(f"- {t_str}: {s_str}")
                         except Exception as sub_exc:
                             logger.debug("Scout tool %s query '%s' failed: %s", sq.tool_name, sq.query, sub_exc)
+
+                    context_blocks: list[str] = []
+
+                    # Deterministic first cut: rank the full screener pool in code,
+                    # so deep-dive candidates come from a wide net, not a 5-row glance.
+                    if screen_rows:
+                        shortlist = build_deterministic_shortlist(screen_rows, top_n=8)
+                        if shortlist:
+                            shortlist_lines = [
+                                f"{idx}. ${r['ticker']} — composite {r['composite_score']:.2f} "
+                                f"(value {r['value_score']:.2f}, conviction {r['conviction_score']:.2f}, "
+                                f"size {r['size_score']:.2f}) | Cap ${r['market_cap'] / 1e9:.1f}B | "
+                                f"Fwd P/E {r['forward_pe'] if r['forward_pe'] is not None else r['trailing_pe']} | "
+                                f"Consensus {r['analyst_rating'] or 'n/a'}"
+                                for idx, r in enumerate(shortlist, 1)
+                            ]
+                            context_blocks.append(
+                                "### Deterministic Screening Shortlist (ranked by code from "
+                                f"{len(screen_rows)} live screener rows — the first cut is deterministic, not model opinion)\n"
+                                + "\n".join(shortlist_lines)
+                            )
+                            if cb:
+                                cb.emit(
+                                    event_type="gate",
+                                    title=f"Deterministic shortlist cut: {len(screen_rows)} screened → {len(shortlist)} shortlisted",
+                                    payload={
+                                        "screened": len(screen_rows),
+                                        "shortlisted": [r["ticker"] for r in shortlist],
+                                    },
+                                )
+                            logger.info(
+                                "pipeline.planner_shortlist screened=%d shortlist=%s",
+                                len(screen_rows), [r["ticker"] for r in shortlist],
+                            )
+
                     if lines:
-                        scout_context = "\n".join(lines[:5])
-                        logger.info("pipeline.planner_scout_obtained count=%s", len(lines[:5]))
+                        context_blocks.append(
+                            "### Web & News Discovery Leads (tickers the screener cannot express)\n"
+                            + "\n".join(lines[:8])
+                        )
+
+                    if context_blocks:
+                        scout_context = "\n\n".join(context_blocks)
+                        scout_context += (
+                            "\n\nCONSTRAINT: candidate_entities MUST be selected from the Deterministic "
+                            "Screening Shortlist and/or the Web & News Discovery Leads above "
+                            "(unless the user explicitly named tickers in the request)."
+                        )
+                        logger.info("pipeline.planner_scout_obtained screen_rows=%d lead_lines=%d", len(screen_rows), len(lines[:8]))
             except Exception as exc:
                 logger.debug("Preliminary scout assessment failed (%s); proceeding with ungrounded planning", exc)
 

@@ -25,30 +25,35 @@ flowchart TD
 
         subgraph P_ASSESS["1. Model-Driven Scout Assessment (assess_scout_need)"]
             direction TB
-            p_eval["<b>LLM Intent & Discovery Evaluator</b><br/>• Deconstructs prompt & identifies target entities<br/>• Fast-Path: Bypass scouting if ticker/company already known<br/>• Generates 1-2 targeted keyword queries & picks discovery tool"]
+            p_eval["<b>LLM Intent & Discovery Evaluator</b><br/>• Deconstructs prompt & identifies target entities<br/>• Fast-Path: Bypass scouting if ticker/company already known<br/>• Widen-First: formulates up to 4 discovery queries<br/>(1-2 screen_stocks presets @ limit=20 + 1-2 web/article/social @ limit≤10)"]
         end
 
         subgraph P_SCOUT["2. Targeted Preliminary Discovery Tools"]
             direction TB
-            p_scr["screen_stocks: Quantitative factor & preset screening"]
+            p_scr["screen_stocks: Quantitative factor & preset screening (limit ≤ 20/call)"]
             p_web["search_web: Industry rankings & thematic catalysts"]
             p_art["search_articles: Real-time news & regulatory announcements"]
             p_soc["search_social: Retail sentiment & momentum velocity"]
         end
 
+        subgraph P_CUT["2b. Deterministic Shortlist Gate (code, zero LLM)"]
+            p_cut["<b>build_deterministic_shortlist</b><br/>• Hard gates: drop rows missing market cap or all valuation multiples<br/>• Cross-sectional percentile composite: 40% value (inverse P/E) +<br/>30% conviction (inverse consensus rating) + 30% size/liquidity (log10 cap)<br/>• Full screener pool (30-40 rows) → top 8 ranked shortlist<br/>• Web-scouted thematic names appended as separate discovery leads"]
+        end
+
         subgraph P_SYNTH["3. Structured Plan & Hypothesis Synthesis (generate_research_plan)"]
             direction TB
-            p_plan["<b>ResearchPlanSchema Generator</b><br/>• Decomposes query into 3-5 testable ResearchHypothesis items<br/>• Assigns evidence_tier: structured_quant, primary_regulatory, macro_series, open_web<br/>• Sets scope (single vs multi-candidate) & execution budget ceiling (25 vs 50)"]
+            p_plan["<b>ResearchPlanSchema Generator</b><br/>• Decomposes query into 3-5 testable ResearchHypothesis items<br/>• Assigns evidence_tier: structured_quant, primary_regulatory, macro_series, open_web<br/>• CONSTRAINT: candidate_entities must come from the deterministic<br/>shortlist ∪ web discovery leads (wide net → narrow deep dive)<br/>• Sets scope (single vs multi-candidate) & execution budget ceiling (25 vs 50)"]
         end
 
         subgraph P_INIT["4. State & Workspace Hydration"]
             direction TB
-            p_seed["<b>Candidate & Queue Hydration</b><br/>• Auto-seeds isolated candidate workspaces (cand_...)<br/>• Hydrates prioritized ResearchWorkItem DAG queue<br/>• Binds budget limits: standard (25) vs deep (50)"]
+            p_seed["<b>Candidate & Queue Hydration</b><br/>• Auto-seeds isolated candidate workspaces (cand_...) for post-cut candidates only<br/>• Hydrates prioritized ResearchWorkItem DAG queue<br/>• Binds budget limits: standard (25) vs deep (50)"]
         end
 
         p_eval -->|needs_scouting=True| P_SCOUT
         p_eval -->|Fast-Path: known entity| p_plan
-        P_SCOUT -->|Grounding Snippets| p_plan
+        P_SCOUT -->|Screener rows + lead lines| P_CUT
+        P_CUT -->|Ranked shortlist + leads| p_plan
         p_plan --> p_seed
     end
 
