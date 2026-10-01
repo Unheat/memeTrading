@@ -597,8 +597,15 @@ def validate_article_body_citations(
             "valid_indices": set(),
         }
 
+    # Strip any leading YAML frontmatter before checking paragraphs for citations
+    clean_body = article_body.strip()
+    if clean_body.startswith("---"):
+        parts = clean_body.split("---", 2)
+        if len(parts) >= 3:
+            clean_body = parts[2].strip()
+
     # Extract all citation tags like [1], [2], [1, 2]
-    all_raw_tags = CITATION_TAG_PATTERN.findall(article_body)
+    all_raw_tags = CITATION_TAG_PATTERN.findall(clean_body)
     used_indices: set[int] = set()
 
     for raw_tag in all_raw_tags:
@@ -619,7 +626,7 @@ def validate_article_body_citations(
         errors.append("Article body contains no numeric citation tags.")
 
     # Split body into blocks while respecting fenced code blocks
-    blocks = _split_markdown_blocks(article_body)
+    blocks = _split_markdown_blocks(clean_body)
     for block in blocks:
         lines = [line.strip() for line in block.splitlines() if line.strip()]
         if not lines:
@@ -823,6 +830,13 @@ Instructions:
 5. NEVER leak internal code variables or enum strings (e.g. translate 'VALIDATION_WATCH' to 'Verdict: Underweight / Neutral', and 'SUSPICIOUS_EARNINGS_DISTORTION' to 'Accounting Red Flag').
 6. Hook the reader with a human-accessible opening narrative before diving into financial tables.
 7. CITATION MANDATE: Every substantive body paragraph discussing the business, operations, or figures MUST include at least one citation tag [1], [2], etc.
+8. Start the article with a clean YAML frontmatter block declaring:
+---
+primary_ticker: <TICKER of top-ranked winner, e.g. ADBE, or null if comparative cohort with no single winner>
+thesis: <One-sentence thesis deck>
+verdict: <Approved Long / Validation Watch / Forensic Warning / Neutral>
+---
+Followed immediately by '# Headline' and the narrative body.
 """
     else:
         ic_verdict = state.get("ic_verdict")
@@ -869,6 +883,13 @@ Instructions:
 5. Hook the reader in the opening with intuitive, real-world framing before walking into tables and equations.
 6. Explain the common-sense intuition behind financial metrics (like Reverse DCF and DSO) before quoting the figures.
 7. CITATION MANDATE: Every substantive body paragraph discussing the business, operations, or figures MUST include at least one citation tag [1], [2], etc.
+8. Start the article with a clean YAML frontmatter block declaring:
+---
+primary_ticker: {ticker}
+thesis: <One-sentence thesis deck>
+verdict: <Approved Long / Validation Watch / Forensic Warning / Neutral>
+---
+Followed immediately by '# Headline' and the narrative body.
 """
     MAX_CITATION_RETRIES = 2
     conversation_messages: list[Any] = [

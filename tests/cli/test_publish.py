@@ -105,7 +105,9 @@ Micron is reporting recovering margins [1].
     assert "ticker: MU" in content
     assert "reverseDcfImpliedGrowth: '14.2%'" in content or 'reverseDcfImpliedGrowth: "14.2%"' in content or "14.2%" in content
     assert "targetValuation: '$78.50'" in content or 'targetValuation: "$78.50"' in content or "$78.50" in content
-    assert "## Primary Sources & Regulatory Receipts" in content
+    assert "citations:" in content
+    # Static text bibliography is stripped for web articles to avoid duplication with <FinancialReceipts />
+    assert "## Primary Sources & Regulatory Receipts" not in content
 
 
 def test_publish_case_blocked_without_readiness(tmp_path: Path) -> None:
@@ -186,4 +188,73 @@ Free cash flow turned positive in Q2 [1].
 
     res = publish_case(case_dir=case_dir, web_root=web_dir, youtube_upload=False, deploy=False)
     assert res.target_mdx_path.exists()
-    assert "## Primary Sources & Regulatory Receipts" in res.target_mdx_path.read_text(encoding="utf-8")
+    content = res.target_mdx_path.read_text(encoding="utf-8")
+    assert "citations:" in content
+    # Static text bibliography is stripped from web body to avoid duplicate citations
+    assert "## Primary Sources & Regulatory Receipts" not in content
+
+
+def test_publish_case_multi_candidate_hydration(tmp_path: Path) -> None:
+    """Verify that multi-candidate screening runs resolve target ticker and hydrate valuation metrics."""
+    case_dir = tmp_path / "cases" / "RESEARCH-2026-09-30-004"
+    case_dir.mkdir(parents=True)
+    web_dir = tmp_path / "web"
+    web_dir.mkdir(parents=True)
+
+    article_text = """---
+primary_ticker: ADBE
+thesis: Forensic Accounting & Reverse DCF Analysis
+verdict: Approved Long
+---
+# The Ghost in the Canvas: Why the Street Got Adobe Backwards
+
+Adobe continues to expand enterprise revenue [1].
+
+## Primary Sources & Regulatory Receipts
+1. **SEC Form 10-Q** (Accession `sec_xbrl` | [Official Source](https://www.sec.gov))
+"""
+    (case_dir / "article.md").write_text(article_text, encoding="utf-8")
+    inv_data = {
+        "ticker": "",
+        "as_of": "2026-10-01",
+        "publication_readiness": {
+            "passed": True,
+            "status": "publishable",
+            "reasons": [],
+            "allowed_artifacts": ["article", "video", "publish"],
+        },
+        "candidates": {
+            "cand_adbe": {
+                "ticker": "ADBE",
+                "company": "Adobe Inc.",
+                "quant_report": {
+                    "valuation": {
+                        "reverse_dcf": {
+                            "implied_growth_pct": "-4.42%",
+                            "implied_fcf_growth_rate": -0.0442,
+                        },
+                        "fair_value_range": {
+                            "base": 356.58,
+                            "blended_base": 356.58,
+                        },
+                    }
+                },
+                "forensic_report": {"verdict": "Normal"},
+            }
+        },
+        "citation_cards": [
+            {"index": 1, "source_type": "SEC Filing", "title": "SEC Form 10-Q", "url": "https://www.sec.gov"},
+        ],
+    }
+    (case_dir / "investigation.json").write_text(json.dumps(inv_data), encoding="utf-8")
+
+    res = publish_case(case_dir=case_dir, web_root=web_dir, youtube_upload=False, deploy=False)
+    assert res.target_mdx_path.exists()
+    content = res.target_mdx_path.read_text(encoding="utf-8")
+
+    assert "ticker: ADBE" in content
+    assert "reverseDcfImpliedGrowth: '-4.42%'" in content or 'reverseDcfImpliedGrowth: "-4.42%"' in content or "-4.42%" in content
+    assert "targetValuation: '$356.58'" in content or 'targetValuation: "$356.58"' in content or "$356.58" in content
+    assert "beneishMScore: Normal" in content
+    assert "## Primary Sources & Regulatory Receipts" not in content
+

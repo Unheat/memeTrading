@@ -7,7 +7,7 @@ interface Citation {
   accession?: string;
   filingDate?: string;
   facts: string[];
-  quotes?: string;
+  quotes?: string | string[];
 }
 
 interface Props {
@@ -18,90 +18,111 @@ const { citations = [] } = Astro.props;
 const hasCitations = citations.length > 0;
 ---
 
-<section class="mt-16 pt-10 border-t border-journal-border dark:border-night-border" id="primary-sources">
-  <div class="flex items-baseline justify-between mb-4">
-    <h3 class="font-serif text-xl font-bold text-journal-ink dark:text-night-ink tracking-tight">
-      References & Regulatory Filings
+<section class="mt-16 pt-10 border-t-2 border-journal-ink/20 dark:border-night-ink/20" id="primary-sources">
+  <div class="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1 mb-2">
+    <h3 class="font-serif text-2xl sm:text-3xl font-bold text-journal-ink dark:text-night-ink tracking-tight">
+      Sources & Regulatory Audit
     </h3>
-    <span class="text-xs font-sans text-journal-muted dark:text-night-muted">
-      {citations.length} primary source{citations.length === 1 ? '' : 's'} audited
+    <span class="text-xs font-sans uppercase tracking-wider text-journal-muted dark:text-night-muted font-medium">
+      {citations.length} Audited Source{citations.length === 1 ? '' : 's'}
     </span>
   </div>
 
   {hasCitations ? (
-    <p class="text-xs text-journal-secondary dark:text-night-secondary mb-8 font-sans max-w-2xl leading-relaxed">
-      Every assertion in this report is anchored to verifiable regulatory filings on SEC EDGAR, consensus databases, or market execution venues.
+    <p class="text-sm font-serif italic text-journal-secondary dark:text-night-secondary mb-8 max-w-2xl leading-relaxed">
+      All financial statements, valuation models, and consensus estimates in this dispatch are anchored to primary regulatory filings on SEC EDGAR and official market records.
     </p>
   ) : (
-    <p class="text-xs text-journal-muted dark:text-night-muted mb-8 font-sans max-w-2xl leading-relaxed">
+    <p class="text-sm font-serif italic text-journal-muted dark:text-night-muted mb-8 max-w-2xl leading-relaxed">
       No verified primary source citations were recorded for this case.
     </p>
   )}
 
-  <ol class="space-y-4 font-sans text-xs">
-    {citations.map((cite) => (
-      <li
-        id={`cite-${cite.index}`}
-        class="p-4 rounded-lg bg-journal-card dark:bg-night-card border border-journal-border dark:border-night-border hover:border-journal-borderHover dark:hover:border-night-borderHover transition-colors scroll-mt-24 text-left"
-      >
-        <div class="flex flex-wrap items-baseline justify-between gap-2 mb-1.5">
-          <div class="flex items-baseline gap-2">
-            <span class="font-mono text-xs font-bold text-editorial-blue dark:text-editorial-blueDark">
-              [{cite.index}]
-            </span>
-            <span class="font-serif font-semibold text-journal-ink dark:text-night-ink text-sm">
-              {cite.title}
-            </span>
-          </div>
-          <div class="flex items-center gap-2 text-[11px] text-journal-muted dark:text-night-muted font-mono">
-            <span class="px-1.5 py-0.5 rounded bg-journal-bg dark:bg-night-bg border border-journal-border dark:border-night-border">
-              {cite.sourceType}
-            </span>
-            {cite.filingDate && <span>{cite.filingDate}</span>}
-          </div>
-        </div>
+  <ol class="space-y-0 text-left font-sans text-xs">
+    {citations.map((cite) => {
+      const quoteText = typeof cite.quotes === 'string'
+        ? cite.quotes.trim()
+        : Array.isArray(cite.quotes) && cite.quotes.length > 0
+          ? String(cite.quotes[0] || '').trim()
+          : '';
+      const hasQuote = quoteText.length > 0 && quoteText !== '""' && quoteText !== "''";
 
-        {cite.accession && (
-          <div class="mb-2 text-xs font-mono text-journal-muted dark:text-night-muted flex items-center gap-2">
-            <span>SEC Accession:</span>
-            <span class="font-semibold text-journal-secondary dark:text-night-secondary">{cite.accession}</span>
+      const cleanFacts = (cite.facts || []).map((f) =>
+        f.replace(/,?\s*Provider:\s*[^,)]+/gi, '').replace(/,?\s*As Of:\s*[^,)]+/gi, '').trim()
+      );
+
+      return (
+        <li
+          id={`cite-${cite.index}`}
+          class="py-6 border-b border-journal-border/60 dark:border-night-border/60 scroll-mt-24 first:border-t"
+        >
+          <div class="flex items-start justify-between gap-4 mb-2">
+            <div class="flex items-start gap-3">
+              <span class="font-serif font-bold text-sm text-editorial-blue dark:text-editorial-blueDark mt-0.5 select-none shrink-0">
+                [{cite.index}]
+              </span>
+              <div>
+                <h4 class="font-serif font-bold text-base sm:text-lg text-journal-ink dark:text-night-ink leading-snug">
+                  {cite.title}
+                </h4>
+                <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs font-sans text-journal-muted dark:text-night-muted mt-1">
+                  <span class="font-medium text-journal-secondary dark:text-night-secondary">
+                    {cite.sourceType}
+                  </span>
+                  {cite.accession && (
+                    <>
+                      <span>•</span>
+                      <span class="font-mono text-[11px]">
+                        Accession: <span class="text-journal-lead dark:text-night-lead font-semibold">{cite.accession}</span>
+                      </span>
+                    </>
+                  )}
+                  {cite.filingDate && (
+                    <>
+                      <span>•</span>
+                      <span>Filed {cite.filingDate}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <a
+              href={cite.url}
+              target="_blank"
+              rel="noreferrer"
+              class="shrink-0 text-xs font-sans font-medium text-editorial-blue dark:text-editorial-blueDark hover:underline inline-flex items-center gap-1 mt-1"
+            >
+              <span>Filing Record</span>
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
           </div>
-        )}
 
-        {cite.quotes && (
-          <blockquote class="my-2.5 text-xs text-journal-secondary dark:text-night-secondary font-serif italic border-l-2 border-editorial-blue/60 dark:border-editorial-blueDark/60 pl-3 py-1 bg-journal-bg/50 dark:bg-night-bg/50 rounded-r">
-            "{cite.quotes}"
-          </blockquote>
-        )}
+          {hasQuote && (
+            <blockquote class="my-3 ml-7 pl-3.5 border-l-2 border-editorial-blue/60 dark:border-editorial-blueDark/60 font-serif italic text-sm text-journal-secondary dark:text-night-secondary bg-journal-canvas/50 dark:bg-night-card/40 py-1.5 rounded-r">
+              “{quoteText}”
+            </blockquote>
+          )}
 
-        {cite.facts && cite.facts.length > 0 && (
-          <div class="mt-2 text-xs text-journal-muted dark:text-night-muted">
-            <span class="text-[10px] font-semibold uppercase tracking-wider block mb-1">Audited Data Points:</span>
-            <ul class="grid grid-cols-1 sm:grid-cols-2 gap-1 font-mono text-journal-secondary dark:text-night-secondary">
-              {cite.facts.map((fact) => (
-                <li class="flex items-center gap-1.5">
-                  <span class="text-editorial-emerald dark:text-editorial-emeraldDark">✓</span>
-                  <span>{fact}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        <div class="mt-3 pt-2 border-t border-journal-border/40 dark:border-night-border/40 flex justify-end">
-          <a
-            href={cite.url}
-            target="_blank"
-            rel="noreferrer"
-            class="text-xs text-editorial-blue dark:text-editorial-blueDark hover:underline flex items-center gap-1 font-medium"
-          >
-            <span>Open Official Source</span>
-            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-            </svg>
-          </a>
-        </div>
-      </li>
-    ))}
+          {cleanFacts.length > 0 && (
+            <div class="mt-3 ml-7">
+              <div class="text-[10px] font-sans uppercase tracking-wider text-journal-muted dark:text-night-muted font-semibold mb-1.5">
+                Audited Statements & Financial Line Items
+              </div>
+              <ul class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs font-mono text-journal-secondary dark:text-night-secondary">
+                {cleanFacts.map((fact) => (
+                  <li class="flex items-baseline gap-2">
+                    <span class="text-journal-muted dark:text-night-muted select-none">•</span>
+                    <span>{fact}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </li>
+      );
+    })}
   </ol>
 </section>

@@ -130,11 +130,20 @@ def publish_case(
     if not article_file.exists():
         raise FileNotFoundError(f"article.md not found in {case_path}")
 
-    raw_article = article_file.read_text(encoding="utf-8").strip()
-    # Strip any leading YAML frontmatter if already present
-    if raw_article.startswith("---"):
-        parts = raw_article.split("---", 2)
+    raw_article_text = article_file.read_text(encoding="utf-8").strip()
+    article_frontmatter: dict[str, Any] = {}
+    raw_article = raw_article_text
+    # Parse leading YAML frontmatter if already present
+    if raw_article_text.startswith("---"):
+        parts = raw_article_text.split("---", 2)
         if len(parts) >= 3:
+            try:
+                import yaml
+                parsed_fm = yaml.safe_load(parts[1])
+                if isinstance(parsed_fm, dict):
+                    article_frontmatter = parsed_fm
+            except Exception:
+                pass
             raw_article = parts[2].strip()
 
     citation_cards = inv_data.get("citation_cards") or []
@@ -155,14 +164,6 @@ def publish_case(
         raise ValueError(
             f"Case {case_id} article failed citation validation: {'; '.join(article_validation['errors'])}"
         )
-    ticker = inv_data.get("ticker") or ""
-    if not ticker:
-        # Infer ticker from case_id (e.g. MU-2026-09-18-001 -> MU)
-        parts = case_id.split("-")
-        if len(parts) >= 2 and parts[0].isalnum():
-            ticker = parts[0].upper()
-        else:
-            ticker = "RESEARCH"
 
     # Extract title from article (first '# ' line)
     title = ""
@@ -170,14 +171,61 @@ def publish_case(
         if line.strip().startswith("# "):
             title = line.strip()[2:].strip()
             break
+
+    # Build lookup map of candidates by ticker symbol
+    candidates_dict = inv_data.get("candidates") or {}
+    candidates_map: dict[str, dict[str, Any]] = {}
+    if isinstance(candidates_dict, list):
+        candidates_map = {
+            str(c.get("ticker", "")).upper(): c
+            for c in candidates_dict
+            if isinstance(c, dict) and c.get("ticker")
+        }
+    elif isinstance(candidates_dict, dict):
+        candidates_map = {
+            str(c.get("ticker", "")).upper(): c
+            for c in candidates_dict.values()
+            if isinstance(c, dict) and c.get("ticker")
+        }
+
+    # Resolve target ticker deterministically without regexes on prose
+    explicit_ticker = inv_data.get("ticker") or ""
+    fm_ticker = (
+        article_frontmatter.get("primary_ticker")
+        or article_frontmatter.get("ticker")
+        or article_frontmatter.get("primaryTicker")
+        or ""
+    )
+
+    effective_ticker = ""
+    if explicit_ticker and explicit_ticker.upper() not in {"RESEARCH", "UNKNOWN"}:
+        effective_ticker = explicit_ticker.upper()
+    elif fm_ticker and str(fm_ticker).upper() not in {"RESEARCH", "UNKNOWN", "COHORT"}:
+        effective_ticker = str(fm_ticker).upper()
+    else:
+        # Infer from case_id if not generic (e.g. MU-2026-09-18-001 -> MU)
+        parts = case_id.split("-")
+        if len(parts) >= 2 and parts[0].isalnum() and parts[0].upper() not in {"RESEARCH", "CASE"}:
+            effective_ticker = parts[0].upper()
+
+    # If still unresolved and we have candidates, match primary candidate from title or single candidate
+    if (not effective_ticker or effective_ticker in {"RESEARCH", "UNKNOWN"}) and candidates_map:
+        for cand_sym, cand_data in candidates_map.items():
+            company_name = str(cand_data.get("company") or "").lower()
+            first_word_company = company_name.split()[0] if company_name else ""
+            if cand_sym.lower() in title.lower() or (first_word_company and len(first_word_company) > 3 and first_word_company in title.lower()):
+                effective_ticker = cand_sym
+                break
+
+    ticker = effective_ticker or "RESEARCH"
     if not title:
         title = f"{ticker} Forensic Diligence & Valuation Audit"
 
     published_at = inv_data.get("as_of") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    thesis = inv_data.get("thesis") or "Forensic Accounting Investigation & Reverse DCF Analysis"
+    thesis = article_frontmatter.get("thesis") or inv_data.get("thesis") or "Forensic Accounting Investigation & Reverse DCF Analysis"
 
     ic_verdict = inv_data.get("ic_verdict", {}) or {}
-    raw_verdict = str(ic_verdict.get("verdict") or "").upper()
+    raw_verdict = str(article_frontmatter.get("verdict") or ic_verdict.get("verdict") or "").upper()
     if "BULL" in raw_verdict or "BUY" in raw_verdict or "LONG" in raw_verdict or "APPROVED" in raw_verdict:
         verdict = "Approved Long"
     elif "CAUTION" in raw_verdict or "WATCH" in raw_verdict:
@@ -187,27 +235,27 @@ def publish_case(
     else:
         verdict = "Forensic Warning"
 
-    # Reverse DCF and valuation metrics
-    quant = inv_data.get("quant_report", {}) or {}
-    valuation = quant.get("valuation") or inv_data.get("valuation") or {}
+    # Deterministic Reverse DCF and valuation metrics from JSON models
+    target_cand = candidates_map.get(ticker) if ticker != "RESEARCH" else None
+    quant = (target_cand.get("quant_report") if target_cand else None) or inv_data.get("quant_report") or {}
+    valuation = quant.get("valuation") or (target_cand.get("valuation") if target_cand else None) or inv_data.get("valuation") or {}
     rev_dcf = valuation.get("reverse_dcf") or {}
     implied_growth = rev_dcf.get("implied_growth_pct") or rev_dcf.get("implied_fcf_growth_rate") or valuation.get("implied_growth_rate")
-
-    # Fallback to dossier or memo text for implied growth if unpopulated
-    memo_file = case_path / "memo.md"
-    memo_text = memo_file.read_text(encoding="utf-8") if memo_file.exists() else ""
 
     rev_dcf_str = None
     if implied_growth is not None:
         rev_dcf_str = str(implied_growth) if isinstance(implied_growth, str) else f"{float(implied_growth) * 100:.1f}%"
-    elif memo_text:
-        m_growth = re.search(r"(?:Reverse DCF Implied Growth|Implied 5-Year FCF CAGR)[^\n0-9]*([0-9]+(?:\.[0-9]+)?)\s*%", memo_text, re.I)
-        if m_growth:
-            rev_dcf_str = f"{m_growth.group(1)}%"
+    elif article_frontmatter.get("reverseDcfImpliedGrowth") or article_frontmatter.get("implied_growth"):
+        raw_val = str(article_frontmatter.get("reverseDcfImpliedGrowth") or article_frontmatter.get("implied_growth")).strip()
+        if raw_val.upper() not in {"N/A", "NONE", "NULL"}:
+            rev_dcf_str = raw_val
 
-    # Resolve fundamental fair value per share
+    # Resolve fundamental fair value per share deterministically
     dossier = (inv_data.get("capability_outputs", {}).get("diligence_dossiers") or {}).get(ticker, {})
-    val_range = (dossier.get("valuation") or {}).get("fair_value_range") or {}
+    if not dossier and target_cand:
+        dossier = target_cand.get("diligence_dossier") or {}
+
+    val_range = (dossier.get("valuation") or {}).get("fair_value_range") or valuation.get("fair_value_range") or {}
     base_case = valuation.get("cases", {}).get("base", {})
 
     fair_value = (
@@ -222,13 +270,13 @@ def publish_case(
     target_val_str = None
     if fair_value is not None and float(fair_value) > 0:
         target_val_str = f"${float(fair_value):.2f}"
-    elif memo_text:
-        m_val = re.search(r"(?:Weighted Expected Value|Probability-Weighted Expected Value|Fundamental Fair Value|Blended Fair Value|Base Target|fair value corridor)[^\n$]*\$([0-9]+(?:\.[0-9]{1,2})?)", memo_text, re.I)
-        if m_val:
-            target_val_str = f"${float(m_val.group(1)):.2f}"
+    elif article_frontmatter.get("targetValuation") or article_frontmatter.get("fair_value") or article_frontmatter.get("target_valuation"):
+        raw_val = str(article_frontmatter.get("targetValuation") or article_frontmatter.get("fair_value") or article_frontmatter.get("target_valuation")).strip()
+        if raw_val.upper() not in {"N/A", "NONE", "NULL"}:
+            target_val_str = raw_val if raw_val.startswith("$") else f"${raw_val}"
 
     # M-Score risk
-    forensic = inv_data.get("forensic_report", {}) or {}
+    forensic = (target_cand.get("forensic_report") if target_cand else None) or inv_data.get("forensic_report") or {}
     m_score_val = forensic.get("beneish_m_score") or forensic.get("verdict")
     beneish_m_str = str(m_score_val).replace("_", " ").title() if m_score_val else None
 
@@ -326,6 +374,14 @@ def publish_case(
     while body_lines and (not body_lines[0].strip() or body_lines[0].strip().startswith("# ")):
         body_lines.pop(0)
     cleaned_body = "\n".join(body_lines)
+
+    # Strip trailing static bibliography from the article body before writing to web content,
+    # because the web layout renders the rich interactive <FinancialReceipts /> component.
+    cleaned_body = re.split(
+        r"\n##\s*(?:Primary Sources|Regulatory Receipts|References|Sources)",
+        cleaned_body,
+        flags=re.IGNORECASE,
+    )[0].strip()
 
     # Build YAML frontmatter
     frontmatter_dict: dict[str, Any] = {
