@@ -223,6 +223,8 @@ class InvestigationState(TypedDict):
     sector_report: dict[str, Any] | None
     moat_report: dict[str, Any] | None
     quant_report: dict[str, Any] | None
+    channel_check_report: dict[str, Any] | None
+    channel_check_receipts: list[dict[str, Any]]
 
 
 def create_initial_state(request: ResearchRequest, case_id: str) -> InvestigationState:
@@ -260,4 +262,5 @@ def create_initial_state(request: ResearchRequest, case_id: str) -> Investigatio
         "evidence_gate": {}, "accounting_gate": {}, "valuation_gate": {}, "asymmetry_gate": {},
         "forensic_report": None, "thematic_report": None, "sector_report": None,
         "moat_report": None, "quant_report": None,
+        "channel_check_report": None, "channel_check_receipts": [],
     }

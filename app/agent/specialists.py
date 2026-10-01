@@ -6,6 +6,8 @@ Donor provenance:
 - run_sector_analysis and run_moat_analysis adapted from reference/investment-research/prompts/sector-specialist.prompt.md:1-23.
 - run_thematic_analysis adapted from reference/investment-research/prompts/macro-thematic.prompt.md:1-55.
 - run_quant_analysis executes deterministic math via app.valuation.engine.
+- run_channel_check_analysis is locally written (Point72-Canvas-style concordance counting
+  over Fisher scuttlebutt receipts); no donor code copied.
 """
 from __future__ import annotations
 
@@ -13,14 +15,20 @@ import json
 import logging
 import math
 from collections.abc import Mapping
+from datetime import datetime, timezone
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.agent.contracts import ChannelCheckReceipt, ChannelCheckReport
 from app.agent.state import InvestigationState
 from app.valuation.engine import run_calculator
 
 logger = logging.getLogger(__name__)
+
+# A channel-check report is only "available" when at least this many distinct
+# auditable observations exist; below it the verdict stays INSUFFICIENT_CHANNEL_DATA.
+CHANNEL_CHECK_MIN_RECEIPTS = 2
 
 FORENSIC_ACCOUNTING_PROMPT = """# System Prompt: Forensic Accounting & Earnings Quality Auditor (`forensic-accounting`)
 
@@ -401,6 +409,187 @@ Analyze secular capex wave phase, bottleneck monopoly score (1-10), and thematic
                 "evidence": evidence,
             }
         }
+
+
+def _normalize_receipt(
+    item: Mapping[str, Any],
+    ticker: str,
+    idx: int,
+) -> ChannelCheckReceipt | None:
+    """Normalize one raw observation into a validated ChannelCheckReceipt.
+
+    Accepts receipts that already carry explicit structured fields (from social
+    providers or upstream tool ingestion). Observations without an explicit
+    implication classify as neutral — never guessed from prose.
+
+    Args:
+        item: Raw observation mapping.
+        ticker: Candidate ticker for receipt ownership.
+        idx: Sequence index for deterministic receipt ids.
+
+    Returns:
+        Validated receipt, or None when the item lacks the minimum identity fields.
+    """
+    observed_metric = str(item.get("observed_metric") or item.get("metric") or "").strip()
+    observed_value = item.get("observed_value", item.get("value"))
+    if not observed_metric or observed_value is None:
+        return None
+    implication = str(item.get("implication") or "neutral").strip()
+    if implication not in {"bullish_inflection", "neutral", "bearish_inflection"}:
+        implication = "neutral"
+    try:
+        return ChannelCheckReceipt(
+            receipt_id=str(item.get("receipt_id") or f"cc_{ticker.lower()}_{idx:02d}"),
+            channel_type=str(item.get("channel_type") or "developer_telemetry"),
+            source_url_or_channel=str(item.get("source_url_or_channel") or item.get("source") or item.get("source_url") or "unrecorded"),
+            target_ticker=str(item.get("target_ticker") or ticker).upper(),
+            observed_metric=observed_metric,
+            observed_value=observed_value if isinstance(observed_value, (int, float, str)) else str(observed_value),
+            baseline_value=item.get("baseline_value"),
+            implication=implication,  # type: ignore[arg-type]
+            quote_or_evidence=str(item.get("quote_or_evidence") or item.get("quote") or "")[:500],
+            observed_at_utc=str(item.get("observed_at_utc") or datetime.now(timezone.utc).isoformat()),
+        )
+    except Exception as exc:
+        logger.debug("channel receipt normalization failed for item %s: %s", idx, exc)
+        return None
+
+
+def _classify_channel_verdict(bullish: int, bearish: int, total: int) -> str:
+    """Deterministically classify the channel verdict from receipt counts.
+
+    Args:
+        bullish: Count of bullish-inflection receipts.
+        bearish: Count of bearish-inflection receipts.
+        total: Total validated receipts.
+
+    Returns:
+        One of CHANNEL_ACCELERATION, CHANNEL_BREAKDOWN, MIXED_CHANNEL,
+        INSUFFICIENT_CHANNEL_DATA.
+    """
+    if total < CHANNEL_CHECK_MIN_RECEIPTS:
+        return "INSUFFICIENT_CHANNEL_DATA"
+    if bullish >= 2 and bullish > bearish:
+        return "CHANNEL_ACCELERATION"
+    if bearish >= 2 and bearish > bullish:
+        return "CHANNEL_BREAKDOWN"
+    return "MIXED_CHANNEL"
+
+
+def run_channel_check_analysis(state: InvestigationState, model: Any | None = None) -> dict[str, Any]:
+    """Execute Fisher-scuttlebutt channel-check triangulation for one candidate.
+
+    Aggregates structured channel observations already collected in the candidate
+    workspace (explicit receipts and social telemetry), counts concordant vs
+    discordant signals (Point72-Canvas-style), and classifies the channel verdict
+    deterministically. The model may author only the narrative summary; every
+    count and the verdict come from code.
+
+    Args:
+        state: Candidate-isolated investigation state.
+        model: Optional language model for the narrative summary only.
+
+    Returns:
+        State update populating ``channel_check_report``.
+    """
+    ticker = (state.get("ticker") or "UNKNOWN").strip().upper()
+    raw_items: list[Mapping[str, Any]] = []
+
+    receipts_in = state.get("channel_check_receipts")
+    if isinstance(receipts_in, list):
+        raw_items.extend(item for item in receipts_in if isinstance(item, Mapping))
+
+    social = (state.get("capability_outputs") or {}).get("social_signal") or state.get("social_signal")
+    if isinstance(social, Mapping):
+        representative = social.get("representative_posts") or social.get("posts") or []
+        if isinstance(representative, list):
+            raw_items.extend(item for item in representative if isinstance(item, Mapping))
+        metrics = social.get("trend_metrics") or {}
+        velocity = (metrics.get("velocity_24h") or {}).get("value") if isinstance(metrics, Mapping) else social.get("velocity_24h")
+        mentions = (metrics.get("mentions") or {}).get("value") if isinstance(metrics, Mapping) else None
+        if velocity is not None:
+            try:
+                vel_f = float(velocity)
+                raw_items.append({
+                    "receipt_id": f"cc_{ticker.lower()}_social_velocity",
+                    "channel_type": "developer_telemetry",
+                    "source_url_or_channel": "aggregated social telemetry",
+                    "target_ticker": ticker,
+                    "observed_metric": "social_mention_velocity_24h",
+                    "observed_value": vel_f,
+                    "implication": "bullish_inflection" if vel_f > 1.5 else ("bearish_inflection" if vel_f < 0.5 else "neutral"),
+                    "quote_or_evidence": str(social.get("summary") or "24h social mention velocity vs baseline"),
+                })
+            except (TypeError, ValueError):
+                pass
+        if mentions is not None:
+            try:
+                raw_items.append({
+                    "receipt_id": f"cc_{ticker.lower()}_social_mentions",
+                    "channel_type": "developer_telemetry",
+                    "source_url_or_channel": "aggregated social telemetry",
+                    "target_ticker": ticker,
+                    "observed_metric": "social_mentions",
+                    "observed_value": float(mentions),
+                    "implication": "neutral",
+                    "quote_or_evidence": "raw mention count from social providers",
+                })
+            except (TypeError, ValueError):
+                pass
+
+    receipts: list[dict[str, Any]] = []
+    for idx, item in enumerate(raw_items, start=1):
+        receipt = _normalize_receipt(item, ticker, idx)
+        if receipt is not None:
+            receipts.append(receipt.to_dict())
+
+    bullish = sum(1 for r in receipts if r["implication"] == "bullish_inflection")
+    bearish = sum(1 for r in receipts if r["implication"] == "bearish_inflection")
+    total = len(receipts)
+    verdict = _classify_channel_verdict(bullish, bearish, total)
+    discordant = min(bullish, bearish)
+
+    report = ChannelCheckReport(
+        ticker=ticker,
+        status="available" if total >= CHANNEL_CHECK_MIN_RECEIPTS else "insufficient_data",
+        receipts=receipts,
+        receipts_count=total,
+        bullish_count=bullish,
+        bearish_count=bearish,
+        discordant_signals=discordant,
+        channel_implied_growth=None,  # populated only by deterministic KPI calibration upstream
+        channel_verdict=verdict,  # type: ignore[arg-type]
+        synthesis_summary="",
+    )
+
+    if model is not None and hasattr(model, "invoke") and total > 0:
+        try:
+            human_prompt = f"""Synthesize the ground-truth channel telemetry for ${ticker}:
+Deterministic Receipts (counts and verdict are pre-computed — do NOT change them):
+{json.dumps(receipts[:10], indent=2, default=str)}
+Deterministic Verdict: {verdict} (bullish={bullish}, bearish={bearish}, discordant={discordant})
+
+Write a 2-3 sentence institutional synthesis of what the channel data implies for demand
+momentum vs. what Wall Street models. Do not invent numbers not present in the receipts."""
+            resp = model.invoke([
+                SystemMessage(content=(
+                    "You are the Channel Check & Scuttlebutt Specialist (Philip Fisher method) at an "
+                    "institutional fund. You synthesize ground-truth observations from distributors, "
+                    "developers, operators, and customers into concise demand-momentum commentary. "
+                    "You never invent metrics; every claim must trace to a provided receipt."
+                )),
+                HumanMessage(content=human_prompt),
+            ])
+            summary = str(getattr(resp, "content", "")).strip()
+            if summary:
+                report.synthesis_summary = summary[:800]
+        except Exception as exc:
+            logger.warning("Channel-check model synthesis failed for %s: %s", ticker, exc)
+            report.status = "degraded" if report.status == "available" else report.status
+    elif total == 0:
+        report.synthesis_summary = "No structured channel observations were collected for this candidate."
+
+    return {"channel_check_report": report.to_dict()}
 
 
 def _normalize_reproducibility(verified: dict[str, Any]) -> dict[str, Any]:

@@ -10,7 +10,7 @@ Define the public research request, bounded execution budget, universal investig
 
 `resolve_intent()` preserves only explicit structural requirements: caller-provided subjects, a requested count (`top 10`, `best 5`, `rank 3`, or `compare 4`), candidate-workspace requirement, and an explicit capital-allocation request. It never classifies prompt keywords, picks a research graph, creates candidates, or decides a recommendation.
 
-`InvestigationState` stores `research_intent`, universal source/evidence/receipt containers, optional single-company facts, and candidate-owned workspaces. It does not contain `profile` or `mode`.
+`InvestigationState` stores `research_intent`, universal source/evidence/receipt containers, optional single-company facts, candidate-owned workspaces, and the scuttlebutt containers `channel_check_report` (deterministic specialist output) and `channel_check_receipts` (raw auditable observations). It does not contain `profile` or `mode`.
 
 ## Prompt contract
 

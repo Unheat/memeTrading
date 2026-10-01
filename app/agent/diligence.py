@@ -14,6 +14,7 @@ from app.agent.adversarial import run_adversarial_red_team
 from app.agent.bull import run_bull_advocate
 from app.agent.expectations import run_expectations_analyst
 from app.agent.specialists import (
+    run_channel_check_analysis,
     run_forensic_analysis,
     run_moat_analysis,
     run_quant_analysis,
@@ -76,16 +77,18 @@ def run_candidate_diligence(
         except Exception as exc:
             logger.debug("Failed to fetch SEC financials for %s: %s", clean_ticker, exc)
 
-    # --- Stage 1: Independent Fundamentals (Expectations, Forensics, Moat in parallel) ---
+    # --- Stage 1: Independent Fundamentals (Expectations, Forensics, Moat, Channel in parallel) ---
     exp_res: dict[str, Any] = {}
     forensic_res: dict[str, Any] = {}
     moat_res: dict[str, Any] = {}
+    channel_res: dict[str, Any] = {}
 
     if model:
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        with ThreadPoolExecutor(max_workers=4) as executor:
             fut_exp = executor.submit(run_expectations_analyst, cand_state, model)
             fut_for = executor.submit(run_forensic_analysis, cand_state, model)
             fut_moat = executor.submit(run_moat_analysis, cand_state, model)
+            fut_chan = executor.submit(run_channel_check_analysis, cand_state, model)
 
             try:
                 exp_res = fut_exp.result()
@@ -101,6 +104,11 @@ def run_candidate_diligence(
                 moat_res = fut_moat.result()
             except Exception as exc:
                 logger.warning("Moat analysis failed for %s: %s", clean_ticker, exc)
+
+            try:
+                channel_res = fut_chan.result()
+            except Exception as exc:
+                logger.warning("Channel check analysis failed for %s: %s", clean_ticker, exc)
     else:
         # Deterministic offline paths when model is None
         try:
@@ -111,10 +119,15 @@ def run_candidate_diligence(
             moat_res = run_moat_analysis(cand_state, None)
         except Exception as exc:
             logger.warning("Moat analysis failed for %s: %s", clean_ticker, exc)
+        try:
+            channel_res = run_channel_check_analysis(cand_state, None)
+        except Exception as exc:
+            logger.warning("Channel check analysis failed for %s: %s", clean_ticker, exc)
 
     cand_state.update(exp_res)
     cand_state.update(forensic_res)
     cand_state.update(moat_res)
+    cand_state.update(channel_res)
 
     # --- Stage 2: Quant DCF / Valuation modeling (synchronous, consuming Stage 1 expectation_gap) ---
     quant_res: dict[str, Any] = {}
@@ -201,6 +214,9 @@ def build_diligence_dossier(
         # Full moat report travels in the dossier so the committee deliberates on it
         # (audit 2026-09-26, Fix 5 — previously reduced to a rating string and dropped).
         "moat_report": cand_state.get("moat_report"),
+        # Scuttlebutt channel telemetry (receipts + deterministic verdict) travels with
+        # the dossier so the 3-way expectation arbitrage can weigh ground truth.
+        "channel_check_report": cand_state.get("channel_check_report"),
         "market_context": cand_state.get("market_context"),
         "sec_financials": cand_state.get("sec_financials"),
         "expectation_gap": cand_state.get("expectation_gap"),

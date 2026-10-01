@@ -98,6 +98,12 @@ class ExpectationGapAnalysis:
     from the calculator's reverse DCF, never from model-authored text (audit
     2026-09-26, Fix 3). ``verdict`` is a deterministic classification of the
     expectation edge; model-authored commentary is kept separately.
+
+    The 3-way expectation arbitrage fields compare the deterministic channel
+    telemetry (scuttlebutt pillar) against market pricing (reverse DCF implied
+    growth and consensus). ``arbitrage_delta`` = channel − max(implied, consensus);
+    both sides must exist, otherwise it stays None. Classification thresholds reuse
+    ``EXPECTATION_GAP_PRICED_IN_MARGIN``.
     """
 
     verdict: str
@@ -114,6 +120,9 @@ class ExpectationGapAnalysis:
     implied_fcf_growth_rate: float | None = None
     consensus_growth_estimate: float | None = None
     expectation_edge: float | None = None
+    channel_growth_estimate: float | None = None
+    arbitrage_delta: float | None = None
+    arbitrage_verdict: str = ""
     model_verdict: str = ""
     commentary: str = ""
     status: str = "available"
@@ -130,6 +139,9 @@ class ExpectationGapAnalysis:
             "implied_fcf_growth_rate": self.implied_fcf_growth_rate,
             "consensus_growth_estimate": self.consensus_growth_estimate,
             "expectation_edge": self.expectation_edge,
+            "channel_growth_estimate": self.channel_growth_estimate,
+            "arbitrage_delta": self.arbitrage_delta,
+            "arbitrage_verdict": self.arbitrage_verdict,
             "model_verdict": self.model_verdict,
             "commentary": self.commentary,
             "status": self.status,
@@ -238,6 +250,52 @@ def _classify_expectation_gap(implied: float | None, consensus: float | None) ->
     if edge > EXPECTATION_GAP_PRICED_IN_MARGIN:
         return "HIDDEN_EXPECTATIONS_EDGE"
     return "BALANCED_PRICING"
+
+
+def _classify_expectation_arbitrage(
+    implied: float | None,
+    consensus: float | None,
+    channel: float | None,
+    channel_verdict: str | None,
+) -> tuple[float | None, str]:
+    """Deterministically classify the 3-way expectation arbitrage.
+
+    The arbitrage delta compares channel-implied demand momentum against the more
+    demanding of the two market pricing anchors (reverse-DCF implied growth and
+    consensus): ``delta = channel - max(implied, consensus)``. When no calibrated
+    channel growth exists, the deterministic channel verdict still classifies
+    pricing-vs-telemetry risk.
+
+    Args:
+        implied: Deterministic market-implied FCF growth (fraction), or None.
+        consensus: Consensus forward growth estimate (fraction), or None.
+        channel: Deterministic channel-implied growth (fraction), or None.
+        channel_verdict: Deterministic channel verdict string, or None.
+
+    Returns:
+        Tuple of (arbitrage_delta, arbitrage_verdict). Delta is None when either
+        side of the comparison is missing.
+    """
+    benchmarks = [b for b in (implied, consensus) if b is not None and math.isfinite(b)]
+    if channel is not None and math.isfinite(channel) and benchmarks:
+        delta = channel - max(benchmarks)
+        if delta > EXPECTATION_GAP_PRICED_IN_MARGIN:
+            return delta, "UNPRICED_CHANNEL_ACCELERATION"
+        if delta < -EXPECTATION_GAP_PRICED_IN_MARGIN:
+            return delta, "CHANNEL_BREAKDOWN_SHORT"
+        return delta, "CONSENSUS_ALIGNED"
+
+    # Without a calibrated channel growth number, classify from the deterministic
+    # channel verdict against market pricing posture only.
+    if channel_verdict == "CHANNEL_ACCELERATION" and implied is not None and math.isfinite(implied) and implied < 0.05:
+        return None, "UNPRICED_CHANNEL_ACCELERATION"
+    if channel_verdict == "CHANNEL_BREAKDOWN" and implied is not None and math.isfinite(implied) and implied > 0.25:
+        return None, "PRICED_TO_PERFECTION"
+    if channel_verdict == "CHANNEL_BREAKDOWN":
+        return None, "CHANNEL_BREAKDOWN_SHORT"
+    if channel_verdict == "CHANNEL_ACCELERATION":
+        return None, "CONSENSUS_ALIGNED"
+    return None, "UNCERTAIN_DISPERSION"
 
 
 def _deterministic_gap_interpretation(
@@ -388,6 +446,22 @@ def run_expectations_analyst(state: InvestigationState, model: Any) -> dict[str,
         prelim_reverse_dcf, implied_growth, consensus_growth, verdict
     )
 
+    # 3-way expectation arbitrage: channel telemetry (scuttlebutt pillar) vs market pricing.
+    channel_report = state.get("channel_check_report") or {}
+    if not isinstance(channel_report, Mapping):
+        channel_report = {}
+    channel_growth_raw = channel_report.get("channel_implied_growth")
+    try:
+        channel_growth = float(channel_growth_raw) if channel_growth_raw is not None else None
+        if channel_growth is not None and not math.isfinite(channel_growth):
+            channel_growth = None
+    except (TypeError, ValueError):
+        channel_growth = None
+    channel_verdict = str(channel_report.get("channel_verdict") or "") or None
+    arbitrage_delta, arbitrage_verdict = _classify_expectation_arbitrage(
+        implied_growth, consensus_growth, channel_growth, channel_verdict
+    )
+
     evidence_quotes = [
         item.get("quote") for item in state.get("evidence", [])
         if isinstance(item, Mapping) and item.get("quote")
@@ -467,6 +541,9 @@ Analyze what is priced in vs. consensus forecasts and formulate the 3-case DCF p
                 if implied_growth is not None and consensus_growth is not None
                 else None
             ),
+            channel_growth_estimate=channel_growth,
+            arbitrage_delta=arbitrage_delta,
+            arbitrage_verdict=arbitrage_verdict,
             model_verdict=str(parsed.get("expectation_gap_verdict", "")),
             commentary=commentary,
             status="degraded" if degradation else "available",
@@ -491,6 +568,9 @@ Analyze what is priced in vs. consensus forecasts and formulate the 3-case DCF p
                 if implied_growth is not None and consensus_growth is not None
                 else None
             ),
+            "channel_growth_estimate": channel_growth,
+            "arbitrage_delta": arbitrage_delta,
+            "arbitrage_verdict": arbitrage_verdict,
             "model_verdict": "",
             "commentary": "",
             "status": "degraded",

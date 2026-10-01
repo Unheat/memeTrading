@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 ToolStatus = Literal[
     "ok",
@@ -215,6 +215,104 @@ class RiskRegister(BaseModel):
     kill_criteria: list[str] = Field(default_factory=list)
     bear_floor: float | None = None
     max_loss_budget_pct: float = 15.0
+
+
+CHANNEL_CHECK_TYPES = Literal[
+    "distributor_inventory",
+    "spot_pricing",
+    "developer_telemetry",
+    "sysadmin_operator_feedback",
+    "merchant_adoption",
+    "customer_churn",
+    "retail_shelf_check",
+]
+CHANNEL_IMPLICATIONS = Literal["bullish_inflection", "neutral", "bearish_inflection"]
+
+
+class ChannelCheckReceipt(BaseModel):
+    """One auditable ground-truth channel observation (Fisher scuttlebutt receipt).
+
+    Conforms to the Mosaic Theory: individually non-material, publicly observable
+    facts recorded with source, metric, and verbatim evidence so an investment
+    committee can audit every inference. Vague sentiment scores are deliberately
+    excluded — each receipt maps to an observable metric.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    receipt_id: str
+    channel_type: CHANNEL_CHECK_TYPES
+    source_url_or_channel: str
+    target_ticker: str
+    observed_metric: str
+    observed_value: float | str
+    baseline_value: float | str | None = None
+    implication: CHANNEL_IMPLICATIONS = "neutral"
+    quote_or_evidence: str = ""
+    observed_at_utc: str | None = None
+
+    @field_validator("target_ticker")
+    @classmethod
+    def _normalize_ticker(cls, value: str) -> str:
+        """Uppercase and strip the issuer ticker for deterministic ownership."""
+        return value.strip().upper()
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize for state storage."""
+        return {
+            "receipt_id": self.receipt_id,
+            "channel_type": self.channel_type,
+            "source_url_or_channel": self.source_url_or_channel,
+            "target_ticker": self.target_ticker,
+            "observed_metric": self.observed_metric,
+            "observed_value": self.observed_value,
+            "baseline_value": self.baseline_value,
+            "implication": self.implication,
+            "quote_or_evidence": self.quote_or_evidence,
+            "observed_at_utc": self.observed_at_utc,
+        }
+
+
+class ChannelCheckReport(BaseModel):
+    """Synthesized scuttlebutt assessment for one candidate workspace.
+
+    Counts and verdicts are deterministic classifications of receipts; the model
+    may author only ``synthesis_summary``. ``channel_implied_growth`` stays None
+    until a deterministic transaction-to-KPI calibration exists upstream.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    ticker: str
+    status: Literal["available", "insufficient_data", "degraded"] = "insufficient_data"
+    receipts: list[dict[str, Any]] = Field(default_factory=list)
+    receipts_count: int = 0
+    bullish_count: int = 0
+    bearish_count: int = 0
+    discordant_signals: int = 0
+    channel_implied_growth: float | None = None
+    channel_verdict: Literal[
+        "CHANNEL_ACCELERATION",
+        "CHANNEL_BREAKDOWN",
+        "MIXED_CHANNEL",
+        "INSUFFICIENT_CHANNEL_DATA",
+    ] = "INSUFFICIENT_CHANNEL_DATA"
+    synthesis_summary: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize for state storage."""
+        return {
+            "ticker": self.ticker,
+            "status": self.status,
+            "receipts": list(self.receipts),
+            "receipts_count": self.receipts_count,
+            "bullish_count": self.bullish_count,
+            "bearish_count": self.bearish_count,
+            "discordant_signals": self.discordant_signals,
+            "channel_implied_growth": self.channel_implied_growth,
+            "channel_verdict": self.channel_verdict,
+            "synthesis_summary": self.synthesis_summary,
+        }
 
 
 

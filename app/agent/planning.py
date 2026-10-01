@@ -192,9 +192,21 @@ class ResearchHypothesis(BaseModel):
     """A testable sub-question, claim, or hypothesis with an assigned evidence tier."""
 
     statement: str = Field(description="Actionable sub-question, hypothesis, or thesis to test.")
-    evidence_tier: Literal["structured_quant", "primary_regulatory", "macro_series", "open_web"] = Field(
+    evidence_tier: Literal[
+        "structured_quant",
+        "primary_regulatory",
+        "macro_series",
+        "channel_check_primary",
+        "open_web",
+    ] = Field(
         default="open_web",
-        description="The primary evidence quality tier required: 'structured_quant' for factor screening / ratios / DCF, 'primary_regulatory' for SEC 10-K/10-Q XBRL statements & footnote inspection, 'macro_series' for FRED economic rates/yields, or 'open_web' for industry whitepapers / news / PDFs.",
+        description=(
+            "The primary evidence quality tier required: 'structured_quant' for factor screening / ratios / DCF, "
+            "'primary_regulatory' for SEC 10-K/10-Q XBRL statements & footnote inspection, 'macro_series' for FRED "
+            "economic rates/yields, 'channel_check_primary' for ground-truth scuttlebutt (distributor stockouts, "
+            "spot prices, developer telemetry, operator feedback, merchant adoption, customer churn), or "
+            "'open_web' for industry whitepapers / news / PDFs."
+        ),
     )
     target_entity: Optional[str] = Field(
         default=None,
@@ -453,6 +465,11 @@ def generate_research_plan(
         "   - 'structured_quant' for factor screening, market quotes, valuation multiples, and Reverse DCF.\n"
         "   - 'primary_regulatory' for audited SEC 10-K/10-Q XBRL statements, footnote inspection, and Form 4 insider trades.\n"
         "   - 'macro_series' for interest rates, inflation, treasury yields, or currency liquidity via FRED.\n"
+        "   - 'channel_check_primary' for ground-truth scuttlebutt telemetry: distributor/retail stockouts and lead times,\n"
+        "     spot-vs-contract price spreads, developer adoption (GitHub velocity, package downloads), sysadmin/operator\n"
+        "     feedback (r/sysadmin, Hacker News), merchant checkout adoption, and customer churn chatter. For technology,\n"
+        "     semiconductor, software, or consumer candidates ALWAYS include at least one 'channel_check_primary' hypothesis;\n"
+        "     leading channel telemetry is the buyside edge that SEC filings (lagging 45-90 days) cannot provide.\n"
         "   - 'open_web' for broad industry trends, executive commentary, supply chain news, or whitepaper PDFs.\n"
         "6. Set requires_candidate_workspaces to True whenever multiple candidate companies are being researched or compared."
     ))

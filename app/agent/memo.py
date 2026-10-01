@@ -77,12 +77,16 @@ def _expectations_section(state: InvestigationState) -> str:
     rev_rows = consensus.get("revenue_estimates") or []
 
     if not eps_rows and not rev_rows:
-        return (
+        base_text = (
             "## Wall Street Expectations vs Ground Reality\n\n"
             "No institutional analyst coverage is available for this ticker; "
             "the expectation-gap benchmark is unavailable and the verdict rests "
             "on price/volume context and SEC evidence alone.\n"
         )
+        arbitrage = _arbitrage_block(state)
+        if arbitrage:
+            return base_text + "\n" + arbitrage
+        return base_text
 
     lines = [
         "## Wall Street Expectations vs Ground Reality",
@@ -131,7 +135,68 @@ def _expectations_section(state: InvestigationState) -> str:
             "ground reality above against the consensus table before concluding."
         )
 
+    arbitrage = _arbitrage_block(state)
+    if arbitrage:
+        lines.append("")
+        lines.append(arbitrage)
+
     return "\n".join(lines) + "\n"
+
+
+def _arbitrage_block(state: InvestigationState) -> str:
+    """Render the 3-pillar Expectation Arbitrage table when channel telemetry exists.
+
+    Ground truth (channel checks) vs market pricing (reverse DCF / consensus) vs
+    SEC execution (forensic verdict). Renders nothing when no channel report was
+    collected, keeping prior memo output byte-identical in that case.
+    """
+    report = state.get("channel_check_report") or {}
+    if not isinstance(report, Mapping) or not report.get("receipts_count"):
+        return ""
+
+    ticker = state.get("ticker") or "UNKNOWN"
+    gap = state.get("expectation_gap") or {}
+
+    def _pct(value: Any) -> str:
+        try:
+            return f"{float(value) * 100:+.2f}%"
+        except (TypeError, ValueError):
+            return "n/a"
+
+    channel_growth = _pct(report.get("channel_implied_growth")) if report.get("channel_implied_growth") is not None else "not calibrated"
+    implied = _pct(gap.get("implied_fcf_growth_rate"))
+    consensus = _pct(gap.get("consensus_growth_estimate"))
+    edge = _pct(gap.get("expectation_edge")) if gap.get("expectation_edge") is not None else "n/a"
+    delta = _pct(gap.get("arbitrage_delta")) if gap.get("arbitrage_delta") is not None else "n/a"
+
+    forensic = state.get("forensic_report") or {}
+    sec_execution = str(forensic.get("verdict") or "pending SEC audit")
+
+    bullish = report.get("bullish_count") or 0
+    bearish = report.get("bearish_count") or 0
+    total = report.get("receipts_count") or 0
+
+    lines = [
+        "### Expectation Arbitrage (3-Pillar Synthesis)",
+        "",
+        "| Institutional Pillar | Ground Telemetry (Channel) | Market Pricing (Reverse DCF) | SEC Execution (10-Q) | Expectation Edge |",
+        "| :--- | :--- | :--- | :--- | :--- |",
+        (
+            f"| **{ticker}** | {report.get('channel_verdict')} "
+            f"({bullish}B/{bearish}S of {total} receipts; g_channel: {channel_growth}) "
+            f"| implied g: {implied} | consensus g: {consensus} "
+            f"| {sec_execution} "
+            f"| **{delta}** ({edge} vs consensus) |"
+        ),
+        "",
+    ]
+    summary = str(report.get("synthesis_summary") or "").strip()
+    if summary:
+        lines.append(f"**Channel synthesis**: {summary}")
+        lines.append("")
+    lines.append(f"**Arbitrage verdict**: {gap.get('arbitrage_verdict') or 'pending channel calibration'}")
+    lines.append("")
+    return "\n".join(lines)
 
 
 def _capital_safety_scorecard(state: InvestigationState) -> str:
@@ -702,6 +767,7 @@ def serialize_investigation_json(
         "sector_report": _to_json_safe(state.get("sector_report")),
         "moat_report": _to_json_safe(state.get("moat_report")),
         "quant_report": _to_json_safe(state.get("quant_report")),
+        "channel_check_report": _to_json_safe(state.get("channel_check_report")),
         "citation_cards": list(citation_cards or ()),
         "publication_readiness": dict(publication_readiness or {}),
         "diagnostic_terminal_model_text": str(getattr((state.get("messages") or [None])[-1], "content", "")),
