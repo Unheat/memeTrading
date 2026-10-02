@@ -594,8 +594,33 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
             specialist_blocks.append(f"### Adversarial Red Team: Numeric Kill Criteria\n{chr(10).join(kills)}")
 
     ic = state.get("ic_verdict")
+    top_t = state.get("top_candidate_ticker") or getattr(ic, "ticker", "")
     if ic and getattr(ic, "cio_deliberation_summary", None) and getattr(ic, "ticker", "") != "UNKNOWN":
-        specialist_blocks.append(f"### Investment Committee Deliberation\n- **Verdict**: {getattr(ic, 'verdict', 'N/A')}\n- **Conviction**: {getattr(ic, 'conviction_tier', 'N/A')}\n- **Summary**: {getattr(ic, 'cio_deliberation_summary', '')}")
+        header_title = f"### Investment Committee Deliberation (${top_t})" if top_t and top_t != "UNKNOWN" else "### Investment Committee Deliberation"
+        specialist_blocks.append(
+            f"{header_title}\n"
+            f"- **Verdict**: {getattr(ic, 'verdict', 'N/A')}\n"
+            f"- **Conviction**: {getattr(ic, 'conviction_tier', 'N/A')}\n"
+            f"- **Reward-to-Risk Ratio**: {getattr(ic, 'reward_to_risk_ratio', 'N/A')}x\n"
+            f"- **Upside Target**: ${getattr(ic, 'upside_anchor', 'N/A')} | **Bear Floor**: ${getattr(ic, 'bear_floor', 'N/A')}\n"
+            f"- **CIO Summary**: {getattr(ic, 'cio_deliberation_summary', '')}"
+        )
+
+    macro = state.get("macro_directive")
+    if macro and isinstance(macro, Mapping) and macro.get("status") == "available":
+        fav = ", ".join(macro.get("favored_sectors") or ()) or "Asset-Light Monopolies"
+        unfav = ", ".join(macro.get("unfavored_sectors") or ()) or "Capital-Heavy Debt Cyclicals"
+        ff_str = f"{macro.get('fed_funds_rate')}%" if macro.get("fed_funds_rate") is not None else "N/A"
+        dgs_str = f"{macro.get('treasury_10y_yield')}%" if macro.get("treasury_10y_yield") is not None else "N/A"
+        spr_str = f"{macro.get('yield_spread_10y_2y')} bps" if macro.get("yield_spread_10y_2y") is not None else "N/A"
+        specialist_blocks.append(
+            f"### Investment Committee Macro Directive\n"
+            f"- **Monetary Policy Regime**: {macro.get('monetary_regime', 'N/A')} (Fed Funds: {ff_str})\n"
+            f"- **Yield Curve Regime**: {macro.get('yield_curve_regime', 'N/A')} (10Y-2Y Spread: {spr_str}, 10Y Yield: {dgs_str})\n"
+            f"- **Favored Sectors**: {fav}\n"
+            f"- **Unfavored Sectors**: {unfav}\n"
+            f"- **CIO Macro Strategy**: {macro.get('cio_macro_summary', '')}"
+        )
 
     if specialist_blocks:
         specialist_section = f"\n## Institutional Specialist Insights\n" + "\n\n".join(specialist_blocks) + "\n"
@@ -768,6 +793,7 @@ def serialize_investigation_json(
         "moat_report": _to_json_safe(state.get("moat_report")),
         "quant_report": _to_json_safe(state.get("quant_report")),
         "channel_check_report": _to_json_safe(state.get("channel_check_report")),
+        "macro_directive": _to_json_safe(state.get("macro_directive")),
         "citation_cards": list(citation_cards or ()),
         "publication_readiness": dict(publication_readiness or {}),
         "diagnostic_terminal_model_text": str(getattr((state.get("messages") or [None])[-1], "content", "")),

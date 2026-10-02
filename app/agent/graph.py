@@ -740,6 +740,15 @@ def create_research_graph(
         intent_dict = state.get("research_intent") or {}
         is_multi_candidate = bool(intent_dict.get("requires_candidate_workspaces"))
 
+        # Macro / Thematic investigation: if no equity candidates or ticker, run top-down macro committee
+        if not candidates and (not ticker or ticker == "UNKNOWN"):
+            try:
+                from app.agent.committee import run_macro_investment_committee
+                updates.update(run_macro_investment_committee(state, model))
+            except Exception as exc:
+                logger.debug("Macro investment committee failed: %s", exc)
+            return updates
+
         chosen_candidate = None
 
         if ticker and ticker != "UNKNOWN" and candidates:
@@ -748,8 +757,8 @@ def create_research_graph(
                     chosen_candidate = c
                     break
 
-        # Only promote a single candidate if NOT a multi-candidate workspace or if exactly one candidate exists
-        if not chosen_candidate and candidates and (not is_multi_candidate or len(candidates) == 1):
+        # Select primary candidate (or rank 1 winner for multi-candidate screening)
+        if not chosen_candidate and candidates:
             best_cand = None
             best_ratio = -float("inf")
             for cid, c in candidates.items():
@@ -766,20 +775,24 @@ def create_research_graph(
                         best_cand = c
             chosen_candidate = best_cand or next((c for c in candidates.values() if isinstance(c, Mapping)), None)
 
-        # Promote chosen candidate workspace ONLY in single-stock mode
-        if chosen_candidate and (not is_multi_candidate or len(candidates) == 1):
+        c_ticker = ""
+        dossier = {}
+        if chosen_candidate:
             c_ticker = str(
                 chosen_candidate.get("ticker")
                 or (chosen_candidate.get("diligence_dossier") or {}).get("ticker")
                 or ""
             ).upper()
-            if c_ticker:
-                ticker = c_ticker
-                updates["ticker"] = ticker
-            if chosen_candidate.get("company"):
-                updates["company"] = chosen_candidate["company"]
-            if chosen_candidate.get("cik"):
-                updates["cik"] = chosen_candidate["cik"]
+            if not is_multi_candidate or len(candidates) == 1:
+                if c_ticker:
+                    ticker = c_ticker
+                    updates["ticker"] = ticker
+                if chosen_candidate.get("company"):
+                    updates["company"] = chosen_candidate["company"]
+                if chosen_candidate.get("cik"):
+                    updates["cik"] = chosen_candidate["cik"]
+            else:
+                updates["top_candidate_ticker"] = c_ticker
 
             dossier = chosen_candidate.get("diligence_dossier") or {}
             val = dossier.get("valuation") or {}
@@ -811,9 +824,10 @@ def create_research_graph(
                     },
                 }
 
+            target_cand_ticker = ticker or c_ticker
             if not state.get("bull_report") and (dossier.get("bull_catalysts") or dossier.get("bull_thesis")):
                 updates["bull_report"] = BullReport(
-                    ticker=ticker,
+                    ticker=target_cand_ticker,
                     catalysts=tuple(dossier.get("bull_catalysts") or ()),
                     operating_leverage_drivers=(),
                     bull_target_price=dossier.get("bull_target_price") or val.get("fair_value"),
@@ -827,7 +841,7 @@ def create_research_graph(
 
             if not state.get("adversarial_report") and (dossier.get("bear_kill_triggers") or dossier.get("bear_thesis") or dossier.get("bear_floor") is not None):
                 updates["adversarial_report"] = AdversarialReport(
-                    ticker=ticker,
+                    ticker=target_cand_ticker,
                     falsifiable_objections=(),
                     numeric_kill_criteria=tuple(dossier.get("bear_kill_triggers") or ()),
                     bear_floor_price=dossier.get("bear_floor"),
@@ -841,9 +855,10 @@ def create_research_graph(
             if not state.get("channel_check_report") and (dossier.get("channel_check_report") or chosen_candidate.get("channel_check_report")):
                 updates["channel_check_report"] = dossier.get("channel_check_report") or chosen_candidate.get("channel_check_report")
 
-        # Only run single-stock gate checks and committee deliberation if not multi-candidate or single candidate
-        if ticker and ticker != "UNKNOWN" and (not is_multi_candidate or len(candidates) == 1):
-            st = {**state, **updates}
+        # Run single-stock gate checks and committee deliberation on target or #1 candidate
+        eval_ticker = ticker if (ticker and ticker != "UNKNOWN") else (c_ticker if chosen_candidate else None)
+        if eval_ticker and eval_ticker != "UNKNOWN":
+            st = {**state, **updates, "ticker": eval_ticker}
             if chosen_candidate:
                 if not st.get("market_context") and chosen_candidate.get("market_context"):
                     st["market_context"] = chosen_candidate["market_context"]
@@ -867,12 +882,13 @@ def create_research_graph(
             except Exception as exc:
                 logger.debug("Investment committee failed: %s", exc)
 
-            if (
-                updates["accounting_gate"].get("passed") is False
-                or updates["valuation_gate"].get("passed") is False
-            ):
-                if (state.get("research_intent") or {}).get("requested_position_decision"):
-                    updates["status"] = "validation_required"
+            if not is_multi_candidate:
+                if (
+                    updates["accounting_gate"].get("passed") is False
+                    or updates["valuation_gate"].get("passed") is False
+                ):
+                    if (state.get("research_intent") or {}).get("requested_position_decision"):
+                        updates["status"] = "validation_required"
 
         return updates
 

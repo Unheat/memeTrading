@@ -491,6 +491,37 @@ def test_multi_candidate_ranking_preserves_workspaces_without_arbitrary_promotio
     # Both candidates remain in candidate workspaces
     assert "cand_googl" in final_state["candidates"]
     assert "cand_nvda" in final_state["candidates"]
+    assert final_state.get("top_candidate_ticker") == "NVDA"
+
+
+def test_pure_macro_investigation_runs_macro_investment_committee():
+    """Verify pure macro research with no candidates triggers top-down macro committee."""
+    class DirectFinishModel:
+        def bind_tools(self, tools):
+            return self
+        def invoke(self, messages):
+            return AIMessage(content="Macro analysis complete.")
+
+    graph = create_research_graph(model=DirectFinishModel(), tools=[])
+    req = ResearchRequest(
+        query="Analyze Federal Reserve interest rate policy and yield curve",
+        ticker=None,
+    )
+    state = create_initial_state(req, case_id="macro_graph_run")
+    _add_sufficient_mocked_evidence(state)
+    state["candidates"] = {}
+    state["macro_series"] = {
+        "FEDFUNDS": {"latest_value": 3.63},
+        "DGS10": {"latest_value": 5.26},
+        "T10Y2Y": {"latest_value": 0.32},
+    }
+
+    final_state = graph.invoke(state)
+    assert "macro_directive" in final_state
+    directive = final_state["macro_directive"]
+    assert directive["status"] == "available"
+    assert directive["monetary_regime"] == "ACCOMMODATIVE_EASING"
+    assert directive["yield_curve_regime"] == "BULL_STEEPENING"
 
 
 def test_candidate_sec_evidence_requires_primary_provenance():

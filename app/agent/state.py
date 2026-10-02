@@ -225,6 +225,9 @@ class InvestigationState(TypedDict):
     quant_report: dict[str, Any] | None
     channel_check_report: dict[str, Any] | None
     channel_check_receipts: list[dict[str, Any]]
+    macro_directive: dict[str, Any] | None
+    macro_series: dict[str, Any] | None
+    top_candidate_ticker: str | None
 
 
 def create_initial_state(request: ResearchRequest, case_id: str) -> InvestigationState:
@@ -263,4 +266,7 @@ def create_initial_state(request: ResearchRequest, case_id: str) -> Investigatio
         "forensic_report": None, "thematic_report": None, "sector_report": None,
         "moat_report": None, "quant_report": None,
         "channel_check_report": None, "channel_check_receipts": [],
+        "macro_directive": None,
+        "macro_series": None,
+        "top_candidate_ticker": None,
     }

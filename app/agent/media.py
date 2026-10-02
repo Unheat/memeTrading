@@ -808,6 +808,29 @@ def generate_article_markdown(
         if executive_decision and executive_decision not in memo_markdown:
             decision_block = f"\n## Executive Allocation & Model Decision\n{executive_decision}\n"
 
+        if state.get("ic_verdict"):
+            ic = state["ic_verdict"]
+            top_t = state.get("top_candidate_ticker") or getattr(ic, "ticker", "")
+            decision_block += f"""
+## Binding Investment Committee Decision on Top Pick (${top_t})
+- Verdict: {getattr(ic, 'verdict', 'N/A')} ({getattr(ic, 'conviction_tier', 'N/A')})
+- Reward-to-Risk Ratio: {getattr(ic, 'reward_to_risk_ratio', 'N/A')}x
+- Upside Target: ${getattr(ic, 'upside_anchor', 'N/A')} | Bear Floor: ${getattr(ic, 'bear_floor', 'N/A')}
+- CIO Executive Summary: {getattr(ic, 'cio_deliberation_summary', '')}
+"""
+
+        if state.get("macro_directive"):
+            macro = state["macro_directive"]
+            if isinstance(macro, Mapping) and macro.get("status") == "available":
+                decision_block += f"""
+## Top-Down Macroeconomic Regime & Sector Allocation Directive
+- Monetary Policy Regime: {macro.get('monetary_regime')} (Fed Funds: {macro.get('fed_funds_rate')}%)
+- Yield Curve Regime: {macro.get('yield_curve_regime')} (10Y-2Y Spread: {macro.get('yield_spread_10y_2y')} bps)
+- Favored Sectors: {', '.join(macro.get('favored_sectors') or ())}
+- Unfavored Sectors: {', '.join(macro.get('unfavored_sectors') or ())}
+- Macro Allocation Directive: {macro.get('cio_macro_summary')}
+"""
+
         article_prompt = f"""Write an institutional, deeply cited comparative research article addressing the research mandate:
 "{query}"
 

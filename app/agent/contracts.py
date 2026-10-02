@@ -315,6 +315,35 @@ class ChannelCheckReport(BaseModel):
         }
 
 
+class MacroDirective(BaseModel):
+    """Institutional top-down macroeconomic regime and sector allocation directive."""
+
+    model_config = ConfigDict(extra="allow")
+
+    monetary_regime: str = "NEUTRAL"
+    yield_curve_regime: str = "FLAT"
+    fed_funds_rate: float | None = None
+    treasury_10y_yield: float | None = None
+    yield_spread_10y_2y: float | None = None
+    favored_sectors: list[str] = Field(default_factory=list)
+    unfavored_sectors: list[str] = Field(default_factory=list)
+    cio_macro_summary: str = ""
+    status: Literal["available", "insufficient_data"] = "insufficient_data"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize for state storage."""
+        return {
+            "monetary_regime": self.monetary_regime,
+            "yield_curve_regime": self.yield_curve_regime,
+            "fed_funds_rate": self.fed_funds_rate,
+            "treasury_10y_yield": self.treasury_10y_yield,
+            "yield_spread_10y_2y": self.yield_spread_10y_2y,
+            "favored_sectors": list(self.favored_sectors),
+            "unfavored_sectors": list(self.unfavored_sectors),
+            "cio_macro_summary": self.cio_macro_summary,
+            "status": self.status,
+        }
+
 
 def parse_llm_json_block(content: Any) -> dict[str, Any]:
     """Parse a model response into a JSON object, stripping markdown fences.

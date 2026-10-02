@@ -15,6 +15,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agent.adversarial import AdversarialReport
 from app.agent.bull import BullReport
+from app.agent.contracts import MacroDirective
 from app.agent.state import InvestigationState
 from app.market.metrics import compute_fractional_kelly
 
@@ -404,3 +405,123 @@ Deliberate as CIO, cite `upside_anchor_source` accurately in the required `ancho
         bear_floor=bear_floor,
     )
     return {"ic_verdict": verdict_obj}
+
+
+def run_macro_investment_committee(
+    state: InvestigationState,
+    model: Any,
+) -> dict[str, Any]:
+    """Execute top-down macroeconomic CIO deliberation and sector allocation directive.
+
+    Pulls FRED macro series (FEDFUNDS, DGS10, T10Y2Y, CPIAUCSL, UNRATE), classifies
+    monetary policy and yield curve regimes deterministically, and prompts the CIO
+    to synthesize sector tilts and duration risk guidance.
+    """
+    raw_macro = (
+        state.get("macro_series")
+        or state.get("capability_outputs", {}).get("macro_context", {}).get("macro_series", {})
+    )
+    if not isinstance(raw_macro, Mapping):
+        raw_macro = {}
+
+    def _val(key: str) -> float | None:
+        item = raw_macro.get(key)
+        if isinstance(item, Mapping):
+            v = item.get("latest_value") or item.get("value")
+        else:
+            v = item
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    fed_funds = _val("FEDFUNDS")
+    dgs10 = _val("DGS10")
+    spread_10y_2y = _val("T10Y2Y")
+    cpi = _val("CPIAUCSL")
+    unrate = _val("UNRATE")
+
+    # 1. Deterministic monetary regime
+    if fed_funds is not None and dgs10 is not None:
+        if fed_funds < 4.0:
+            monetary_regime = "ACCOMMODATIVE_EASING"
+        elif fed_funds > 5.0:
+            monetary_regime = "RESTRICTIVE_TIGHTENING"
+        else:
+            monetary_regime = "NEUTRAL_TRANSITION"
+    elif fed_funds is not None:
+        monetary_regime = "ACCOMMODATIVE_EASING" if fed_funds < 4.5 else "RESTRICTIVE_TIGHTENING"
+    else:
+        monetary_regime = "UNSPECIFIED_MACRO_REGIME"
+
+    # 2. Deterministic yield curve regime
+    if spread_10y_2y is not None:
+        if spread_10y_2y > 0.15:
+            yield_curve_regime = "BULL_STEEPENING"
+        elif spread_10y_2y < -0.05:
+            yield_curve_regime = "INVERTED_RECESSION_SIGNAL"
+        else:
+            yield_curve_regime = "FLAT_NORMALIZATION"
+    else:
+        yield_curve_regime = "UNSPECIFIED_YIELD_CURVE"
+
+    # 3. Model or rule-based sector allocation tilts
+    favored = ["Asset-Light Enterprise Monopolies", "High Free Cash Flow Duration Assets"]
+    unfavored = ["High-Debt Capital-Intensive Cyclicals", "Refinancing Cliff Hazards"]
+    cio_summary = (
+        f"The macro policy stance is currently {monetary_regime} with policy rates at "
+        f"{fed_funds if fed_funds is not None else 'N/A'}% and 10-year Treasury yields at {dgs10 if dgs10 is not None else 'N/A'}%. "
+        f"Yield curve geometry exhibits {yield_curve_regime}. Portfolio allocation tilts "
+        "toward high-margin businesses with positive net cash balances that are impervious "
+        "to elevated refinancing costs."
+    )
+
+    if model and (fed_funds is not None or dgs10 is not None or spread_10y_2y is not None):
+        macro_prompt = f"""# System Prompt: Chief Investment Officer Macroeconomic Strategist
+
+You are the Chief Investment Officer (CIO) of an elite multi-billion-dollar global macro hedge fund.
+Analyze the following macroeconomic indicators:
+- Federal Funds Rate (FEDFUNDS): {fed_funds}%
+- 10-Year Treasury Constant Maturity (DGS10): {dgs10}%
+- 10-Year minus 2-Year Treasury Spread (T10Y2Y): {spread_10y_2y} bps
+- CPI Level (CPIAUCSL): {cpi}
+- Unemployment Rate (UNRATE): {unrate}%
+- Core Research Query: {state.get('trigger', {}).get('query', 'Macro Analysis')}
+
+Synthesize the monetary policy cycle, yield curve dynamics, and asset allocation strategy.
+Return strictly valid JSON matching:
+{{
+  "favored_sectors": ["Sector 1", "Sector 2"],
+  "unfavored_sectors": ["Sector 1", "Sector 2"],
+  "cio_macro_summary": "3-4 sentence institutional macro deliberation and portfolio positioning directive."
+}}
+"""
+        try:
+            res = model.invoke([HumanMessage(content=macro_prompt)])
+            text = getattr(res, "content", "")
+            if text.startswith("```"):
+                text = text.split("```")[1]
+                if text.startswith("json"):
+                    text = text[4:].strip()
+            parsed = json.loads(text)
+            if parsed.get("favored_sectors"):
+                favored = list(parsed["favored_sectors"])
+            if parsed.get("unfavored_sectors"):
+                unfavored = list(parsed["unfavored_sectors"])
+            if parsed.get("cio_macro_summary"):
+                cio_summary = str(parsed["cio_macro_summary"])
+        except Exception as exc:
+            logger.debug("CIO macro model deliberation skipped/failed: %s", exc)
+
+    directive = MacroDirective(
+        monetary_regime=monetary_regime,
+        yield_curve_regime=yield_curve_regime,
+        fed_funds_rate=fed_funds,
+        treasury_10y_yield=dgs10,
+        yield_spread_10y_2y=spread_10y_2y,
+        favored_sectors=favored,
+        unfavored_sectors=unfavored,
+        cio_macro_summary=cio_summary,
+        status="available" if (fed_funds is not None or dgs10 is not None) else "insufficient_data",
+    )
+    return {"macro_directive": directive.to_dict()}

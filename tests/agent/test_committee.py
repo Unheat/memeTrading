@@ -186,3 +186,31 @@ def test_investment_committee_approves_via_bull_target_and_risk_budget():
     assert verdict.reward_to_risk_ratio == pytest.approx(3.33)
     assert verdict.kelly_position_size_pct > 0.0
     assert "HIGH CONVICTION" in verdict.conviction_tier
+
+
+def test_macro_investment_committee_derives_regimes_and_tilts():
+    """Verify top-down macro committee classifies regimes and sector tilts deterministically."""
+    from app.agent.committee import run_macro_investment_committee
+
+    req = ResearchRequest(query="Analyze Fed rate cuts and 10Y yields")
+    state = create_initial_state(req, case_id="case_macro_test")
+    state["macro_series"] = {
+        "FEDFUNDS": {"latest_value": 3.63},
+        "DGS10": {"latest_value": 5.26},
+        "T10Y2Y": {"latest_value": 0.32},
+        "CPIAUCSL": {"latest_value": 314.5},
+        "UNRATE": {"latest_value": 4.1},
+    }
+
+    res = run_macro_investment_committee(state, model=None)
+    assert "macro_directive" in res
+    directive = res["macro_directive"]
+    assert directive["status"] == "available"
+    assert directive["monetary_regime"] == "ACCOMMODATIVE_EASING"
+    assert directive["yield_curve_regime"] == "BULL_STEEPENING"
+    assert directive["fed_funds_rate"] == 3.63
+    assert directive["treasury_10y_yield"] == 5.26
+    assert directive["yield_spread_10y_2y"] == 0.32
+    assert len(directive["favored_sectors"]) > 0
+    assert len(directive["unfavored_sectors"]) > 0
+    assert "policy stance" in directive["cio_macro_summary"].lower()
