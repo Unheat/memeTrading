@@ -42,7 +42,7 @@ flowchart TD
 
         subgraph P_SYNTH["3. Structured Plan & Hypothesis Synthesis (generate_research_plan)"]
             direction TB
-            p_plan["<b>ResearchPlanSchema Generator</b><br/>• Decomposes query into 3-5 testable ResearchHypothesis items<br/>• Assigns evidence_tier: structured_quant, primary_regulatory, macro_series, open_web<br/>• CONSTRAINT: candidate_entities must come from the deterministic<br/>shortlist ∪ web discovery leads (wide net → narrow deep dive)<br/>• Sets scope (single vs multi-candidate) & execution budget ceiling (25 vs 50)"]
+            p_plan["<b>ResearchPlanSchema Generator</b><br/>• Decomposes query into 3-5 testable ResearchHypothesis items<br/>• Assigns evidence_tier: structured_quant, primary_regulatory, macro_series, channel_check_primary, open_web<br/>• CONSTRAINT: candidate_entities must come from the deterministic<br/>shortlist ∪ web discovery leads (wide net → narrow deep dive)<br/>• Sets scope (single vs multi-candidate) & execution budget ceiling (25 vs 50)"]
         end
 
         subgraph P_INIT["4. State & Workspace Hydration"]
@@ -113,6 +113,7 @@ flowchart TD
                 ENG_EXP["Expectations Analyst<br/>Deterministic reverse DCF & expectation-edge verdict"]
                 ENG_FOR["Forensic Accounting<br/>Full 8-Factor Beneish M-Score & Sloan Accruals"]
                 ENG_MOAT["Moat Analyst (7 Powers)<br/>rating + durability → dossier & CIO payload"]
+                ENG_CHAN["Channel Checks Specialist<br/>Point72 Concordance Matrix (Scuttlebutt receipts)"]
                 ENG_QNT["Stage 2: Deterministic Quant DCF & Triangulation<br/>calculator.mjs — consumes Stage-1 expectation_gap<br/>• Dynamic FRED DGS10 WACC & Blume Beta<br/>• CapEx Normalization & Hyper-Growth Regime<br/>• Multi-Method Triangulation (DCF + Multiples + P/TBV)"]
                 ENG_BULL["Bull Advocate<br/>catalysts + numeric bull_target_price (1 structured retry)"]
                 ENG_BEAR["Hostile Bear Red Team<br/>kill criteria + numeric bear_floor_price"]
@@ -120,6 +121,7 @@ flowchart TD
                 ENG_EXP --> ENG_QNT
                 ENG_FOR --> ENG_QNT
                 ENG_MOAT --> ENG_QNT
+                ENG_CHAN --> ENG_QNT
                 ENG_QNT --> ENG_BULL
                 ENG_QNT --> ENG_BEAR
             end
@@ -174,7 +176,7 @@ flowchart TD
             G_ACC --> G_VAL --> G_ASYM
         end
 
-        COMM["<b>4. Investment Committee (CIO Deliberation)</b><br/>• Single LLM deliberation on Bull vs Bear evidence<br/>• Anchor provenance enforced: upside_anchor_source / bear_anchor_source / anchor_citation<br/>• Tiered sizing: < 2.0x VALIDATION_WATCH → [2.0x, hurdle) PAPER_TRADE_WATCH<br/>→ ≥ hurdle quarter-Kelly (8% cap) → ≥ 5.0x half-Kelly (10% cap, clean reports only)"]:::gate
+        COMM["<b>4. Unified 3-Mandate Investment Committee (CIO Deliberation)</b><br/>• Single-Stock: Evaluates Bull vs Bear evidence, 3:1 asymmetry, & tiered Kelly sizing<br/>• Screening Winner Audit: Audits Candidate #1 for standalone risk/reward & limit price<br/>• Macro Strategy: Classifies FRED monetary & yield curve regimes; issues MacroDirective sector tilts"]:::gate
 
         G_EV --> PROMO --> GATES --> COMM
     end
@@ -186,7 +188,7 @@ flowchart TD
     %% Class assignments
     class S1,S2,S3,S4,S5 stage;
     class t_web,t_art,t_doc,t_soc,t_sec_fin,sec_list,sec_pull,sec_search,sec_chunk,sec_claim,sec_insider,t_mkt,t_co,t_own,t_macro,t_scr,t_reg,t_cmp,t_val,p_scr,p_web,p_art,p_soc tool;
-    class ENG_EXP,ENG_FOR,ENG_MOAT,ENG_QNT,ENG_BULL,ENG_BEAR,sec_sub_desc,p_eval,p_plan,p_seed engine;
+    class ENG_EXP,ENG_FOR,ENG_MOAT,ENG_CHAN,ENG_QNT,ENG_BULL,ENG_BEAR,sec_sub_desc,p_eval,p_plan,p_seed engine;
     class G_EV,G_ACC,G_VAL,G_ASYM,COMM,GATES gate;
     class PROMO read;
 ```
@@ -197,11 +199,13 @@ flowchart TD
 
 | Analysis Component | Stage 2 (The Analyst Workbench) | Stage 5 (The Boardroom Committee) |
 |---|---|---|
-| **Heavy Modeling & Sub-Agents** | Runs per-candidate on demand via `conduct_candidate_diligence(ticker)`: Quant DCF (with dynamic FRED WACC, CapEx normalization, and Multi-Method Triangulation), Forensics, Moat, Bull Advocate, and Bear Red Team. Or commands the `investigate_sec` analyst sub-agent for deep filing retrieval. | **Zero engine execution.** It never spins up sub-agents or re-runs models. |
-| **Candidate Selection** | Dynamically screens candidates quantitatively (`screen_stocks`), registers workspaces (`register_candidate`), declares early vetoes (`status='vetoed'`), and builds cross-candidate comparison matrices (`compare_candidates`). | Promotes the **winning candidate's dossier** into state (prioritizing the highest asymmetric reward-to-risk ratio). |
+| **Heavy Modeling & Sub-Agents** | Runs per-candidate on demand via `conduct_candidate_diligence(ticker)`: Quant DCF (with dynamic FRED WACC, CapEx normalization, and Multi-Method Triangulation), Forensics, Moat, Channel Checks (Scuttlebutt), Bull Advocate, and Bear Red Team. Or commands the `investigate_sec` analyst sub-agent for deep filing retrieval. | **Zero engine execution.** It never spins up sub-agents or re-runs models. |
+| **Candidate Selection & Screening** | Dynamically screens candidates quantitatively (`screen_stocks`), registers workspaces (`register_candidate`), declares early vetoes (`status='vetoed'`), and builds cross-candidate comparison matrices (`compare_candidates`). | Promotes the **winning candidate's dossier (#1)** into state, auditing its standalone risk/reward and calculating actionable limit order prices (`top_candidate_ticker`). |
 | **Evidence & Compliance** | Commands `investigate_sec` to auto-discover, pull, chunk, and cite 10-K/10-Qs; verifies rumors via `verify_sec_claim`. | Evaluates the **Evidence Gate (G1)**: ensures primary SEC citations and market context exist before voting. |
-| **Audit Gates** | Collects raw metrics (deterministic Reverse DCF implied growth, Beneish M-Score, Bear floor, Multi-method divergence flag). | Runs **instant mathematical checks**: Accounting Gate (G2), Valuation Gate (G3), and Asymmetry Gate (G4 $\ge$ the configured `asymmetry_hurdle`, profile-selected, default 3.0x). |
+| **Scuttlebutt Channel Checks** | Extracts ground-truth channel receipts (developer velocity, retail stockouts, spot-vs-contract spreads, operator chatter); builds Point72 concordance matrix. | Synthesizes **3-Way Expectation Arbitrage**: compares channel momentum ($g_{\text{channel}}$) against reverse DCF implied growth ($g_{\text{implied}}$) and consensus ($g_{\text{consensus}}$). |
+| **Audit Gates** | Collects raw metrics (deterministic Reverse DCF implied growth, Beneish M-Score, Bear floor, Multi-method divergence flag). | Runs **instant mathematical checks**: Accounting Gate (G2), Valuation Gate (G3), and Asymmetry Gate (G4 $\ge$ the configured `asymmetry_hurdle`, default 3.0x). |
 | **Capital Allocation & Sizing** | Formulates thesis, numeric bull target price, and downside floor prices (both debate anchors are validated; missing anchors degrade the report and fall back to labeled Street/DCF anchors). | The **Chief Investment Officer (CIO)** conducts a single formal deliberation with enforced anchor provenance, assigns conviction tier, and sizes via **tiered Fractional Kelly**: near-miss ratios land in a zero-capital `PAPER_TRADE_WATCH` queue for calibration. |
+| **Macro / Thematic Regimes** | Collects macroeconomic time-series from FRED (`FEDFUNDS`, `DGS10`, `T10Y2Y`, `CPIAUCSL`, `UNRATE`) via `get_macro_context`. | In pure top-down investigations, CIO issues a **`MacroDirective`**: classifies policy stance, yield curve slopes, and sector overweight/underweight tilts. |
 
 ---
 
@@ -285,4 +289,23 @@ Model-authored numbers that describe market pricing are deterministic-only (`app
 Position sizing is config-driven (`ResearchConfig`: `mandate_style`, `asymmetry_hurdle`, `half_kelly_ratio`, `paper_trade_ratio`) and injected into the committee via `budget_state`:
 1. **Mandate-Style Hurdle Profiles**: `deep_value = 3.0x`, `compounder = 2.0x`, `momo = 4.0x` — an explicit override always wins.
 2. **Tiered Allocation**: ratio $< 2.0\times$ → `VALIDATION_WATCH` (zero capital); $[2.0\times, \text{hurdle})$ → `PAPER_TRADE_WATCH` (decision recorded, zero capital, kept for calibration); $\ge$ hurdle → **quarter-Kelly** (8% single-name cap); $\ge 5.0\times$ with fully available debate reports → **half-Kelly** (10% cap).
-3. **Backtest Scorer (`tools/backtest_score.py`)**: grades persisted decisions against forward 3/6/12-month returns via an injectable price provider — per-bucket hit rate, average forward return, predicted upside, and calibration error — closing the empirical loop on the hurdle and win-probability assumptions.
+    3. **Backtest Scorer (`tools/backtest_score.py`)**: grades persisted decisions against forward 3/6/12-month returns via an injectable price provider — per-bucket hit rate, average forward return, predicted upside, and calibration error — closing the empirical loop on the hurdle and win-probability assumptions.
+
+### 3.9 Philip Fisher Scuttlebutt & 3-Way Expectation Arbitrage Engine
+Institutional equity research cannot rely exclusively on SEC filings because regulatory statements lag ground reality by 45 to 90 days. `app/agent/specialists.py::run_channel_check_analysis` integrates Philip Fisher's scuttlebutt method and institutional alternative data frameworks (Point72 Canvas, Coatue, YipitData):
+1. **Auditable Channel Receipts (`ChannelCheckReceipt`)**: Records granular, non-financial observations (developer package velocity, distributor lead times, retail stockouts, spot-vs-contract spreads, sysadmin churn chatter). Under Mosaic Theory (*Dirks v. SEC*), non-material public observations are assembled into an investment mosaic without soliciting Material Non-Public Information (MNPI).
+2. **Deterministic Concordance Matrix**: Tabulates independent directional receipts:
+   - $B$: Count of bullish inflection receipts.
+   - $S$: Count of bearish inflection receipts.
+   - $D = \min(B, S)$: Measures signal discordance.
+   - **Classification Rules**:
+     * $B \ge 2 \text{ and } S = 0 \implies \text{CHANNEL\_ACCELERATION}$
+     * $S \ge 2 \text{ and } B = 0 \implies \text{CHANNEL\_BREAKDOWN}$
+     * $B \ge 1 \text{ and } S \ge 1 \implies \text{MIXED\_CHANNEL}$
+     * Total receipts $< 2 \implies \text{INSUFFICIENT\_CHANNEL\_DATA}$
+3. **3-Way Expectation Arbitrage Synthesis**: Synthesizes three institutional pillars in `memo.md` via `_arbitrage_block()`:
+   - **Leading Indicator**: Ground-truth channel-implied momentum ($g_{\text{channel}}$).
+   - **Market Benchmark**: Reverse DCF market-implied growth ($g_{\text{implied}}$) and consensus growth ($g_{\text{consensus}}$).
+   - **Solvency Gate**: Forensic SEC accounting execution (Beneish M-Score $< -1.78$, Sloan accruals $< 8\%$).
+   $$\Delta_{\text{arbitrage}} = g_{\text{channel}} - \max(g_{\text{implied}}, g_{\text{consensus}})$$
+   Surfaces true expectation arbitrage before quarterly prints confirm the trend.

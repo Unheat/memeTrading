@@ -149,10 +149,10 @@ Discovery, Screening & Market Data  investigate_sec()           conduct_candidat
 1. Spawns an isolated synthetic state for the target candidate.
 2. Automatically pulls missing market data or SEC financials.
 3. Executes a **3-stage dependency-safe thread pipeline** (outer dossier contract unchanged):
-   - **Stage 1 (parallel)**: `run_expectations_analyst()` from [`expectations.py:310`](../app/agent/expectations.py:310) (deterministic reverse DCF & expectation gap), `run_forensic_analysis()` from [`specialists.py:203`](../app/agent/specialists.py:203) (Beneish M-Score & forensics), and `run_moat_analysis()` from [`specialists.py:322`](../app/agent/specialists.py:322) (economic moat rating) run concurrently with exception shielding.
+   - **Stage 1 (parallel)**: `run_expectations_analyst()` from [`expectations.py:310`](../app/agent/expectations.py:310) (deterministic reverse DCF & expectation gap), `run_forensic_analysis()` from [`specialists.py:203`](../app/agent/specialists.py:203) (Beneish M-Score & forensics), `run_moat_analysis()` from [`specialists.py:322`](../app/agent/specialists.py:322) (economic moat rating), and `run_channel_check_analysis()` from [`specialists.py:488`](../app/agent/specialists.py:488) (Scuttlebutt receipts & Point72 concordance matrix) run concurrently with exception shielding.
    - **Stage 2 (synchronous)**: `run_quant_analysis()` from [`specialists.py:427`](../app/agent/specialists.py:427) (deterministic DCF & valuation) consumes Stage 1's `expectation_gap` assumptions.
    - **Stage 3 (parallel)**: `run_bull_advocate()` from [`bull.py`](../app/agent/bull.py) (catalysts & numeric target with one structured retry) and `run_adversarial_red_team()` from [`adversarial.py`](../app/agent/adversarial.py) (kill criteria & bear floor) run air-gapped and concurrently.
-4. `build_diligence_dossier()` ([`diligence.py:154`](../app/agent/diligence.py:154)) packages the results into the standardized `diligence_dossier` dictionary and saves it onto the candidate workspace. The dossier additionally carries `bull_target_price`, per-report honest statuses (`bull_report_status` / `bear_report_status`), and the full `moat_report` so the committee deliberates on every specialist's work.
+4. `build_diligence_dossier()` ([`diligence.py:154`](../app/agent/diligence.py:154)) packages the results into the standardized `diligence_dossier` dictionary and saves it onto the candidate workspace. The dossier additionally carries `bull_target_price`, per-report honest statuses (`bull_report_status` / `bear_report_status`), `channel_check_report`, and the full `moat_report` so the committee deliberates on every specialist's work.
 
 ---
 
@@ -213,11 +213,14 @@ Discovery, Screening & Market Data  investigate_sec()           conduct_candidat
 
 #### Execution Flow
 1. **Evidence Gate (G1)**: `evaluate_research_completeness()` verifies that primary SEC filings, real-time market data, and required candidate workspaces exist. If G1 fails and the user requested an investment position, execution halts immediately without issuing an ungrounded recommendation.
-2. **Candidate Promotion**: In single-stock mode or after peer ranking, `diligence_node` selects the winning candidate (prioritizing the highest asymmetric reward-to-risk ratio) and promotes its dossier (DCF fair value, Bull catalysts & numeric target, Bear kill criteria & floor, Beneish verdict, full moat report) into top-level state variables.
+2. **Unified 3-Mandate Routing**:
+   - **Top-Down Macro / Thematic**: If the query is macroeconomic or thematic with zero equity candidates (`candidates={}`), `diligence_node` calls `run_macro_investment_committee()`, deterministically classifying monetary policy and yield curve regimes from FRED data, and generating a `MacroDirective` with sector tilts.
+   - **Cross-Sectional Screening**: In multi-candidate screening mode, workspaces are preserved for cross-peer comparison, and Candidate #1 (the Top Pick by reward-to-risk ratio) is promoted to `top_candidate_ticker` for standalone CIO audit.
+   - **Bottom-Up Single Stock**: The single candidate dossier (DCF fair value, Bull catalysts & numeric target, Bear kill criteria & floor, Beneish verdict, full moat report, and channel check report) is promoted into top-level state variables.
 3. **Governance Gates (Instant Deterministic Math)**:
    - **Accounting Gate (G2)**: `evaluate_accounting_gate()` checks the Beneish M-Score ($M \le -1.78$).
    - **Valuation Gate (G3)**: `evaluate_valuation_gate()` verifies calculator reproducibility and reasonable growth hurdles.
-   - **Asymmetry Gate (G4)**: `evaluate_asymmetry_gate()` enforces the reward-to-risk hurdle from the deterministic DCF risk/reward (the committee applies the configured `asymmetry_hurdle`, profile-selected, default $3.0\times$).
+   - **Asymmetry Gate (G4)**: `evaluate_asymmetry_gate()` enforces the reward-to-risk hurdle from the deterministic DCF risk/reward (the committee applies the configured `asymmetry_hurdle`, default $3.0\times$). Data integrity failures (`validation_required`) are strictly separated from disciplined strategic PASS / watchlist conclusions (`fails_asymmetric_hurdle` with actionable limit order guidance).
 4. **Investment Committee Deliberation**: `run_investment_committee()` ([`committee.py:154`](../app/agent/committee.py:154)) runs a single formal CIO deliberation using `CIO_SYSTEM_PROMPT`. It:
    - Synthesizes Bull upside catalysts versus Bear kill criteria with **enforced anchor provenance**: the payload separates `upside_anchor` (source: `consensus_mean` / `quant_fair_value` / `bull_target_price` / `consensus_high_fallback`) from `dcf_base_fair_value`, records `bear_anchor_source` (`red_team_bear_floor` / `dcf_low_fallback`), and the CIO must cite the anchor source accurately in `anchor_citation`.
    - Enforces the strict "Passing Discipline" (rejecting cyclical peak multiples, commoditized capex traps, or excessive debt).
@@ -262,6 +265,7 @@ The remaining modules in `app/agent/` provide the runtime, state, and serializat
 | `app/agent/expectations.py` | `run_expectations_analyst` | Stage 2 Sub-Agent | `run_candidate_diligence` | `expectation_gap` analysis |
 | `app/agent/specialists.py` | `run_forensic_analysis` | Stage 2 Sub-Agent | `run_candidate_diligence` | `forensic_report` (Beneish M-Score, Sloan) |
 | `app/agent/specialists.py` | `run_moat_analysis` | Stage 2 Sub-Agent | `run_candidate_diligence` | `moat_report` (7 Powers assessment) |
+| `app/agent/specialists.py` | `run_channel_check_analysis` | Stage 2 Sub-Agent | `run_candidate_diligence` | `channel_check_report` (Concordance matrix) |
 | `app/agent/specialists.py` | `run_quant_analysis` | Stage 2 Sub-Agent / Tool | `run_candidate_diligence`, `evaluate_valuation` | `quant_report` (DCF, WACC, Triangulation) |
 | `app/valuation/calculator.mjs` | `compute` | Stage 2 Engine | `run_quant_analysis` via `engine.py` | Fair value range, Triangulation, Reverse DCF |
 | `app/agent/bull.py` | `run_bull_advocate` | Stage 2 Sub-Agent | `run_candidate_diligence` | `bull_report` (Catalysts, upside target) |
@@ -278,5 +282,6 @@ The remaining modules in `app/agent/` provide the runtime, state, and serializat
 | `app/agent/gate.py` | `evaluate_valuation_gate` | Stage 5 (`diligence`) | `diligence_node` | `valuation_gate` (G3) |
 | `app/agent/gate.py` | `evaluate_asymmetry_gate` | Stage 5 (`diligence`) | `diligence_node` | `asymmetry_gate` (G4) |
 | `app/agent/committee.py` | `run_investment_committee` | Stage 5 (`diligence`) | `diligence_node` | `ic_verdict`, `investment_committee` |
+| `app/agent/committee.py` | `run_macro_investment_committee` | Stage 5 (`diligence`) | `diligence_node` (macro) | `macro_directive` (monetary & yield curve tilts) |
 | `app/agent/memo.py` | `render_research_report` | Output Generation | Runner after graph finishes | Comprehensive Markdown research memo |
 | `app/agent/runner.py` | `run_investigation` | Top-level Orchestrator | CLI / Web Studio / Automation | Executes graph from `START` to `END` |

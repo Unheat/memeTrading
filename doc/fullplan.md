@@ -500,6 +500,11 @@ class InvestigationState(TypedDict):
     accounting_gate: dict[str, Any]
     valuation_gate: dict[str, Any]
     asymmetry_gate: dict[str, Any]
+    channel_check_report: dict[str, Any] | None
+    channel_check_receipts: list[dict[str, Any]]
+    macro_directive: dict[str, Any] | None
+    macro_series: dict[str, Any] | None
+    top_candidate_ticker: str | None
 ```
 
 ### Three-Tier State Architecture

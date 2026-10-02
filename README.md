@@ -9,7 +9,7 @@
 [![LangGraph DAG](https://img.shields.io/badge/Orchestration-LangGraph%20Gated%20DAG-FF6F00.svg?style=flat-square&logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
 [![SEC EDGAR Audited](https://img.shields.io/badge/Compliance-SEC%20EDGAR%20Audited-008080.svg?style=flat-square&logo=safari&logoColor=white)](app/sec/)
 [![Reverse DCF](https://img.shields.io/badge/Valuation-Reverse%20DCF%20(Mauboussin)-7C3AED.svg?style=flat-square)](app/valuation/)
-[![Deterministic Gates](https://img.shields.io/badge/Quality-450%2B%20Unit%20Tests%20Passing-10B981.svg?style=flat-square&logo=pytest&logoColor=white)](tests/)
+[![Deterministic Gates](https://img.shields.io/badge/Quality-510%2B%20Unit%20Tests%20Passing-10B981.svg?style=flat-square&logo=pytest&logoColor=white)](tests/)
 
 <br/>
 
@@ -45,13 +45,14 @@ grassroots demand signal (Reddit, forums, news)
 ```
 
 - 🔍 **Immutable SEC Evidence Ledger:** Every material revenue, inventory, and margin claim is anchored in official SEC EDGAR filings (`10-K`, `10-Q`, `8-K`) with exact accession numbers and disk receipts. Zero hallucinations.
+- 📡 **Philip Fisher Scuttlebutt & Channel Checks:** Audits ground-truth leading indicators (developer commit velocity, distributor stockouts, spot-vs-contract spreads, operator chatter) into Point72 concordance matrices and 3-way Expectation Arbitrage.
 - 📊 **Keyless Quantitative Equity Screener:** Instant factor-based and Wall Street preset screening across US exchanges (market cap, P/E multiples, revenue growth) with zero paid API keys or third-party subscriptions.
 - 📉 **Reverse DCF (Expectations Investing):** Instead of guessing future stock prices, the engine solves the discounted cash flow equation backwards: what cash-flow growth rate and ROIC is the current share price pricing in?
 - 🛡️ **Forensic Accounting Shields:** Automatically computes the **Beneish M-Score** (manipulation risk), **Sloan Accrual Ratio** (earnings quality), and **Days of Inventory Outstanding (DIO)** drift to catch cyclical tops early.
-- 🏛️ **Deterministic Committee Boardroom:** Enforces a 4-tier decision gate (Evidence, Accounting, Valuation, and Asymmetry $\ge 3.0\times$) paired with single-pass Chief Investment Officer (CIO) deliberation and **Fractional Kelly Criterion** position sizing.
+- 🏛️ **Unified 3-Mandate CIO Governance:** Enforces institutional capital governance across single-stock 3:1 asymmetry & fractional Kelly sizing, screening winner audits with actionable limit order prices, and top-down macroeconomic regimes (FRED rates, yield curve slopes, sector tilts).
 - ⏱️ **Point-in-Time (PIT) Integrity:** Supports historical cutoff dates (`--as-of YYYY-MM-DD`) that strictly discard future filings and drop undated web content to eliminate lookahead bias during backtests.
 - 🎬 **Dual Deliverables Engine:** Emits both exhaustive institutional investment memos (`memo.md`) and viral video reel packages (`faceless/dialogue.json`) featuring animated character duos like Peter & Stewie or Rick & Morty.
-- 🌐 **Edge-Deployed Forensic Portal (`web/`):** Zero-cost Cloudflare Pages / Workers static website with interactive citation popovers (`[1]`, `[2]`), embedded 9:16 vertical video player (YouTube/R2), and client-side Pagefind search.
+- 📰 **Wall Street Journal Editorial Portal (`web/`):** Distraction-free broadsheet editorial design (Newsreader serif, hairline borders, inline metadata middots, and interactive citation popovers) with zero duplicate bibliographies.
 - 🎛️ **Local Operator Studio (`python main.py --studio`):** Visual browser dashboard to run investigations, review articles, render reels, and 1-click publish without memorizing CLI arguments.
 
 ---
