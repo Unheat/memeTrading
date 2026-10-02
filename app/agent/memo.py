@@ -281,7 +281,7 @@ def render_forensic_memo(state: InvestigationState, final_text: str) -> str:
     company = state.get("company") or "N/A"
     gate = state.get("evidence_gate") or {}
     if state.get("status") in {"insufficient_evidence", "validation_required"}:
-        failed_gate = next((item for item in (state.get("asymmetry_gate"), state.get("valuation_gate"), state.get("accounting_gate"), gate) if item and not item.get("passed", False)), {})
+        failed_gate = next((item for item in (state.get("valuation_gate"), state.get("accounting_gate"), gate) if item and not item.get("passed", False)), {})
         missing = failed_gate.get("missing_evidence") or [failed_gate.get("reason", "required evidence is unavailable")]
         missing_items = "\n".join(f"- {item}" for item in missing)
         return f"""# Research Incomplete: ${ticker}

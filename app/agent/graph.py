@@ -838,6 +838,9 @@ def create_research_graph(
             if not state.get("expectation_gap") and (dossier.get("expectation_gap") or chosen_candidate.get("expectation_gap")):
                 updates["expectation_gap"] = dossier.get("expectation_gap") or chosen_candidate.get("expectation_gap")
 
+            if not state.get("channel_check_report") and (dossier.get("channel_check_report") or chosen_candidate.get("channel_check_report")):
+                updates["channel_check_report"] = dossier.get("channel_check_report") or chosen_candidate.get("channel_check_report")
+
         # Only run single-stock gate checks and committee deliberation if not multi-candidate or single candidate
         if ticker and ticker != "UNKNOWN" and (not is_multi_candidate or len(candidates) == 1):
             st = {**state, **updates}
@@ -850,6 +853,8 @@ def create_research_graph(
                     st["consensus_snapshot"] = chosen_candidate["consensus_snapshot"]
                 if not st.get("expectation_gap") and chosen_candidate.get("expectation_gap"):
                     st["expectation_gap"] = chosen_candidate["expectation_gap"]
+                if not st.get("channel_check_report") and (chosen_candidate.get("channel_check_report") or dossier.get("channel_check_report")):
+                    st["channel_check_report"] = chosen_candidate.get("channel_check_report") or dossier.get("channel_check_report")
             updates["accounting_gate"] = evaluate_accounting_gate(st)
             updates["valuation_gate"] = evaluate_valuation_gate(st)
             updates["asymmetry_gate"] = evaluate_asymmetry_gate(st)
@@ -865,7 +870,6 @@ def create_research_graph(
             if (
                 updates["accounting_gate"].get("passed") is False
                 or updates["valuation_gate"].get("passed") is False
-                or updates["asymmetry_gate"].get("passed") is False
             ):
                 if (state.get("research_intent") or {}).get("requested_position_decision"):
                     updates["status"] = "validation_required"

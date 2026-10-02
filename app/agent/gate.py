@@ -151,8 +151,10 @@ def evaluate_valuation_gate(state: Mapping[str, Any]) -> dict[str, Any]:
     """Evaluate G3 reproducibility for the deterministic quant report."""
     report = state.get("quant_report") or {}
     verification = report.get("reproducibility") or {}
-    result = verification.get("result") if verification.get("status") == "ok" else {}
-    passed = report.get("status") == "available" and result.get("verdict") == "pass"
+    verdict = verification.get("verdict")
+    if not verdict and verification.get("status") == "ok":
+        verdict = (verification.get("result") or {}).get("verdict")
+    passed = report.get("status") == "available" and str(verdict or "").lower() == "pass"
     return {"passed": passed, "status": "ready_for_debate" if passed else "validation_required", "reason": None if passed else report.get("reason", "valuation is not reproducible")}
 
 
@@ -161,7 +163,7 @@ def evaluate_asymmetry_gate(state: Mapping[str, Any]) -> dict[str, Any]:
     valuation = ((state.get("quant_report") or {}).get("valuation") or {})
     risk = valuation.get("asymmetric_risk_reward") or {}
     passed = bool(risk.get("qualifies_3_to_1"))
-    return {"passed": passed, "status": "ready_for_committee" if passed else "validation_required", "reason": None if passed else "source-backed low/base valuation does not clear 3:1"}
+    return {"passed": passed, "status": "ready_for_committee" if passed else "fails_asymmetric_hurdle", "reason": None if passed else "source-backed low/base valuation does not clear 3:1"}
 
 
 PUBLICATION_BLOCKED_RESEARCH_STATUSES = frozenset({
@@ -193,7 +195,7 @@ def evaluate_publication_readiness(
 
     intent = state.get("research_intent") or {}
     if intent.get("requested_position_decision"):
-        for gate_name in ("evidence_gate", "accounting_gate", "valuation_gate", "asymmetry_gate"):
+        for gate_name in ("evidence_gate", "accounting_gate", "valuation_gate"):
             gate = state.get(gate_name) or {}
             if not isinstance(gate, Mapping) or not gate.get("passed", False):
                 reasons.append(f"{gate_name} did not pass")
