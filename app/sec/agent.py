@@ -36,7 +36,7 @@ Your mission is to read official SEC EDGAR disclosures (10-K, 10-Q, 8-K, Form 4)
 You have access to specialist SEC tools:
 - list_filings: Query SEC EDGAR catalog for available 10-K, 10-Q, 8-K filings.
 - pull_filing: Download and immediately index a selected filing into your local vector corpus.
-- search_corpus: Hybrid semantic (dense FAISS) + lexical (sparse BM25) search with RRF reranking over the candidate's SEC corpus.
+- search_corpus: Hybrid semantic (dense FAISS) + lexical (sparse BM25) search with RRF reranking over the candidate's SEC corpus. Optionally target one filing section (e.g. section="Item 7" for MD&A, "Item 1A" for Risk Factors, "Item 8" for Financial Statements).
 - read_chunk: Read verbatim chunks with context when you need to inspect footnotes, schedules, or tables.
 - verify_claim: Test a specific factual claim against filings.
 - get_ownership_and_insider_activity: Audit Form 4 insider trading (buys, sales, 10b5-1 plans).
@@ -145,8 +145,12 @@ def create_sec_subagent_tools(
             return json.dumps({"status": "error", "message": f"pull_filing failed: {exc}"})
 
     @tool
-    def search_corpus(query: str, top_k: int = 5) -> str:
-        """Run hybrid FAISS dense + BM25 sparse search over the candidate's indexed SEC filings."""
+    def search_corpus(query: str, section: str | None = None, top_k: int = 5) -> str:
+        """Run hybrid FAISS dense + BM25 sparse search over the candidate's indexed SEC filings.
+
+        Optionally restrict the search to one filing section (e.g. "Item 7", "Item 1A",
+        "Item 8", "Item 1.01"); labels match case-insensitively by word boundary.
+        """
         try:
             index_file = case_dir / "sec" / "index" / "sec.faiss"
             raw_dir = case_dir / "sec" / "documents"
@@ -164,10 +168,12 @@ def create_sec_subagent_tools(
                     })
 
             embed_query = get_sec_query_embedder()
-            retrieval = search_sec_corpus(case_dir, query, embed_query=embed_query)
+            retrieval = search_sec_corpus(case_dir, query, embed_query=embed_query, section_filter=section)
             if retrieval.error:
                 return json.dumps({"status": "error", "code": retrieval.error.code, "message": retrieval.error.message})
             if not retrieval.results:
+                if section:
+                    return json.dumps({"status": "ok", "results": [], "message": f"No matching content in section '{section}' for query: '{query}'. Try a different section or omit the section filter."})
                 return json.dumps({"status": "ok", "results": [], "message": f"No matching sections found for query: '{query}'"})
 
             items = []
@@ -180,6 +186,7 @@ def create_sec_subagent_tools(
                     "filing_date": str(chunk.filing_date),
                     "accession": chunk.accession,
                     "document": chunk.document_name,
+                    "section": chunk.section,
                     "source_url": chunk.source_url,
                     "quote": chunk.text[:1500],
                     "score": round(float(score_val), 4),

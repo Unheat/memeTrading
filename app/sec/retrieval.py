@@ -8,6 +8,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import tempfile
 from typing import Any, Literal
 
@@ -20,6 +21,9 @@ MAX_QUERY_CHARACTERS = 2000
 MAX_CANDIDATES = 10
 DEFAULT_TOP_K = 5
 RRF_DENOMINATOR = 60
+# Dense/sparse candidate pools are widened by this factor when a section filter is
+# active, so the fused candidate set stays populated after section matching.
+SECTION_FILTER_CANDIDATE_MULTIPLIER = 4
 INDEX_FILENAME = "sec.faiss"
 INDEX_MANIFEST_FILENAME = "sec-index-manifest.json"
 CHUNKS_FILENAME = "chunks.jsonl"
@@ -82,19 +86,26 @@ class RetrievedSecChunk:
 
 @dataclass(frozen=True)
 class RetrievalResult:
-    """Retrieved SEC evidence candidates or safe failure."""
+    """Retrieved SEC evidence candidates or safe failure.
+
+    Attributes:
+        results: Ranked chunks on success; empty when a section filter matched
+            no indexed chunk or the corpus has no evidence for the query.
+        error: Safe failure details, or `None` on success.
+    """
+
     results: tuple[RetrievedSecChunk, ...] = ()
     error: RetrievalError | None = None
 
     def __post_init__(self) -> None:
-        """Require one result branch.
+        """Require a failure to carry no partial results.
 
         Args: None.
         Returns: None.
-        Raises: ValueError: If branches are ambiguous.
+        Raises: ValueError: If a failed result also includes chunks.
         """
-        if (not self.results) == (self.error is None):
-            raise ValueError("retrieval result is invalid")
+        if self.error is not None and self.results:
+            raise ValueError("failed retrieval result must not include chunks")
 
 
 def _failure(code: RetrievalError.code, message: str, retryable: bool) -> RetrievalError:
@@ -109,6 +120,47 @@ def _failure(code: RetrievalError.code, message: str, retryable: bool) -> Retrie
         Validated error object.
     """
     return RetrievalError(code, message, retryable)
+
+
+def _normalize_section_filter(section_filter: str | Sequence[str] | None) -> tuple[str, ...] | None:
+    """Normalize an optional section filter into lowercase match labels.
+
+    Args:
+        section_filter: One section label, a sequence of labels, or `None`.
+
+    Returns:
+        Lowercase stripped labels, or `None` when no filter was supplied.
+
+    Raises:
+        ValueError: If the filter is not a string or non-empty string sequence.
+    """
+    if section_filter is None:
+        return None
+    values = (section_filter,) if isinstance(section_filter, str) else tuple(section_filter)
+    if not values:
+        return None
+    normalized: list[str] = []
+    for value in values:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("section filter labels must be non-empty strings")
+        normalized.append(value.strip().lower())
+    return tuple(normalized)
+
+
+def _section_matcher(allowed: tuple[str, ...]) -> re.Pattern[str]:
+    """Compile a word-boundary matcher for normalized section labels.
+
+    Word boundaries keep `"Item 1"` from matching `"Item 1A"` while still
+    matching labels embedded in longer titles such as `"Item 7 - MD&A"`.
+
+    Args:
+        allowed: Lowercase section labels from `_normalize_section_filter`.
+
+    Returns:
+        Compiled case-insensitive alternation pattern.
+    """
+    alternatives = "|".join(rf"\b{re.escape(label)}\b" for label in allowed)
+    return re.compile(alternatives)
 
 
 def _paths(directory: Path) -> tuple[Path, Path, Path, Path]:
@@ -259,7 +311,14 @@ def build_sec_index(case_directory: Path, embedder: Callable[[list[str]], Sequen
         return IndexBuildResult(error=_failure("CORRUPT_INDEX", "Local SEC index could not be built.", False))
 
 
-def search_sec_corpus(case_directory: Path, query: str, embed_query: Callable[[str], Sequence[float]], reranker: Callable[[str, Sequence[CorpusChunk]], Sequence[tuple[str, float]]] | None = None, top_k: int = DEFAULT_TOP_K) -> RetrievalResult:
+def search_sec_corpus(
+    case_directory: Path,
+    query: str,
+    embed_query: Callable[[str], Sequence[float]],
+    reranker: Callable[[str, Sequence[CorpusChunk]], Sequence[tuple[str, float]]] | None = None,
+    top_k: int = DEFAULT_TOP_K,
+    section_filter: str | Sequence[str] | None = None,
+) -> RetrievalResult:
     """Search one local SEC corpus with dense, BM25, RRF, and optional reranking.
 
     Args:
@@ -268,12 +327,19 @@ def search_sec_corpus(case_directory: Path, query: str, embed_query: Callable[[s
         embed_query: Injected local query-to-vector callable.
         reranker: Optional local candidate scorer returning chunk-ID score pairs.
         top_k: Maximum final candidate count.
+        section_filter: Optional section label or labels restricting candidates to
+            matching indexed sections (word-boundary, case-insensitive match).
 
     Returns:
-        Receipt-preserving ranked chunks or safe retrieval failure.
+        Receipt-preserving ranked chunks or safe retrieval failure. A filter that
+        matches no indexed section yields an empty success result.
     """
     if not isinstance(query, str) or not query.strip() or len(query) > MAX_QUERY_CHARACTERS or not isinstance(top_k, int) or top_k < 1:
         return RetrievalResult(error=_failure("INVALID_INPUT", "Retrieval query or result limit is invalid.", False))
+    try:
+        allowed_sections = _normalize_section_filter(section_filter)
+    except (TypeError, ValueError):
+        return RetrievalResult(error=_failure("INVALID_INPUT", "Section filter is invalid.", False))
     try:
         directory = Path(case_directory)
         chunks, preparation = _load_chunks(directory)
@@ -287,11 +353,30 @@ def search_sec_corpus(case_directory: Path, query: str, embed_query: Callable[[s
         query_vector = _vectors([embed_query(query)], 1)
         if query_vector.shape[1] != metadata["dimension"]:
             return RetrievalResult(error=_failure("INVALID_VECTOR", "Query vector dimension is invalid.", False))
-        candidate_count = min(MAX_CANDIDATES, len(chunks))
+        matching_ids: set[int] | None = None
+        if allowed_sections is not None:
+            pattern = _section_matcher(allowed_sections)
+            matching_ids = {
+                position
+                for position, chunk in enumerate(chunks)
+                if chunk.section and pattern.search(chunk.section.strip().lower())
+            }
+            if not matching_ids:
+                return RetrievalResult(results=())
+        if matching_ids is None:
+            candidate_count = min(MAX_CANDIDATES, len(chunks))
+        else:
+            candidate_count = min(len(chunks), MAX_CANDIDATES * SECTION_FILTER_CANDIDATE_MULTIPLIER)
         _, dense_matrix = index.search(query_vector, candidate_count)
         dense_ids = [int(value) for value in dense_matrix[0] if 0 <= int(value) < len(chunks)]
+        if matching_ids is not None:
+            dense_ids = [value for value in dense_ids if value in matching_ids]
         bm25 = BM25Okapi([chunk.text.lower().split() for chunk in chunks])
-        sparse_ids = list(np.argsort(bm25.get_scores(query.lower().split()))[::-1][:candidate_count])
+        sparse_order = [int(value) for value in np.argsort(bm25.get_scores(query.lower().split()))[::-1]]
+        if matching_ids is None:
+            sparse_ids = sparse_order[:candidate_count]
+        else:
+            sparse_ids = [value for value in sparse_order if value in matching_ids][:candidate_count]
         ranks: dict[int, list[int | None]] = {}
         scores: dict[int, float] = {}
         for rank, chunk_id in enumerate(dense_ids, start=1):
@@ -325,6 +410,7 @@ def search_candidate_sec_corpus(
     embed_query: Callable[[str], Sequence[float]],
     reranker: Callable[[str, Sequence[CorpusChunk]], Sequence[tuple[str, float]]] | None = None,
     top_k: int = DEFAULT_TOP_K,
+    section_filter: str | Sequence[str] | None = None,
 ) -> RetrievalResult:
     """Search the isolated SEC corpus belonging specifically to one candidate company.
 
@@ -335,6 +421,7 @@ def search_candidate_sec_corpus(
         embed_query: Embedder function.
         reranker: Optional reranker function.
         top_k: Max results.
+        section_filter: Optional section label or labels restricting candidates.
 
     Returns:
         RetrievalResult for that candidate's isolated corpus.
@@ -348,4 +435,5 @@ def search_candidate_sec_corpus(
         embed_query=embed_query,
         reranker=reranker,
         top_k=top_k,
+        section_filter=section_filter,
     )

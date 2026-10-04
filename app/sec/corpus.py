@@ -10,6 +10,7 @@ from html.parser import HTMLParser
 import json
 import os
 from pathlib import Path
+import re
 import tempfile
 from typing import Any, Literal
 
@@ -24,7 +25,12 @@ INDEX_DIRECTORY = Path("sec") / "index"
 CHUNKS_FILENAME = "chunks.jsonl"
 PREPARATION_MANIFEST_FILENAME = "chunks-manifest.json"
 SUPPORTED_SUFFIXES = frozenset({".txt", ".htm", ".html", ".xml"})
+HTML_SUFFIXES = frozenset({".htm", ".html", ".xml"})
 NON_VISIBLE_TAGS = frozenset({"script", "style"})
+# Characters the edgartools Markdown renderer escapes outside tables; used to
+# restore raw filing punctuation ("follows\\." -> "follows.").
+MARKDOWN_ESCAPED_CHARACTERS = "\\`*_{}[]()#+-.!"
+MARKDOWN_ESCAPE_PATTERN = re.compile(r"\\([" + re.escape(MARKDOWN_ESCAPED_CHARACTERS) + r"])")
 VALID_ERROR_CODES = frozenset(
     {
         "INVALID_INPUT",
@@ -50,9 +56,11 @@ class CorpusChunk:
         document_name: Parent filing or exhibit name.
         source_url: Parent SEC source URL.
         relative_path: Parent case-relative source path.
-        start_offset: Inclusive normalized-text offset.
-        end_offset: Exclusive normalized-text offset.
+        start_offset: Inclusive normalized-text offset within the section or document text stream.
+        end_offset: Exclusive normalized-text offset within the section or document text stream.
         text: Non-empty normalized chunk text.
+        section: Canonical SEC section label from structured parsing, or `None` for
+            unsectioned documents and the visible-text fallback path.
     """
 
     chunk_id: str
@@ -66,6 +74,7 @@ class CorpusChunk:
     start_offset: int
     end_offset: int
     text: str
+    section: str | None = None
 
     def __post_init__(self) -> None:
         """Validate chunk identity, receipt fields, and normalized offsets.
@@ -237,6 +246,76 @@ class _VisibleTextParser(HTMLParser):
             self.parts.append(data)
 
 
+def _unescape_markdown(text: str) -> str:
+    """Restore punctuation escaped by the structured parser's Markdown renderer.
+
+    Args:
+        text: Rendered Markdown text possibly containing backslash escapes.
+
+    Returns:
+        Text with backslash-escaped punctuation restored to raw filing characters.
+    """
+    return MARKDOWN_ESCAPE_PATTERN.sub(r"\1", text)
+
+
+def _normalize_section_text(text: str) -> str:
+    """Normalize rendered section Markdown while keeping table rows on their lines.
+
+    Args:
+        text: Rendered section Markdown text.
+
+    Returns:
+        Text with trailing line whitespace removed and blank-line runs collapsed,
+        preserving single newlines between table rows and paragraphs.
+    """
+    lines = [line.rstrip() for line in text.splitlines()]
+    collapsed: list[str] = []
+    for line in lines:
+        if line or not collapsed or collapsed[-1]:
+            collapsed.append(line)
+    return "\n".join(collapsed).strip()
+
+
+def _sectioned_markdown(document: DownloadedDocument, decoded: str) -> tuple[tuple[str, str], ...] | None:
+    """Pre-parse one HTML/XML document into labeled SEC section texts.
+
+    Uses the ``edgartools`` structured document parser (black-box dependency,
+    see ``doc/specs/sec/corpus.md``) with the parent document's own form value,
+    which is required for section detection. Sections render through
+    ``Section.markdown()`` so financial tables keep Markdown pipe alignment.
+
+    Args:
+        document: Parent document receipt carrying the SEC form type.
+        decoded: Decoded source document text.
+
+    Returns:
+        Ordered ``(section_label, text)`` tuples in document order, or `None`
+        when the parser is unavailable, raises, detects no sections, or yields
+        no visible text (the caller then uses the legacy fallback path).
+    """
+    try:
+        from edgar.documents import HTMLParser
+        from edgar.documents.config import ParserConfig
+
+        config = ParserConfig.for_ai()
+        config.form = document.form
+        document_model = HTMLParser(config).parse(decoded)
+        sections = getattr(document_model, "sections", None) or {}
+        rendered: list[tuple[str, str]] = []
+        for section in sorted(sections.values(), key=lambda item: item.start_offset):
+            label = str(getattr(section, "title", "") or "").strip()
+            if not label and getattr(section, "item", None):
+                label = f"Item {section.item}"
+            if not label:
+                label = str(getattr(section, "name", "") or "").strip()
+            text = _normalize_section_text(_unescape_markdown(section.markdown()))
+            if label and text:
+                rendered.append((label, text))
+        return tuple(rendered) or None
+    except Exception:
+        return None
+
+
 def _failure(
     code: Literal[
         "INVALID_INPUT",
@@ -381,31 +460,50 @@ def _chunk_id(corpus_id: str, document: DownloadedDocument, ordinal: int) -> str
 def _chunks_for_document(corpus: PulledCorpus, document: DownloadedDocument, body: bytes) -> tuple[CorpusChunk, ...]:
     """Build receipt-preserving chunks for one verified source document.
 
+    HTML/XML documents are pre-parsed with the structured ``edgartools`` document
+    parser first; detected sections become section-tagged chunk groups with
+    Markdown pipe tables. Exhibits, unsectioned documents, and any structured
+    parsing failure fall back to the legacy visible-text extraction untagged.
+
     Args:
         corpus: Parent case-local corpus.
         document: Source document receipt.
         body: Verified exact source bytes.
 
     Returns:
-        Ordered chunks for the source document.
+        Ordered chunks for the source document with document-continuous ordinals.
     """
-    text = _normalized_text(document, body)
-    return tuple(
-        CorpusChunk(
-            chunk_id=_chunk_id(corpus.corpus_id, document, ordinal),
-            ordinal=ordinal,
-            accession=document.accession,
-            form=document.form,
-            filing_date=document.filing_date,
-            document_name=document.document_name,
-            source_url=document.source_url,
-            relative_path=document.relative_path,
-            start_offset=start,
-            end_offset=end,
-            text=chunk_text,
-        )
-        for ordinal, (start, end, chunk_text) in enumerate(_chunk_text(text))
-    )
+    suffix = Path(document.document_name).suffix.lower()
+    sources: list[tuple[str | None, str]] = []
+    if suffix in HTML_SUFFIXES:
+        decoded = _decode_document(body)
+        sections = _sectioned_markdown(document, decoded)
+        if sections:
+            sources = [(label, text) for label, text in sections]
+        else:
+            sources = [(None, _normalized_text(document, body))]
+    else:
+        sources = [(None, _normalized_text(document, body))]
+    chunks: list[CorpusChunk] = []
+    for section_label, text in sources:
+        for start, end, chunk_text in _chunk_text(text):
+            chunks.append(
+                CorpusChunk(
+                    chunk_id=_chunk_id(corpus.corpus_id, document, len(chunks)),
+                    ordinal=len(chunks),
+                    accession=document.accession,
+                    form=document.form,
+                    filing_date=document.filing_date,
+                    document_name=document.document_name,
+                    source_url=document.source_url,
+                    relative_path=document.relative_path,
+                    start_offset=start,
+                    end_offset=end,
+                    text=chunk_text,
+                    section=section_label,
+                )
+            )
+    return tuple(chunks)
 
 
 def _artifact_paths(case_directory: Path) -> tuple[Path, Path]:

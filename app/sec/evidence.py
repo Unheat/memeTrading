@@ -34,6 +34,7 @@ def retrieved_chunk_receipt(result: RetrievedSecChunk, candidate_id: str | None 
         "document_name": chunk.document_name,
         "source_url": chunk.source_url,
         "relative_path": chunk.relative_path,
+        "section": chunk.section,
         "start_offset": chunk.start_offset,
         "end_offset": chunk.end_offset,
         "excerpt": chunk.text[:MAX_EXCERPT_CHARACTERS],
@@ -55,6 +56,7 @@ def search_sec_evidence(
     embed_query: Callable[[str], Sequence[float]],
     candidate_id: str | None = None,
     top_k: int = 5,
+    section_filter: str | Sequence[str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     """Search an indexed SEC corpus and return compact source receipts.
 
@@ -64,6 +66,7 @@ def search_sec_evidence(
         embed_query: Existing query embedding callable.
         candidate_id: Optional candidate owner label.
         top_k: Bounded result count.
+        section_filter: Optional section label or labels restricting candidates.
 
     Returns:
         Receipt list and optional structured retrieval error.
@@ -78,7 +81,7 @@ def search_sec_evidence(
         if prep_res.error is None:
             build_sec_index(directory, embedder=get_sec_embedder())
 
-    result: RetrievalResult = search_sec_corpus(directory, query, embed_query, top_k=top_k)
+    result: RetrievalResult = search_sec_corpus(directory, query, embed_query, top_k=top_k, section_filter=section_filter)
     if result.error:
         return [], {"code": result.error.code, "message": result.error.message, "retryable": result.error.retryable}
     return [retrieved_chunk_receipt(item, candidate_id) for item in result.results], None
@@ -116,8 +119,8 @@ def read_sec_evidence(
     for chunk_id in chunk_ids:
         position = index[chunk_id]
         chunk = chunks[position]
-        before = chunks[position - 1].text[-context_characters:] if position and chunks[position - 1].accession == chunk.accession else ""
-        after = chunks[position + 1].text[:context_characters] if position + 1 < len(chunks) and chunks[position + 1].accession == chunk.accession else ""
+        before = chunks[position - 1].text[-context_characters:] if position and chunks[position - 1].accession == chunk.accession and chunks[position - 1].section == chunk.section else ""
+        after = chunks[position + 1].text[:context_characters] if position + 1 < len(chunks) and chunks[position + 1].accession == chunk.accession and chunks[position + 1].section == chunk.section else ""
         receipt: dict[str, Any] = {
             "chunk_id": chunk.chunk_id,
             "accession": chunk.accession,
@@ -125,6 +128,7 @@ def read_sec_evidence(
             "filing_date": chunk.filing_date.isoformat(),
             "document_name": chunk.document_name,
             "source_url": chunk.source_url,
+            "section": chunk.section,
             "start_offset": chunk.start_offset,
             "end_offset": chunk.end_offset,
             "text": chunk.text,

@@ -128,6 +128,81 @@ def test_search_uses_injected_reranker_order(tmp_path: Path) -> None:
     assert found.results[0].rerank_status == "APPLIED"
 
 
+def _sectioned_case(root: Path) -> Path:
+    """Create one indexed 10-K HTML corpus with tagged sections.
+
+    Args:
+        root: Temporary root under which the case is stored.
+
+    Returns:
+        Indexed case directory containing Item 1A and Item 7 chunks.
+    """
+    from app.sec.retrieval import build_sec_index
+
+    tenk_url = "https://www.sec.gov/Archives/edgar/data/1/000000000026000005/tenk.htm"
+    filing = FilingMetadata(
+        ticker="XYZ", cik="1", form="10-K", filing_date=date(2026, 9, 2),
+        accession="0000000000-26-000005", filing_url=tenk_url,
+        primary_document="tenk.htm", exhibits=(),
+    )
+    html = (
+        b"<html><body>"
+        b"<h1>Item 1A. Risk Factors</h1><p>Debt remains a concentration risk under the credit agreement.</p>"
+        b"<h1>Item 7. Management's Discussion and Analysis</h1><p>Revenue growth accelerated and margins expanded.</p>"
+        b"</body></html>"
+    )
+    pulled = pull_sec_filings(root, CASE_ID, (SelectedSecDocument(filing, "tenk.htm", tenk_url),), lambda url: {tenk_url: html}[url])
+    assert pulled.error is None
+    directory = root / CASE_ID
+    assert prepare_sec_corpus(directory).error is None
+    assert build_sec_index(directory, _embed).error is None
+    return directory
+
+
+def test_search_section_filter_restricts_candidates_to_matching_section(tmp_path: Path) -> None:
+    """Restrict fused retrieval candidates to chunks tagged with the requested section.
+
+    Args:
+        tmp_path: Pytest-managed isolated filesystem root.
+
+    Returns:
+        None. Assertions verify section filtering and boundary matching.
+    """
+    from app.sec.retrieval import build_sec_index, search_sec_corpus
+
+    directory = _sectioned_case(tmp_path / "cases")
+
+    risk = search_sec_corpus(directory, "debt credit", lambda query: _embed([query])[0], top_k=5, section_filter="Item 1A")
+    mda = search_sec_corpus(directory, "debt credit", lambda query: _embed([query])[0], top_k=5, section_filter="Item 7")
+
+    assert risk.error is None
+    assert risk.results
+    assert all(item.chunk.section and "Item 1A" in item.chunk.section for item in risk.results)
+    assert mda.error is None
+    assert mda.results
+    assert all(item.chunk.section and "Item 7" in item.chunk.section for item in mda.results)
+    assert {item.chunk.section for item in risk.results}.isdisjoint({item.chunk.section for item in mda.results})
+
+
+def test_search_section_filter_without_matches_returns_empty_success(tmp_path: Path) -> None:
+    """Return an empty success result when no indexed chunk matches the filter.
+
+    Args:
+        tmp_path: Pytest-managed isolated filesystem root.
+
+    Returns:
+        None. Assertions verify empty success instead of a failure branch.
+    """
+    from app.sec.retrieval import search_sec_corpus
+
+    directory = _sectioned_case(tmp_path / "cases")
+
+    found = search_sec_corpus(directory, "debt credit", lambda query: _embed([query])[0], top_k=5, section_filter="Item 15")
+
+    assert found.error is None
+    assert found.results == ()
+
+
 def test_build_rejects_invalid_vectors_and_missing_preparation(tmp_path: Path) -> None:
     """Return structured local failures for bad vectors or absent preparation.
 

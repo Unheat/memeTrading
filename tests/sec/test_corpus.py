@@ -195,3 +195,81 @@ def test_prepare_reuses_identical_chunk_artifact(tmp_path: Path) -> None:
     assert second.error is None
     assert first.chunks == second.chunks
     assert first.artifact_path == second.artifact_path
+
+
+def test_prepare_tags_sections_and_preserves_markdown_tables(tmp_path: Path) -> None:
+    """Stamp section labels and keep pipe tables for a structured 10-K document.
+
+    Args:
+        tmp_path: Pytest-managed isolated filesystem root.
+
+    Returns:
+        None. Assertions verify section tagging, table preservation, and offsets.
+    """
+    from app.sec.corpus import prepare_sec_corpus
+
+    tenk_url = "https://www.sec.gov/Archives/edgar/data/1/000000000026000002/tenk.htm"
+    filing = FilingMetadata(
+        ticker="XYZ",
+        cik="1",
+        form="10-K",
+        filing_date=date(2026, 9, 2),
+        accession="0000000000-26-000002",
+        filing_url=tenk_url,
+        primary_document="tenk.htm",
+        exhibits=(),
+    )
+    html = (
+        b"<html><body>"
+        b"<h1>Item 1. Business</h1><p>Acme operates segments.</p>"
+        b"<table><tr><th>Segment</th><th>FY2025 Revenue</th></tr>"
+        b"<tr><td>Widgets</td><td>$15,200</td></tr></table>"
+        b"<h1>Item 1A. Risk Factors</h1><p>Sole supplier concentration risk.</p>"
+        b"</body></html>"
+    )
+    selection = SelectedSecDocument(filing, "tenk.htm", tenk_url)
+    case_directory = _pull_case(tmp_path / "cases", (selection,), {tenk_url: html})
+
+    result = prepare_sec_corpus(case_directory)
+
+    assert result.error is None
+    assert result.chunks
+    sections = {chunk.section for chunk in result.chunks}
+    assert "Item 1 - Business" in sections
+    assert "Item 1A - Risk Factors" in sections
+    table_chunk = next(chunk for chunk in result.chunks if "Segment" in chunk.text)
+    assert "| Segment | FY2025 Revenue |" in table_chunk.text
+    assert "| Widgets | $15,200 |" in table_chunk.text
+    for chunk in result.chunks:
+        assert chunk.end_offset - chunk.start_offset == len(chunk.text)
+
+
+def test_chunk_from_dict_accepts_legacy_payload_without_section() -> None:
+    """Load persisted chunks written before the section field existed.
+
+    Args:
+        None.
+
+    Returns:
+        None. Assertions verify legacy artifact compatibility.
+    """
+    from app.sec.corpus import CorpusChunk
+
+    legacy = {
+        "chunk_id": "0000000000-26-000002-0-abc",
+        "ordinal": 0,
+        "accession": "0000000000-26-000002",
+        "form": "8-K",
+        "filing_date": "2026-09-02",
+        "document_name": "report.txt",
+        "source_url": TEXT_URL,
+        "relative_path": "sec/documents/report.txt",
+        "start_offset": 0,
+        "end_offset": 12,
+        "text": "Legacy text.",
+    }
+
+    chunk = CorpusChunk.from_dict(legacy)
+
+    assert chunk.text == "Legacy text."
+    assert chunk.section is None
