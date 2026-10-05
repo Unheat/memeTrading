@@ -329,8 +329,8 @@ Commands the specialized SEC Filing Analyst sub-agent to investigate open resear
 1. Auto-resolves ticker and CIK.
 2. Auto-discovers relevant filings matching `form` via `_list_sec_filings`.
 3. Auto-pulls documents and material exhibits to the case-local corpus via `_pull_sec_filings` if not already cached.
-4. Chunks and builds the local hybrid FAISS dense + BM25 sparse vector index.
-5. Executes hybrid RAG search with Reciprocal Rank Fusion (RRF) for the most relevant sections.
+4. Pre-parses each HTML/iXBRL document with the edgartools structured document parser (form-configured) into section-tagged chunks — SEC item labels (e.g. `Item 7 - MD&A`) with Markdown pipe tables preserved; exhibits, unsectioned documents, and parse failures fall back to legacy visible-text chunking. This is the qualitative Track B path: numeric evidence is never ingested this way (see `get_sec_financials` below for the deterministic XBRL Track A).
+5. Builds the local hybrid FAISS dense + BM25 sparse vector index and executes hybrid RAG search with Reciprocal Rank Fusion (RRF), optionally scoped by SEC section (`section_filter`).
 6. A specialized SEC Analyst LLM reads the retrieved excerpts and synthesizes a concise, grounded research response citing exact accession numbers, filing forms, dates, and verbatim quotes.
 7. Auto-ingests verified evidence quotes directly into `candidate["evidence"]` and `state["evidence"]`.
 
@@ -564,7 +564,9 @@ app/
   agent/graph.py state.py prompts.py runner.py
   tools/social.py articles.py web.py market.py sec.py
   social/reddit.py apewisdom.py bluesky.py metrics.py
-  sec/acquisition.py corpus.py indexing.py retrieval.py verifier.py schemas.py
+  sec/acquisition.py pull.py corpus.py retrieval.py evidence.py
+     financials.py (deterministic XBRL — no RAG) insiders.py (Form 4 XML — no RAG)
+     verifier.py agent.py schemas.py embeddings.py receipts.py
   storage/cases.py
   api/routes.py
 skills/meme_forensics/SKILL.md
@@ -572,6 +574,8 @@ cases/
 tests/
 reference/
 ```
+
+*As-built note: the SEC RAG boundary lives in `corpus.py` (section-aware chunking) → `retrieval.py` (FAISS+BM25+RRF indexing and section-filtered search) → `evidence.py` (citation receipts); `financials.py` and `insiders.py` are deterministic edgartools parsers that never touch the vector index.*
 
 `app/agent` owns orchestration; `tools` exposes normalized tools; `social` and `sec` hold deterministic services; `storage` owns persistence; delivery consumes completed memo only. No module may bypass verifier network isolation.
 

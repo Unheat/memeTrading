@@ -116,7 +116,7 @@ In Stage 2, the LLM has access to a registry of tools. Two of these tools are au
 Discovery, Screening & Market Data  investigate_sec()           conduct_candidate_diligence()
 • screen_stocks                     Autonomous SEC Analyst      Candidate Diligence Sub-Agent
 • search_web                        Sub-Agent                   (diligence.py)
-• get_sec_financials                (app/sec/sec_agent.py)               │
+• get_sec_financials                (app/sec/agent.py)                   │
 • get_market_data                                                        ▼
 • register_candidate                                            1. Expectations Analyst (expectations.py)
 • compare_candidates                                            2. Forensic Accounting (specialists.py)
@@ -125,6 +125,13 @@ Discovery, Screening & Market Data  investigate_sec()           conduct_candidat
                                                                 5. Bull Advocate (bull.py)
                                                                 6. Bear Red Team (adversarial.py)
 ```
+
+#### The Dual-Track SEC Evidence Boundary
+
+The SEC evidence layer routes each data type through exactly one of two tracks (routing fixed in code, never model-decided — full specification in [PIPELINE_ARCHITECTURE.md §4](../PIPELINE_ARCHITECTURE.md#4-sec-evidence-architecture-deterministic-parsing-vs-section-aware-rag)):
+
+- **Track A — Deterministic parsing (no RAG, no LLM):** `get_sec_financials` reads official US-GAAP XBRL tags (`app/sec/financials.py`) and `get_ownership_and_insider_activity` parses Form 4 XML (`app/sec/insiders.py`). Outputs feed the forensic engines, DCF/Reverse-DCF bases, FactCards, and Gates G2/G3 directly — a retrieval hit can never alter a valuation input.
+- **Track B — Section-aware RAG:** Qualitative filing text (MD&A narrative, risk factors, footnotes, legal proceedings, 8-K events, claim verification) flows through `pull_filing` → `prepare_sec_corpus` (edgartools structured pre-parsing into section-tagged chunks with Markdown pipe tables) → `search_corpus`/`verify_claim` (hybrid FAISS+BM25+RRF with optional `section_filter`, e.g. `"Item 8"`) → `read_chunk` verbatim receipts. Every qualitative memo claim traces to an accession, filing date, section label, and character offsets.
 
 #### Where `specialists.py` Fits in the Pipeline
 [`app/agent/specialists.py`](../app/agent/specialists.py) is the **analytical engine room** of Stage 2. It contains the financial algorithms, forensic calculations, and prompt specifications for specialist diligence:
@@ -271,7 +278,12 @@ The remaining modules in `app/agent/` provide the runtime, state, and serializat
 | `app/agent/bull.py` | `run_bull_advocate` | Stage 2 Sub-Agent | `run_candidate_diligence` | `bull_report` (Catalysts, upside target) |
 | `app/agent/adversarial.py` | `run_adversarial_red_team` | Stage 2 Sub-Agent | `run_candidate_diligence` | `adversarial_report` (Kill criteria, floor) |
 | `app/agent/screening.py` | `build_candidate_comparisons` | Stage 2 Tool | Tool `compare_candidates` | `comparisons` matrix across candidates |
-| `app/sec/sec_agent.py` | `investigate_sec` | Stage 2 Sub-Agent | Tool `investigate_sec` | Verified filing excerpts and claims |
+| `app/sec/agent.py` | `investigate_sec` / `run_sec_investigation` | Stage 2 Sub-Agent | Tool `investigate_sec` | Verified filing excerpts and claims |
+| `app/sec/financials.py` | `get_sec_financials` | Stage 2 Tool (Track A — deterministic) | Tool `get_sec_financials`, diligence engines | Official XBRL quarterly financials (TTM FCF, DIO/DSO); never touches RAG or an LLM |
+| `app/sec/insiders.py` | `get_ownership_and_insider_activity` | Stage 2 Tool (Track A — deterministic) | Tool `get_ownership_and_insider_activity` | Form 4 insider trade audit parsed from XML; never touches RAG |
+| `app/sec/corpus.py` | `prepare_sec_corpus`, `CorpusChunk` | Stage 2 Ingestion (Track B — section-aware RAG) | `pull_filing` auto-index, `verify_sec_claim` auto-heal | Section-tagged chunks with Markdown pipe tables in `sec/index/chunks.jsonl` |
+| `app/sec/retrieval.py` | `build_sec_index`, `search_sec_corpus` | Stage 2 Retrieval (Track B — section-aware RAG) | `search_corpus` / `verify_claim` / `search_sec_evidence` | Hybrid FAISS+BM25+RRF results with optional `section_filter` and citation receipts |
+| `app/sec/evidence.py` | `search_sec_evidence`, `read_sec_evidence` | Stage 2 Retrieval adapter (Track B) | SEC sub-agent tools, outer agent | Compact section-labeled citation receipts for model consumption |
 | `app/agent/graph.py` | `ingest_node` | Stage 3 (`ingest`) | `tools` node | Dispatches to `tool_result_ingestion.py` |
 | `app/agent/tool_result_ingestion.py` | `ingest_tool_results` | Stage 3 (`ingest`) | `ingest_node` | `fact_cards`, `candidates`, `work_queue` |
 | `app/agent/graph.py` | `reflection_node` | Stage 4 (`reflect`) | `executor_node` (no tool calls) | `HumanMessage` with gap prompts, budget update |

@@ -75,17 +75,17 @@ flowchart TD
 
         subgraph T_SEC["2. Unified SEC Specialist Sub-Agent (LangGraph)"]
             direction TB
-            t_sec_fin["get_sec_financials: Deterministic XBRL accounting<br/>• Form 10-Q YTD Cash Flow De-cumulation<br/>• True TTM Free Cash Flow Base<br/>• 8 Forensic Concepts (Assets, Receivables, PP&E, SG&A)<br/>• Deterministic Working Capital Ratios (DIO & DSO)"]
-            
+            t_sec_fin["<b>Track A — Deterministic Parsing (no RAG, no LLM)</b><br/>get_sec_financials: Official SEC XBRL accounting<br/>• Form 10-Q YTD Cash Flow De-cumulation<br/>• True TTM Free Cash Flow Base<br/>• 8 Forensic Concepts (Assets, Receivables, PP&E, SG&A)<br/>• Deterministic Working Capital Ratios (DIO & DSO)"]
+
             subgraph SEC_SUBAGENT["investigate_sec(ticker, task) Sub-Agent"]
                 direction TB
                 sec_sub_desc["<b>Autonomous SEC Analyst Loop (StateGraph)</b><br/>Multi-turn filing exploration, claim verification, and synthesis"]
                 sec_list["list_filings: Browse EDGAR 10-K/10-Q/8-K catalog"]
-                sec_pull["pull_filing: Auto-index on pull into local corpus"]
-                sec_search["search_corpus: Hybrid dense FAISS + sparse BM25 + RRF"]
+                sec_pull["pull_filing: Auto-index on pull — edgartools pre-parsing<br/>sections into tagged Markdown-table chunks (Track B)"]
+                sec_search["search_corpus: Section-aware hybrid dense FAISS +<br/>sparse BM25 + RRF with optional section filter (Track B)"]
                 sec_chunk["read_chunk: Verbatim footnote & schedule inspection"]
                 sec_claim["verify_claim: Ground factual claims vs filings"]
-                sec_insider["get_ownership_and_insider_activity: Audit Form 4 trades"]
+                sec_insider["get_ownership_and_insider_activity:<br/>Deterministic Form 4 XML trade audit (Track A)"]
 
                 sec_sub_desc --> sec_list --> sec_pull --> sec_search --> sec_chunk --> sec_claim
                 sec_sub_desc --> sec_insider
@@ -309,3 +309,68 @@ Institutional equity research cannot rely exclusively on SEC filings because reg
    - **Solvency Gate**: Forensic SEC accounting execution (Beneish M-Score $< -1.78$, Sloan accruals $< 8\%$).
    $$\Delta_{\text{arbitrage}} = g_{\text{channel}} - \max(g_{\text{implied}}, g_{\text{consensus}})$$
    Surfaces true expectation arbitrage before quarterly prints confirm the trend.
+
+---
+
+## 4. SEC Evidence Architecture: Deterministic Parsing vs Section-Aware RAG
+
+The SEC evidence layer is deliberately split into **two non-interchangeable tracks**. The routing rule is fixed in code, never decided by a model: **structured financial facts never touch vector retrieval, and qualitative narrative text never feeds the deterministic engines.**
+
+### 4.1 The Two Tracks
+
+```mermaid
+flowchart LR
+    subgraph RAW["EDGAR (per selected filing)"]
+        XBRL["XBRL company facts<br/>(US-GAAP concept tags)"]
+        F4["Form 4 ownership XML"]
+        DOC["Filing HTML / iXBRL<br/>(10-K, 10-Q, 8-K primary docs & exhibits)"]
+    end
+
+    subgraph TA["Track A — Deterministic Parsing (app/sec/financials.py, app/sec/insiders.py)"]
+        AFIN["get_sec_financials:<br/>Revenue, margins, CFO, CapEx, TTM FCF,<br/>DIO/DSO, working-capital concepts"]
+        AINS["get_ownership_and_insider_activity:<br/>discretionary buys/sales, 10b5-1 plans"]
+    end
+
+    subgraph TB["Track B — Section-Aware RAG (app/sec/corpus.py → retrieval.py → evidence.py)"]
+        PARSE["edgartools HTMLParser.create_for_ai()<br/>(form-configured) → sections + Markdown tables"]
+        CHUNK["Section-tagged 1,200-char chunks<br/>(section label + offsets per chunk)"]
+        INDEX["FAISS dense + BM25 sparse<br/>fused by RRF (k=60)"]
+        SEARCH["search_corpus / verify_claim<br/>(optional section filter)"]
+        PARSE --> CHUNK --> INDEX --> SEARCH
+    end
+
+    XBRL --> AFIN
+    F4 --> AINS
+    DOC --> PARSE
+    AFIN --> Q1["Forensic engines: Beneish, Sloan, DCF,<br/>Reverse DCF, FactCards, Gates G2/G3"]
+    AINS --> Q1
+    SEARCH --> Q2["Qualitative synthesis: filing Q&A,<br/>claim verification, footnote citation receipts"]
+```
+
+### 4.2 Routing Table: What Goes Where
+
+| Evidence Request | Track | Mechanism | Why |
+|---|---|---|---|
+| Revenue, gross/operating margins, net income, cash & debt | **A — Deterministic** | `get_sec_financials` reads official US-GAAP XBRL tags via edgartools company facts | Vector search misreads table columns and period headers; XBRL tags are exact by construction. |
+| Quarterly CFO/CapEx de-cumulation, True TTM FCF | **A — Deterministic** | `_decumulate_cash_flows` + `_compute_ttm_fcf` in `app/sec/financials.py` | The DCF base must be reproducible bit-for-bit across fetches; a retrieval hit can never feed `calculator.mjs`. |
+| DIO/DSO, working-capital concepts (assets, receivables, PP&E, SG&A, SBC) | **A — Deterministic** | XBRL concept lookup | Feeds Beneish M-Score, Sloan accruals, and forensic gates where every decimal is audited. |
+| Insider buys/sales, 10b5-1 plans | **A — Deterministic** | `get_ownership_and_insider_activity` parses Form 4 XML | Structured XML with transaction codes; no free text involved. |
+| "What does MD&A say about margin drivers?" | **B — Section-Aware RAG** | `search_corpus(query, section="Item 7")` | Narrative prose spread across pages; semantic + lexical retrieval beats context stuffing. |
+| "Does the company disclose customer concentration?" | **B — Section-Aware RAG** | hybrid search over section-tagged chunks, `read_chunk` for verbatim quotes | The answer lives in Item 1/1A/8 footnotes; retrieval returns exact citation receipts (accession, form, date, offsets). |
+| Verify a rumor ("binding contract signed?") | **B — Section-Aware RAG** | `verify_claim` retrieves candidates, injected assessor returns CONFIRMED/CONTRADICTED/INSUFFICIENT | Requires scanning multiple filings for confirm/contradict evidence with citations. |
+| 8-K announcements, legal proceedings, risk factors | **B — Section-Aware RAG** | Section-tagged chunks (`Item 1.01 - ...`, risk-factor labels) | Qualitative events; deterministic extraction has no structured schema for them. |
+
+### 4.3 How the Section-Aware RAG Ingestion Works (Track B)
+
+When a filing is pulled (`pull_filing`, `verify_sec_claim` auto-heal, or diligence), `app/sec/corpus.py::prepare_sec_corpus`:
+
+1. **Pre-parse, don't strip.** HTML/iXBRL documents are parsed with `edgartools`'s structured document parser (`HTMLParser.create_for_ai()` with `ParserConfig.form` set from the filing receipt — form is required for section detection). Detected sections are iterated in document order and rendered with `Section.markdown()`, so financial tables become **GitHub-flavored Markdown pipe tables** (`| Segment | FY2025 Revenue |`) instead of the flattened word soup produced by naive tag stripping. Markdown backslash-escapes are unescaped back to raw filing punctuation.
+2. **Chunk with section provenance.** Each section's text is cut into 1,200-character chunks (200-character overlap). Every `CorpusChunk` carries its full citation receipt (accession, form, filing date, document name, source URL, offsets) **plus the canonical section label** (e.g. `Item 7 - MD&A`, `Item 1A - Risk Factors`, `Item 1.01 - Entry into Material Agreement`). Chunks land in the case-local `sec/index/chunks.jsonl` artifact.
+3. **Index locally.** `build_sec_index` embeds chunk text into a FAISS flat index plus a BM25 lexical index under `sec/index/` — local-only, no external vector service.
+4. **Hybrid retrieval with section targeting.** `search_sec_corpus` fuses dense FAISS and sparse BM25 candidate ranks with reciprocal-rank fusion (k=60), optionally re-ranks via an injected local reranker, and accepts a `section_filter` (e.g. `"Item 8"` or `["Item 1A", "Item 7"]`). Filtering uses word-boundary matching (`"Item 1"` never matches `"Item 1A"`) and widens the candidate pool 4× before filtering so fused candidates stay populated. A filter matching no indexed section returns an **empty success result** (not an error), which downstream verifiers report as INSUFFICIENT evidence.
+5. **Fallback policy (never fail ingestion).** Exhibits (99.1 press releases), documents with no detected sections, `.txt` files, and any structured-parse failure fall back to the legacy visible-text extraction and produce untagged chunks (`section=None`). Parsing degradation reduces richness; it never blocks a filing from being indexed.
+6. **Receipts to the model.** `search_sec_evidence` / `read_sec_evidence` return compact JSON receipts including `section`, verbatim excerpt, and retrieval audit fields (dense/sparse/RRF ranks) so every qualitative claim in a memo can be traced back to an exact filing location.
+
+### 4.4 Why Numbers Never Go Through RAG
+
+Before the section-aware upgrade, ingestion stripped all HTML tags and flattened tables into single-line text — footnoted financial tables (segment revenue, debt maturities) lost column alignment and could only be recovered by the model guessing column semantics. The deterministic Track A already covered headline financials, so the residual risk was confined to qualitative retrieval — which is exactly what Track B now fixes at the ingestion layer: tables keep their pipe alignment, and sections let retrieval scope to MD&A or the notes instead of the whole 400-page filing. The split keeps the invariant auditors care about: **every number in a memo can be re-derived from SEC XBRL without an embedding model in the loop, and every narrative claim carries a verbatim, section-labeled citation receipt.**

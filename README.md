@@ -45,6 +45,7 @@ grassroots demand signal (Reddit, forums, news)
 ```
 
 - 🔍 **Immutable SEC Evidence Ledger:** Every material revenue, inventory, and margin claim is anchored in official SEC EDGAR filings (`10-K`, `10-Q`, `8-K`) with exact accession numbers and disk receipts. Zero hallucinations.
+- 🧭 **Dual-Track SEC Evidence Engine:** Structured financial facts (XBRL statements, Form 4 trades) are parsed **deterministically** via edgartools — they never touch vector retrieval or an LLM. Qualitative filing text (MD&A, risk factors, footnotes, 8-Ks) flows through a **section-aware RAG pipeline**: filings are pre-parsed into SEC-item sections with Markdown pipe tables, chunked with section labels, and searched via hybrid FAISS+BM25 with optional section targeting (e.g. `section="Item 7"`).
 - 📡 **Philip Fisher Scuttlebutt & Channel Checks:** Audits ground-truth leading indicators (developer commit velocity, distributor stockouts, spot-vs-contract spreads, operator chatter) into Point72 concordance matrices and 3-way Expectation Arbitrage.
 - 📊 **Keyless Quantitative Equity Screener:** Instant factor-based and Wall Street preset screening across US exchanges (market cap, P/E multiples, revenue growth) with zero paid API keys or third-party subscriptions.
 - 📉 **Reverse DCF (Expectations Investing):** Instead of guessing future stock prices, the engine solves the discounted cash flow equation backwards: what cash-flow growth rate and ROIC is the current share price pricing in?
@@ -130,7 +131,9 @@ flowchart TD
         subgraph SEC_SPECIALIST["Autonomous SEC Specialist Sub-Agent (LangGraph)"]
             direction TB
             sec_entry["investigate_sec(ticker, task)"]
-            sec_tools["Private SEC Tool Loop:<br/>• list_filings • pull_filing (auto-index)<br/>• search_corpus (FAISS+BM25+RRF)<br/>• read_chunk • verify_claim • Form 4 insiders"]
+            sec_fin["get_sec_financials: Deterministic XBRL parsing<br/>(margins, TTM FCF, DIO/DSO — no RAG, no LLM)"]
+            sec_tools["Private SEC Tool Loop (Section-Aware RAG):<br/>• list_filings • pull_filing (edgartools pre-parse →<br/>section-tagged Markdown-table chunks)<br/>• search_corpus (FAISS+BM25+RRF, optional section filter)<br/>• read_chunk • verify_claim • Form 4 insiders"]
+            sec_entry --> sec_fin
             sec_entry --> sec_tools
         end
 
@@ -290,7 +293,8 @@ cases/
     ├── evidence_ledger.jsonl # Append-only ledger of verified evidence items
     ├── run-manifest.json     # Execution metadata, model latency, and token consumption
     ├── article.md            # (Opt-in) Cited Substack / Blog forensic article
-    ├── sec/                  # Downloaded raw SEC filings, 10-K/10-Q tables, and Form 4s
+    ├── sec/                  # Downloaded raw SEC filings, Form 4s, and the section-tagged
+    │                         #   RAG index (chunks.jsonl + sec.faiss) used for citation retrieval
     └── faceless/             # Viral Media Generation Assets (Opt-in)
         ├── dialogue.json     # Timestamped character dialogue with emotion tags
         ├── caption.txt       # Viral social caption with hashtags & hook
