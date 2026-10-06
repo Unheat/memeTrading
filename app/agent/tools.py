@@ -464,7 +464,7 @@ def create_agent_tools(
                     disc_res = _list_sec_filings(ticker=clean_ticker, forms=["10-K", "10-Q", "8-K"])
                     if disc_res.filings:
                         selected_docs = [
-                            SelectedSecDocument(filing=f, document_name="primary_doc.htm", source_url=f.filing_url)
+                            SelectedSecDocument(filing=f, document_name=f.primary_document or "primary_doc.htm", source_url=f.filing_url)
                             for f in disc_res.filings[:2]
                         ]
                         _pull_sec_filings(cases_root=root_path, case_id=target_corpus or active_case_id, selections=selected_docs)

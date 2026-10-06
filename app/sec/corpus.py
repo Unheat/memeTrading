@@ -303,11 +303,17 @@ def _sectioned_markdown(document: DownloadedDocument, decoded: str) -> tuple[tup
         sections = getattr(document_model, "sections", None) or {}
         rendered: list[tuple[str, str]] = []
         for section in sorted(sections.values(), key=lambda item: item.start_offset):
-            label = str(getattr(section, "title", "") or "").strip()
-            if not label and getattr(section, "item", None):
-                label = f"Item {section.item}"
-            if not label:
-                label = str(getattr(section, "name", "") or "").strip()
+            item_num = str(getattr(section, "item", "") or "").strip()
+            title = str(getattr(section, "title", "") or "").strip()
+            name = str(getattr(section, "name", "") or "").strip()
+
+            if item_num:
+                if title and not title.lower().startswith("part_") and not title.lower().startswith("item_"):
+                    label = title if title.lower().startswith(f"item {item_num.lower()}") else f"Item {item_num} - {title}"
+                else:
+                    label = f"Item {item_num}"
+            else:
+                label = title or name
             text = _normalize_section_text(_unescape_markdown(section.markdown()))
             if label and text:
                 rendered.append((label, text))

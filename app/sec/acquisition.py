@@ -185,9 +185,19 @@ def _map_filing(ticker: str, cik: Any, filing: Any) -> FilingMetadata:
         ValueError: If required upstream metadata is absent or invalid.
     """
     accession = getattr(filing, "accession_no", None) or getattr(filing, "accession_number", None)
-    source_url = getattr(filing, "url", None) or getattr(filing, "homepage_url", None)
     raw_date = getattr(filing, "filing_date", None)
     filing_date = raw_date if isinstance(raw_date, date) else date.fromisoformat(str(raw_date))
+    primary_doc = getattr(filing, "primary_document", None)
+
+    source_url = None
+    if primary_doc and accession and cik:
+        cik_digits = str(cik).lstrip("0") or "0"
+        acc_clean = str(accession).replace("-", "")
+        source_url = f"https://www.sec.gov/Archives/edgar/data/{cik_digits}/{acc_clean}/{primary_doc}"
+
+    if not source_url:
+        source_url = getattr(filing, "url", None) or getattr(filing, "homepage_url", None)
+
     return FilingMetadata(
         ticker=ticker,
         cik=str(cik),
@@ -195,6 +205,7 @@ def _map_filing(ticker: str, cik: Any, filing: Any) -> FilingMetadata:
         filing_date=filing_date,
         accession=str(accession or ""),
         filing_url=str(source_url or ""),
+        primary_document=str(primary_doc) if primary_doc else None,
     )
 
 

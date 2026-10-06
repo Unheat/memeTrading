@@ -120,7 +120,7 @@ def create_sec_subagent_tools(
             sel = [
                 SelectedSecDocument(
                     filing=target_filing,
-                    document_name="primary_doc.htm",
+                    document_name=target_filing.primary_document or "primary_doc.htm",
                     source_url=target_filing.filing_url,
                 )
             ]
@@ -402,7 +402,7 @@ def run_sec_investigation(
             selected_docs = [
                 SelectedSecDocument(
                     filing=f,
-                    document_name="primary_doc.htm",
+                    document_name=f.primary_document or "primary_doc.htm",
                     source_url=f.filing_url,
                 )
                 for f in disc_res.filings[:2]

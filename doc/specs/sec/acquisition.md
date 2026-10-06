@@ -43,7 +43,7 @@ Behavior:
 
 1. Validate inputs before creating a company.
 2. Resolve company and call `get_filings(form=normalized_forms_or_none, trigger_full_load=False)`.
-3. Map only complete metadata to `FilingMetadata`; `primary_document=None`, `exhibits=()` in this discovery-only slice.
+3. Map complete metadata to `FilingMetadata`. When upstream provides `primary_document`, construct the direct unhyphenated SEC primary document URL (`/Archives/edgar/data/{cik}/{accession_nodash}/{primary_document}`) to prevent Akamai 403 blocks on hyphenated directory URLs, falling back to upstream `url`/`homepage_url` when `primary_document` is absent.
 4. Apply an inclusive local `since` filter and deterministic sort.
 5. Treat an empty upstream list as successful empty discovery.
 6. Translate missing company/CIK to `NOT_FOUND`; import failure to `DEPENDENCY_UNAVAILABLE`; expected provider transport errors to retryable `UNAVAILABLE`; incomplete or invalid upstream records to retryable `MALFORMED_UPSTREAM`.

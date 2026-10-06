@@ -135,3 +135,17 @@ def test_returns_malformed_upstream_for_incomplete_filing() -> None:
 
     assert result.error is not None
     assert result.error.code == "MALFORMED_UPSTREAM"
+
+
+def test_maps_primary_document_url_when_available() -> None:
+    """Construct direct SEC primary document URL when upstream provides primary_document."""
+    filing = FakeFiling("10-K", "2026-09-01", "0000123456-26-000001")
+    filing.primary_document = "report.htm"
+
+    result = list_sec_filings("XYZ", company_factory=lambda ticker: FakeCompany([filing]))
+
+    assert result.error is None
+    assert len(result.filings) == 1
+    f = result.filings[0]
+    assert f.primary_document == "report.htm"
+    assert f.filing_url == "https://www.sec.gov/Archives/edgar/data/123456/000012345626000001/report.htm"

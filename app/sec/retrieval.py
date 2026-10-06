@@ -359,7 +359,7 @@ def search_sec_corpus(
             matching_ids = {
                 position
                 for position, chunk in enumerate(chunks)
-                if chunk.section and pattern.search(chunk.section.strip().lower())
+                if chunk.section and pattern.search(chunk.section.strip().lower().replace("_", " "))
             }
             if not matching_ids:
                 return RetrievalResult(results=())
