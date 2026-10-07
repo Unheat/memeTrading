@@ -6,6 +6,7 @@
 **From Grassroots Demand Signals to Audited SEC Footnotes • Michael Mauboussin Reverse DCF • Dual Deliverables**
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
+[![Live Forensic Journal](https://img.shields.io/badge/Live%20Journal-memetrading--journal.workers.dev-0284C7.svg?style=flat-square&logo=cloudflare&logoColor=white)](https://memetrading-journal.andangtruong085.workers.dev/)
 [![LangGraph DAG](https://img.shields.io/badge/Orchestration-LangGraph%20Gated%20DAG-FF6F00.svg?style=flat-square&logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
 [![SEC EDGAR Audited](https://img.shields.io/badge/Compliance-SEC%20EDGAR%20Audited-008080.svg?style=flat-square&logo=safari&logoColor=white)](app/sec/)
 [![Reverse DCF](https://img.shields.io/badge/Valuation-Reverse%20DCF%20(Mauboussin)-7C3AED.svg?style=flat-square)](app/valuation/)
@@ -13,11 +14,13 @@
 
 <br/>
 
-[![MemeForensics Hero Banner](./README_images/hero_banner.png)](./README_images/hero_banner.png)
+[![MemeForensics Hero Banner](./README_images/hero_banner.png)](https://memetrading-journal.andangtruong085.workers.dev/)
 
 <br/>
 
 <p align="center">
+  <a href="https://memetrading-journal.andangtruong085.workers.dev/"><b>🗞️ Live Forensic Journal</b></a> •
+  <a href="#daily-journal"><b>📰 Daily Journal Analysis</b></a> •
   <a href="#-quick-start"><b>⚡ Quick Start</b></a> •
   <a href="#-why-memeforensics"><b>💡 Why MemeForensics?</b></a> •
   <a href="#-dual-deliverables-engine"><b>🎬 Dual Deliverables</b></a> •
@@ -27,6 +30,8 @@
 </p>
 
 </div>
+
+> 🌐 **Live Intelligence Portal & Video Briefings:** Read real-time forensic investigations, Reverse DCF implied growth hurdles, interactive SEC footnote receipts, and companion animated video reels at **[memetrading-journal.andangtruong085.workers.dev](https://memetrading-journal.andangtruong085.workers.dev/)**.
 
 ---
 
@@ -53,7 +58,7 @@ grassroots demand signal (Reddit, forums, news)
 - 🏛️ **Unified 3-Mandate CIO Governance:** Enforces institutional capital governance across single-stock 3:1 asymmetry & fractional Kelly sizing, screening winner audits with actionable limit order prices, and top-down macroeconomic regimes (FRED rates, yield curve slopes, sector tilts).
 - ⏱️ **Point-in-Time (PIT) Integrity:** Supports historical cutoff dates (`--as-of YYYY-MM-DD`) that strictly discard future filings and drop undated web content to eliminate lookahead bias during backtests.
 - 🎬 **Dual Deliverables Engine:** Emits both exhaustive institutional investment memos (`memo.md`) and viral video reel packages (`faceless/dialogue.json`) featuring animated character duos like Peter & Stewie or Rick & Morty.
-- 📰 **Wall Street Journal Editorial Portal (`web/`):** Distraction-free broadsheet editorial design (Newsreader serif, hairline borders, inline metadata middots, and interactive citation popovers) with zero duplicate bibliographies.
+- 📰 **The Meme Forensic Journal ([Live Edge Portal](https://memetrading-journal.andangtruong085.workers.dev/)):** Distraction-free Wall Street Journal broadsheet editorial portal deployed live to Cloudflare Workers. Features interactive SEC EDGAR footnote popovers, synchronized 9:16 animated video briefings, and zero duplicate bibliographies.
 - 🎛️ **Local Operator Studio (`python main.py --studio`):** Visual browser dashboard to run investigations, review articles, render reels, and 1-click publish without memorizing CLI arguments.
 
 ---
@@ -105,6 +110,53 @@ Translates dense financial forensics, footnote anomalies, and reverse DCF math i
   }
 ]
 ```
+
+---
+
+<a id="daily-journal"></a>
+## 📰 The Meme Forensic Journal: Daily Intelligence & Valuation Audits
+
+> 🌐 **Live Broadsheet & Daily Case Dossiers:** **[memetrading-journal.andangtruong085.workers.dev](https://memetrading-journal.andangtruong085.workers.dev/)**  
+> Deployed globally to the Cloudflare Workers edge network with sub-50ms latency.
+
+Most financial commentary either repeats corporate PR or chases momentum after a 300% run-up, while Wall Street brokerages issue consensus "Strong Buy" ratings based on linear extrapolations at cyclical peaks. **The Meme Forensic Journal** operates as an autonomous, adversarial audit bureau: taking high-velocity market memes, retail hype, and momentum narratives and stress-testing them against audited SEC accounting reality and reverse mathematical expectations.
+
+Every published investigation provides an integrated, dual-format intelligence briefing:
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                        THE MEME FORENSIC JOURNAL PIPELINE                              │
+├──────────────────────────┬─────────────────────────────┬───────────────────────────────┤
+│    BROADSHEET DOSSIER    │    INTERACTIVE RECEIPTS     │      SYNCHRONIZED REEL        │
+│  (Wall Street Journal)   │     (SEC EDGAR Audited)     │     (Peter & Stewie Duo)      │
+├──────────────────────────┼─────────────────────────────┼───────────────────────────────┤
+│ • Newsreader serif type  │ • Clickable SEC citations   │ • 60-second narrative hook    │
+│ • Reverse DCF hurdle     │ • Accession-stamped 10-K/Q  │ • Plain-English forensic math │
+│ • Sloan accruals & DIO   │ • Pipe-table XBRL extracts  │ • Character banter explaining │
+│ • CIO Kelly allocation   │ • Interactive popover cards │   unforgiving valuation gaps  │
+└──────────────────────────┴─────────────────────────────┴───────────────────────────────┘
+```
+
+### 🔬 Active Forensic Case Dossiers (Live on the Journal)
+
+| Ticker & Dossier | Market Narrative vs. Audited Reality | Reverse DCF & Forensic Metrics | Deliverables & Receipts |
+| :--- | :--- | :--- | :--- |
+| **$NVDA**<br/>[*The Five-Trillion-Dollar Mirage*](https://memetrading-journal.andangtruong085.workers.dev/) | **Narrative:** Infinite AI data center CapEx guarantees unending 75% gross margins.<br/>**Audit:** Current valuation requires an impossible **44.01% FCF CAGR for 10 consecutive years**—surpassing the GDP of multiple G7 nations. Beneish M-Score flags non-cash capitalization distortion. | **Hurdle:** 44.01% FCF CAGR<br/>**Fair Value:** $188.24<br/>**Verdict:** *Validation Watch* | 🎬 [Video Briefing Included](https://memetrading-journal.andangtruong085.workers.dev/)<br/>📜 122 Analyst consensus deconstruction<br/>🔍 Audited Q1-Q2 XBRL cash flow statements |
+| **$ADBE**<br/>[*The Ghost in the Canvas*](https://memetrading-journal.andangtruong085.workers.dev/) | **Narrative:** Generative AI has made creative software obsolete.<br/>**Audit:** The Street panicked on multiple compression; however, inference cost creep and an unfulfilled 3.0:1 reward-to-risk governance hurdle require zero capital deployed until a pullback below $237.50 restores asymmetric upside. | **Hurdle:** 12.4% FCF CAGR<br/>**Limit Order:** $237.50<br/>**Verdict:** *Forensic Warning* | 🎬 Video Dialogue<br/>📜 19 Audited SEC EDGAR receipts<br/>🔍 Enterprise ARR retention audit |
+| **$PLTR**<br/>[*The Hundred-Billion-Dollar Ontology*](https://memetrading-journal.andangtruong085.workers.dev/) | **Narrative:** AIP creates an unassailable government and commercial monopoly.<br/>**Audit:** Trading at 150x earnings, current share price prices in uninterrupted 35%+ revenue expansion with zero room for contract lumpiness or federal procurement delays. | **Hurdle:** Extreme multiple hurdle<br/>**Fair Value:** $31.50<br/>**Verdict:** *Validation Watch* | 📜 Federal contract backlog audit<br/>🔍 Form 4 insider transaction ledger<br/>⚖️ Reverse DCF expectation sensitivity |
+| **$INTC**<br/>[*The Six-Hundred-Billion-Dollar Fabrication*](https://memetrading-journal.andangtruong085.workers.dev/) | **Narrative:** CHIPS Act subsidies and domestic foundry buildout guarantee parity.<br/>**Audit:** Subordinated cash flows, accelerating foundry operating losses, and trailing TSMC packaging yields destroy asymmetric capital allocation. | **Hurdle:** Negative free cash flow base<br/>**Verdict:** *Capital Prohibition* | 📜 10-Q Segment foundry losses<br/>🔍 CapEx commitments vs grant subsidies |
+| **$DELL**<br/>[*Enterprise AI Server Margins*](https://memetrading-journal.andangtruong085.workers.dev/) | **Narrative:** Explosive AI server revenue will permanently lift corporate margins.<br/>**Audit:** Low-single-digit operating margins on pass-through GPU architectures fail to yield institutional operating leverage. | **Hurdle:** Working capital drag<br/>**Verdict:** *Neutral / Monitor* | 📜 Working capital & DIO drift receipts<br/>🔍 Gross margin pass-through analysis |
+
+### 🛠️ Edge Architecture & Instant Publishing
+
+- 🏛️ **Broadsheet Aesthetic:** Styled like the *Wall Street Journal* with Newsreader serif typography, dark/light editorial themes, and hairline dividers for pure reading focus.
+- 📌 **Interactive Financial Receipts (`<FinancialReceipts />`):** No vague hyperlinks. Every factual claim is paired with an interactive popover detailing the exact SEC filing, filing date, accession number, and extracted financial facts.
+- ⚡ **Zero-Latency Global Edge Delivery:** Built with Astro and deployed directly to Cloudflare Workers (`memetrading-journal.andangtruong085.workers.dev`), serving instant static HTML from edge datacenters worldwide.
+- 🚀 **1-Click Publishing Pipeline:** Operators can go from CLI investigation to global live edge publication in seconds:
+  ```bash
+  # Publish case to website and immediately deploy live to Cloudflare Workers
+  python main.py --publish-case NVDA-2026-09-28-002 --deploy
+  ```
 
 ---
 
@@ -222,6 +274,9 @@ python main.py --ticker NVDA --query "Blackwell thermal and packaging yields" --
 
 # Generate cited article + viral video reel derived from it (Peter & Stewie)
 python main.py --ticker TSLA --query "Robotaxi regulatory path and auto gross margin" --video
+
+# 1-click publish case and deploy live to the edge journal
+python main.py --publish-case NVDA-2026-09-28-002 --deploy
 ```
 
 > [!TIP]
@@ -240,8 +295,8 @@ python main.py --ticker TSLA --query "Robotaxi regulatory path and auto gross ma
 | `python main.py -t <TICKER> --article` | Generates cited Substack forensic article (`article.md`). |
 | `python main.py -t <TICKER> --video` | Generates cited article, character script based on the article, and renders MP4 video. |
 | `python main.py --studio` / `python -m app.studio` | Launch browser-based Operator Studio GUI (`http://127.0.0.1:3000`). |
-| `python -m app.cli.publish <CASE> --deploy` | Syncs article, citations, and video to Cloudflare Astro website (`web/`) and deploys to edge. |
-| `python main.py --publish-case <CASE> --deploy` | Direct fast-path to publish and deploy a specific case via `main.py`. |
+| `python -m app.cli.publish <CASE> --deploy` | Syncs article, citations, and video to Cloudflare Astro website (`web/`) and deploys live to [The Meme Forensic Journal](https://memetrading-journal.andangtruong085.workers.dev/). |
+| `python main.py --publish-case <CASE> --deploy` | Direct fast-path to publish and deploy a specific case live to edge. |
 | `python -m app.cli.publish --list` | Lists all published articles, case IDs, and video URLs on the website. |
 | `python -m app.cli.publish --delete <SLUG> --deploy` | Deletes article and companion video asset, then redeploys live to Cloudflare. |
 | `python -m app.media.cli video --case-id <CASE>` | Standalone video reel rendering for an existing reviewed case. |
