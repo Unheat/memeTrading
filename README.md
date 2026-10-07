@@ -119,6 +119,19 @@ Translates dense financial forensics, footnote anomalies, and reverse DCF math i
 > 🌐 **Live Broadsheet & Daily Case Dossiers:** **[memetrading-journal.andangtruong085.workers.dev](https://memetrading-journal.andangtruong085.workers.dev/)**  
 > Deployed globally to the Cloudflare Workers edge network with sub-50ms latency.
 
+<br/>
+
+<div align="center">
+  <a href="https://memetrading-journal.andangtruong085.workers.dev/">
+    <img src="./README_images/journal_preview.png" alt="The Meme Forensic Journal Live Broadsheet Dossier & Synchronized Video Briefing" width="88%" />
+  </a>
+  <p align="center">
+    <sub><b>Live Broadsheet Editorial Interface:</b> Wall Street Journal-inspired serif typography, interactive SEC regulatory footnote popovers (e.g. <code>[13]</code>, <code>[15]</code>), and companion synchronized animated video reels.</sub>
+  </p>
+</div>
+
+<br/>
+
 Most financial commentary either repeats corporate PR or chases momentum after a 300% run-up, while Wall Street brokerages issue consensus "Strong Buy" ratings based on linear extrapolations at cyclical peaks. **The Meme Forensic Journal** operates as an autonomous, adversarial audit bureau: taking high-velocity market memes, retail hype, and momentum narratives and stress-testing them against audited SEC accounting reality and reverse mathematical expectations.
 
 Every published investigation provides an integrated, dual-format intelligence briefing:
