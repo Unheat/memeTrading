@@ -178,10 +178,17 @@ def _candidate_ownership_error(update: Mapping[str, Any], tool_name: str, payloa
     if not isinstance(candidate, Mapping):
         # Auto-register workspace for planned/discovered candidates on first write
         if candidate_id and payload_ticker and str(candidate_id).startswith("cand_"):
+            fallback_company = str(payload.get("company") or "")
+            fallback_cik = _payload_cik(payload)
+            if not fallback_company and payload_ticker == str(update.get("ticker") or "").upper().strip():
+                fallback_company = str(update.get("company") or "")
+            if not fallback_cik and payload_ticker == str(update.get("ticker") or "").upper().strip():
+                fallback_cik = update.get("cik")
             new_candidate = {
                 "candidate_id": str(candidate_id),
                 "ticker": payload_ticker,
-                "company": str(payload.get("company") or ""),
+                "company": fallback_company,
+                "cik": fallback_cik,
                 "sec_corpora": [],
                 "evidence": [],
                 "contradictions": [],
@@ -256,6 +263,7 @@ def _route_success(
                 "candidate_id": candidate_id,
                 "ticker": ticker,
                 "company": str(payload.get("company") or ""),
+                "cik": _payload_cik(payload),
                 "sec_corpora": [],
                 "evidence": [],
                 "contradictions": [],
@@ -264,7 +272,15 @@ def _route_success(
             }
         )
         existing["ticker"] = ticker
-        existing["company"] = str(payload.get("company") or existing.get("company") or "")
+        if payload.get("company"):
+            existing["company"] = str(payload["company"])
+        elif not existing.get("company") and ticker == str(update.get("ticker") or "").upper().strip():
+            existing["company"] = str(update.get("company") or "")
+        reg_cik = _payload_cik(payload)
+        if reg_cik:
+            existing["cik"] = reg_cik
+        elif not existing.get("cik") and ticker == str(update.get("ticker") or "").upper().strip():
+            existing["cik"] = update.get("cik")
         existing["status"] = cand_status
         if cand_status in {"vetoed", "rejected", "screened_out"}:
             existing["veto_reason"] = reason
@@ -301,6 +317,9 @@ def _route_success(
             update["ticker"] = ticker
     elif tool_name == "get_sec_financials":
         update["sec_financials"] = clean
+        f_cik = _payload_cik(clean)
+        if f_cik and not update.get("cik"):
+            update["cik"] = f_cik
     elif tool_name == "get_company_research":
         update["consensus_snapshot"] = clean
     elif tool_name == "list_sec_filings":
@@ -343,6 +362,17 @@ def _route_success(
         update.setdefault("capability_outputs", {}).setdefault(tool_name, []).append(clean)
     elif tool_name in {"search_articles", "search_social", "search_web", "read_article", "read_document"}:
         _record_source_payload(update, tool_name, clean)
+
+    if candidate is not None and not multi_candidate:
+        if candidate.get("cik") and not update.get("cik"):
+            update["cik"] = candidate["cik"]
+        elif update.get("cik") and not candidate.get("cik"):
+            candidate["cik"] = update["cik"]
+
+        if candidate.get("company") and not update.get("company"):
+            update["company"] = candidate["company"]
+        elif update.get("company") and not candidate.get("company"):
+            candidate["company"] = update["company"]
 
 
 def _append_fact_card(target: list[dict[str, Any]], card: Mapping[str, Any]) -> None:
@@ -487,10 +517,31 @@ def _route_candidate_tool(
     allow_partial: bool = False,
 ) -> None:
     """Write validated company-specific payloads to their owning workspace."""
+    # Universal identity backfill
+    incoming_cik = (
+        _payload_cik(payload)
+        or (payload.get("sec_financials", {}).get("cik") if isinstance(payload.get("sec_financials"), Mapping) else None)
+        or (payload.get("corpus", {}).get("cik") if isinstance(payload.get("corpus"), Mapping) else None)
+        or (payload.get("diligence_dossier", {}).get("cik") if isinstance(payload.get("diligence_dossier"), Mapping) else None)
+    )
+    if incoming_cik and not candidate.get("cik"):
+        candidate["cik"] = str(incoming_cik)
+
+    incoming_company = str(
+        payload.get("company")
+        or (payload.get("diligence_dossier", {}).get("company") if isinstance(payload.get("diligence_dossier"), Mapping) else "")
+        or ""
+    ).strip()
+    if incoming_company and not candidate.get("company"):
+        candidate["company"] = incoming_company
+
     if tool_name == "get_market_data":
         candidate["market_context"] = dict(payload)
     elif tool_name == "get_sec_financials":
         candidate["sec_financials"] = dict(payload)
+        f_cik = _payload_cik(payload)
+        if f_cik and not candidate.get("cik"):
+            candidate["cik"] = f_cik
     elif tool_name == "get_company_research":
         candidate["consensus_snapshot"] = dict(payload)
     elif tool_name == "list_sec_filings":
@@ -537,10 +588,16 @@ def _route_candidate_tool(
             candidate["market_context"] = dict(payload["market_context"])
         if payload.get("sec_financials"):
             candidate["sec_financials"] = dict(payload["sec_financials"])
+        if payload.get("quant_report"):
+            candidate["quant_report"] = dict(payload["quant_report"])
         if payload.get("valuation"):
             candidate["valuation"] = dict(payload["valuation"])
         if payload.get("expectation_gap"):
             candidate["expectation_gap"] = dict(payload["expectation_gap"])
+        if payload.get("company") and not candidate.get("company"):
+            candidate["company"] = str(payload["company"])
+        if payload.get("cik") and not candidate.get("cik"):
+            candidate["cik"] = str(payload["cik"])
     elif tool_name == "evaluate_valuation":
         candidate["quant_report"] = payload.get("quant_report")
         if payload.get("valuation"):
@@ -548,12 +605,18 @@ def _route_candidate_tool(
 
 
 def _payload_cik(payload: Mapping[str, Any]) -> str | None:
-    """Extract a CIK from a filing-list payload."""
+    """Extract a CIK from a filing-list, financials, or corpus payload."""
     if payload.get("cik"):
         return str(payload["cik"])
     filings = payload.get("filings")
     if isinstance(filings, list) and filings and isinstance(filings[0], Mapping) and filings[0].get("cik"):
         return str(filings[0]["cik"])
+    sec_fin = payload.get("sec_financials")
+    if isinstance(sec_fin, Mapping) and sec_fin.get("cik"):
+        return str(sec_fin["cik"])
+    corpus = payload.get("corpus")
+    if isinstance(corpus, Mapping) and corpus.get("cik"):
+        return str(corpus["cik"])
     return None
 
 

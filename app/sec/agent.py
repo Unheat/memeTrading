@@ -77,10 +77,22 @@ def create_sec_subagent_tools(
     cand_id: str,
 ) -> list[Any]:
     """Create private specialist tools for the SEC Analyst sub-agent."""
+    list_filings_call_count = 0
 
     @tool
     def list_filings(forms: list[str] | None = None, since: str | None = None) -> str:
         """List available SEC EDGAR filings for this company (e.g. forms=['10-K', '10-Q', '8-K'])."""
+        nonlocal list_filings_call_count
+        list_filings_call_count += 1
+        if list_filings_call_count > 2:
+            return json.dumps({
+                "status": "ok",
+                "message": (
+                    f"Filing catalog already inspected {list_filings_call_count - 1} times. "
+                    "Do not list filings again. Call search_corpus directly to retrieve primary evidence "
+                    "or pull_filing if a specific accession is required."
+                ),
+            })
         try:
             disc_res = _list_sec_filings(ticker=clean_ticker, forms=forms, since=since)
             if disc_res.error:
@@ -342,18 +354,46 @@ def run_sec_investigation(
         cand_id=cand_id,
     )
 
+    # Deterministic Pre-Acquisition Bootstrap: ensure local corpus is indexed before sub-agent runs
+    index_file = case_dir / "sec" / "index" / "sec.faiss"
+    if not index_file.exists():
+        forms_to_search = [form.strip().upper()] if form else ["10-K", "10-Q", "8-K"]
+        disc_res = _list_sec_filings(ticker=clean_ticker, forms=forms_to_search)
+        if disc_res.filings:
+            selected_docs = [
+                SelectedSecDocument(
+                    filing=f,
+                    document_name=f.primary_document or "primary_doc.htm",
+                    source_url=f.filing_url,
+                )
+                for f in disc_res.filings[:2]
+            ]
+            _pull_sec_filings(cases_root=root, case_id=target_id, selections=selected_docs)
+            prep_res = prepare_sec_corpus(case_dir)
+            if prep_res.error is None:
+                build_sec_index(case_dir, embedder=get_sec_embedder())
+
     # 1. Full Autonomous LangGraph Sub-Agent Path (when model supports tool binding)
     if model is not None and hasattr(model, "bind_tools"):
         try:
             model_with_tools = model.bind_tools(subagent_tools)
             subgraph = create_sec_analyst_subgraph(model_with_tools, subagent_tools, max_turns=6)
 
+            has_corpus = index_file.exists()
+            corpus_notice = (
+                "The primary SEC filings for this company have already been downloaded and indexed into your local vector corpus. "
+                "Start by calling search_corpus directly to retrieve primary evidence and verbatim quotes."
+                if has_corpus
+                else "If local filings are not yet pulled, call list_filings followed by pull_filing to index the necessary disclosures."
+            )
+
             initial_human_prompt = (
                 f"Conduct an institutional SEC filing investigation for ${clean_ticker}.\n"
                 f"Task: {task}\n"
                 f"Target Form Hint: {form or '10-K, 10-Q, or 8-K'}\n\n"
-                "Use your tools (list_filings, pull_filing, search_corpus, read_chunk, verify_claim, get_ownership_and_insider_activity) "
-                "as needed to find primary evidence, and conclude with your final institutional synthesis in strictly valid JSON."
+                f"{corpus_notice}\n\n"
+                "Use your tools (search_corpus, read_chunk, pull_filing, verify_claim, get_ownership_and_insider_activity) "
+                "to find primary evidence, and conclude with your final institutional synthesis in strictly valid JSON."
             )
             initial_state: SecAnalystState = {
                 "messages": [
@@ -380,21 +420,22 @@ def run_sec_investigation(
 
             parsed = json.loads(raw_text.strip()) if raw_text.strip() else {}
             collected_ev = list(final_sub_state.get("evidence") or [])
-            return {
-                "status": "ok",
-                "ticker": clean_ticker,
-                "candidate_id": cand_id,
-                "task": task,
-                "assessment": parsed.get("assessment", "INVESTIGATION_COMPLETE"),
-                "synthesis": parsed.get("synthesis", "Filing excerpts reviewed by SEC specialist sub-agent."),
-                "findings": parsed.get("findings", []),
-                "evidence": collected_ev,
-            }
+            if collected_ev and (parsed.get("findings") or parsed.get("synthesis")):
+                return {
+                    "status": "ok",
+                    "ticker": clean_ticker,
+                    "candidate_id": cand_id,
+                    "task": task,
+                    "assessment": parsed.get("assessment", "INVESTIGATION_COMPLETE"),
+                    "synthesis": parsed.get("synthesis", "Filing excerpts reviewed by SEC specialist sub-agent."),
+                    "findings": parsed.get("findings", []),
+                    "evidence": collected_ev,
+                }
+            logger.info("Autonomous SEC analyst sub-agent collected zero evidence or incomplete synthesis; executing deterministic 1-pass retrieval fallback")
         except Exception as exc:
             logger.warning("Autonomous SEC analyst sub-agent execution encountered (%s); falling back to direct retrieval", exc)
 
-    # 2. Deterministic 1-Pass Retrieval Fallback (for test doubles or non-tool-calling models)
-    index_file = case_dir / "sec" / "index" / "sec.faiss"
+    # 2. Deterministic 1-Pass Retrieval Fallback (for test doubles, non-tool-calling models, or empty sub-agent receipts)
     if not index_file.exists():
         forms_to_search = [form.strip().upper()] if form else ["10-K", "10-Q", "8-K"]
         disc_res = _list_sec_filings(ticker=clean_ticker, forms=forms_to_search)
@@ -453,6 +494,7 @@ def run_sec_investigation(
             "accession": chunk.accession,
             "document": chunk.document_name,
             "source_url": chunk.source_url,
+            "section": chunk.section,
             "score": round(float(score_val), 4),
         }
         evidence_list.append(ev)

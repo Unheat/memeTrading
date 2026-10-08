@@ -338,30 +338,56 @@ def _deterministic_gap_interpretation(
     return " ".join(parts)
 
 
-def _model_interpretation_conflicts(text: str, implied: float | None) -> bool:
+def _model_interpretation_conflicts(
+    text: str,
+    implied: float | None,
+    context_figures: Sequence[float | None] | None = None,
+) -> bool:
     """Validate model-authored interpretation against the deterministic implied growth.
 
     This is numeric-claim verification (deterministic validation of a schema field),
-    not intent inference: any percent figure in the interpretation field that differs
-    from the calculator's implied growth by more than the tolerance marks the model
-    narrative as fabricated.
+    not intent inference: when the model explicitly claims an implied growth figure,
+    that figure must match the calculator's implied growth within tolerance. Contextual
+    percentages (such as consensus growth estimates, terminal growth rates, discount rates,
+    or case growth rates) cited in comparative analysis do not trigger conflict.
 
     Args:
         text: Model-authored implied_growth_interpretation text.
         implied: Deterministic implied FCF growth (fraction), or None.
+        context_figures: Legitimate contextual percentages present in the prompt (consensus, terminal, etc.).
 
     Returns:
-        True when a conflicting numeric claim is present.
+        True when a conflicting numeric claim about implied growth is present.
     """
     if implied is None or not text:
         return False
+
+    allowed_context = [
+        round(float(f), 4)
+        for f in (context_figures or ())
+        if f is not None and math.isfinite(float(f))
+    ]
+    allowed_context.append(round(float(implied), 4))
+
+    found_claims: list[float] = []
     for match in _PERCENT_FIGURE_PATTERN.finditer(text):
         try:
-            claim = float(match.group(1)) / 100.0
+            claim = round(float(match.group(1)) / 100.0, 4)
         except ValueError:
             continue
-        if abs(claim - implied) > IMPLIED_CLAIM_TOLERANCE:
+        found_claims.append(claim)
+
+    if not found_claims:
+        return False
+
+    has_matching_implied = any(abs(c - implied) <= IMPLIED_CLAIM_TOLERANCE for c in found_claims)
+
+    for claim in found_claims:
+        if any(abs(claim - ctx) <= IMPLIED_CLAIM_TOLERANCE for ctx in allowed_context):
+            continue
+        if not has_matching_implied or abs(claim - implied) > IMPLIED_CLAIM_TOLERANCE:
             return True
+
     return False
 
 
@@ -467,6 +493,7 @@ def run_expectations_analyst(state: InvestigationState, model: Any) -> dict[str,
         if isinstance(item, Mapping) and item.get("quote")
     ][:5]
 
+    implied_str = f"{implied_growth * 100:.2f}%" if implied_growth is not None else "N/A"
     human_prompt = f"""Investigate Michael Mauboussin's Expectation Gap for ${ticker} ({company}):
 
 Market Data:
@@ -489,7 +516,9 @@ Preliminary Deterministic Reverse DCF (from calculator.mjs):
 Verified Evidence Clues:
 {json.dumps(evidence_quotes, indent=2, default=str)}
 
-Writing rules: restate the deterministic implied growth figure from the Preliminary Deterministic Reverse DCF exactly in implied_growth_interpretation; keep expectation_gap_summary qualitative and do not invent statistics.
+Writing rules:
+- In implied_growth_interpretation, state the exact market-implied FCF growth rate solved by calculator.mjs ({implied_str}). You may contextualize it against consensus forward growth, terminal rates, or discount rates.
+- Keep expectation_gap_summary qualitative and grounded. Do not invent statistics.
 
 Analyze what is priced in vs. consensus forecasts and formulate the 3-case DCF parameters in valid JSON."""
 
@@ -518,7 +547,18 @@ Analyze what is priced in vs. consensus forecasts and formulate the 3-case DCF p
         model_interpretation = str(parsed.get("implied_growth_interpretation", ""))
         degradation: list[str] = []
         commentary = model_interpretation
-        if _model_interpretation_conflicts(model_interpretation, implied_growth):
+        context_pcts = [
+            consensus_growth,
+            term_growth,
+            float(base_case.get("fcf_growth_rate", 0.05)),
+            float(base_case.get("discount_rate", 0.10)),
+            float(low_case.get("fcf_growth_rate", -0.05)),
+            float(low_case.get("discount_rate", 0.12)),
+            float(high_case.get("fcf_growth_rate", 0.15)),
+            float(high_case.get("discount_rate", 0.09)),
+            channel_growth,
+        ]
+        if _model_interpretation_conflicts(model_interpretation, implied_growth, context_figures=context_pcts):
             degradation.append("model_implied_growth_claim_conflicted_with_calculator")
             commentary = ""
 

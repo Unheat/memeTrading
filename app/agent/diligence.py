@@ -19,6 +19,7 @@ from app.agent.specialists import (
     run_moat_analysis,
     run_quant_analysis,
 )
+from app.market.valuation_inputs import extract_valuation_summary
 
 logger = logging.getLogger(__name__)
 
@@ -187,20 +188,15 @@ def build_diligence_dossier(
         fields (bull_target_price, report statuses, full moat_report).
     """
     quant = cand_state.get("quant_report") or {}
-    val = quant.get("valuation") or {}
+    val_summary = extract_valuation_summary(quant)
 
     dossier: dict[str, Any] = {
         "status": "ok",
         "ticker": clean_ticker,
         "candidate_id": cid,
         "company": cand_state.get("company"),
-        "valuation": {
-            "implied_growth_rate": val.get("implied_fcf_growth_rate"),
-            "fair_value": val.get("fair_value"),
-            "fair_value_range": val.get("fair_value_range"),
-            "reward_to_risk_ratio": (val.get("asymmetric_risk_reward") or {}).get("reward_to_risk_ratio"),
-            "reproducibility": (quant.get("reproducibility") or {}).get("verdict", "unverified"),
-        },
+        "valuation": val_summary,
+        "quant_report": quant if quant.get("status") == "available" else None,
         "bull_catalysts": list(getattr(bull, "catalysts", [])) if bull else [],
         "bull_thesis": getattr(bull, "bull_thesis_summary", ""),
         "bull_target_price": getattr(bull, "bull_target_price", None),

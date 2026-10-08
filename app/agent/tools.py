@@ -644,6 +644,7 @@ def create_agent_tools(
             return suppressed
         try:
             from app.agent.specialists import run_quant_analysis
+            from app.market.valuation_inputs import extract_valuation_summary
 
             state = injected_state if isinstance(injected_state, dict) else {}
             candidates = state.get("candidates") or {}
@@ -710,12 +711,7 @@ def create_agent_tools(
                 "status": "ok" if quant_rep.get("status") == "available" else "unavailable",
                 "ticker": clean_ticker,
                 "candidate_id": cand_id,
-                "valuation": {
-                    "fair_value": val.get("fair_value") or (val.get("fair_value_range") or {}).get("base"),
-                    "implied_growth_rate": val.get("implied_fcf_growth_rate") or (val.get("reverse_dcf") or {}).get("implied_fcf_growth_rate"),
-                    "reward_to_risk_ratio": (val.get("asymmetric_risk_reward") or {}).get("reward_to_risk_ratio"),
-                    "reproducibility": (quant_rep.get("reproducibility") or {}).get("verdict", "unverified"),
-                },
+                "valuation": extract_valuation_summary(quant_rep),
                 "quant_report": quant_rep,
                 "provenance": {
                     "assumption_source": "inherited_expectations" if gap.get("assumptions") else "institutional_defaults",

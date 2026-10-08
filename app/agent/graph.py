@@ -428,15 +428,18 @@ def create_research_graph(
         # capped by the elastic candidate envelope k_max(B).
         seeded_candidates = dict(state.get("candidates") or {})
         candidate_list = list(plan.candidate_entities or [])[:max_candidates_allowed]
+        clean_target_ticker = str(ticker or "").strip().upper()
         for idx, c_ticker in enumerate(candidate_list):
             clean_c = c_ticker.strip().upper()
             cid = f"cand_{clean_c.lower()}"
             alloc_tier = tier_allocations.get(clean_c) or ("tier1_deep" if idx < 3 else "tier2_light")
+            is_target = bool(clean_target_ticker and clean_c == clean_target_ticker)
             if cid not in seeded_candidates:
                 seeded_candidates[cid] = {
                     "candidate_id": cid,
                     "ticker": clean_c,
-                    "company": "",
+                    "company": str(company or "") if is_target else "",
+                    "cik": state.get("cik") if is_target else None,
                     "diligence_tier": alloc_tier,
                     "sec_corpora": [],
                     "evidence": [],
@@ -444,14 +447,26 @@ def create_research_graph(
                     "fact_cards": [],
                     "status": "discovered",
                 }
+            elif is_target:
+                if company and not seeded_candidates[cid].get("company"):
+                    seeded_candidates[cid]["company"] = str(company)
+                if state.get("cik") and not seeded_candidates[cid].get("cik"):
+                    seeded_candidates[cid]["cik"] = state["cik"]
+
         if ticker:
             clean_t = ticker.strip().upper()
             cid = f"cand_{clean_t.lower()}"
-            if cid not in seeded_candidates:
+            if cid in seeded_candidates:
+                if company and not seeded_candidates[cid].get("company"):
+                    seeded_candidates[cid]["company"] = str(company)
+                if state.get("cik") and not seeded_candidates[cid].get("cik"):
+                    seeded_candidates[cid]["cik"] = state["cik"]
+            else:
                 seeded_candidates[cid] = {
                     "candidate_id": cid,
                     "ticker": clean_t,
                     "company": str(company or ""),
+                    "cik": state.get("cik"),
                     "diligence_tier": "tier1_deep",
                     "sec_corpora": [],
                     "evidence": [],
@@ -787,10 +802,21 @@ def create_research_graph(
                 if c_ticker:
                     ticker = c_ticker
                     updates["ticker"] = ticker
-                if chosen_candidate.get("company"):
-                    updates["company"] = chosen_candidate["company"]
-                if chosen_candidate.get("cik"):
-                    updates["cik"] = chosen_candidate["cik"]
+                chosen_company = (
+                    chosen_candidate.get("company")
+                    or (chosen_candidate.get("diligence_dossier") or {}).get("company")
+                )
+                chosen_cik = (
+                    chosen_candidate.get("cik")
+                    or (chosen_candidate.get("sec_financials") or {}).get("cik")
+                    or (chosen_candidate.get("diligence_dossier") or {}).get("cik")
+                )
+                if chosen_company:
+                    updates["company"] = chosen_company
+                    chosen_candidate["company"] = chosen_company
+                if chosen_cik:
+                    updates["cik"] = chosen_cik
+                    chosen_candidate["cik"] = chosen_cik
             else:
                 updates["top_candidate_ticker"] = c_ticker
 
@@ -806,8 +832,9 @@ def create_research_graph(
                     "source": "candidate_diligence_dossier",
                 }
 
-            if not state.get("quant_report") and (val.get("fair_value") is not None or val.get("implied_growth_rate") is not None or chosen_candidate.get("quant_report")):
-                updates["quant_report"] = chosen_candidate.get("quant_report") or {
+            candidate_quant = chosen_candidate.get("quant_report") or (chosen_candidate.get("diligence_dossier") or {}).get("quant_report")
+            if not state.get("quant_report") and (val.get("fair_value") is not None or val.get("implied_growth_rate") is not None or candidate_quant):
+                updates["quant_report"] = candidate_quant or {
                     "status": "available" if repro_verdict == "pass" else "validation_error",
                     "reproducibility": {
                         "status": "ok",
