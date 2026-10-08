@@ -438,14 +438,17 @@ export function computeKellySizing({
 /**
  * Evaluates Asymmetric Risk/Reward Ratio for Hedge Fund mandates (Target >= 3:1)
  */
-export function computeAsymmetricRiskReward(currentPrice, lowFV, baseFV, highFV) {
+export function computeAsymmetricRiskReward(currentPrice, lowFV, baseFV, highFV, options = {}) {
   if (!currentPrice || !lowFV || !baseFV) return null;
 
+  const downsideFloor = options.downsideFloor != null ? options.downsideFloor : lowFV;
+  const effectiveDownside = Math.max(lowFV, downsideFloor);
+
   const upsideDollar = baseFV - currentPrice;
-  const downsideDollar = currentPrice - lowFV;
+  const downsideDollar = currentPrice - effectiveDownside;
 
   const upsidePct = round(((baseFV - currentPrice) / currentPrice) * 100, 1);
-  const downsidePct = round(((currentPrice - lowFV) / currentPrice) * 100, 1);
+  const downsidePct = round(((currentPrice - effectiveDownside) / currentPrice) * 100, 1);
 
   let ratio = null;
   if (downsideDollar > 0) {
@@ -457,9 +460,9 @@ export function computeAsymmetricRiskReward(currentPrice, lowFV, baseFV, highFV)
   const kelly = computeKellySizing({
     upsidePct,
     downsidePct: Math.abs(downsidePct),
-    probWin: 0.60,
-    maxDrawdownBudget: 0.05,
-    fraction: "half",
+    probWin: options.probWin ?? 0.60,
+    maxDrawdownBudget: options.maxDrawdownBudget ?? 0.05,
+    fraction: options.fraction ?? "half",
   });
 
   return {
@@ -471,6 +474,7 @@ export function computeAsymmetricRiskReward(currentPrice, lowFV, baseFV, highFV)
       ratio !== null && ratio >= 3.0
         ? "PASSES_ASYMMETRIC_HURDLE (>= 3.0x)"
         : "FAILS_ASYMMETRIC_HURDLE (< 3.0x or negative spread)",
+    downside_floor_used: round(effectiveDownside, 2),
     kelly_sizing: kelly,
   };
 }
@@ -725,7 +729,16 @@ export function compute(model) {
   });
 
   // Asymmetric Risk/Reward
-  const riskReward = computeAsymmetricRiskReward(inputs.current_price, range.low, range.base, range.high);
+  const assetFloor = inputs.tangible_book_value_per_share != null && inputs.tangible_book_value_per_share > 0
+    ? inputs.tangible_book_value_per_share
+    : null;
+  const riskReward = computeAsymmetricRiskReward(
+    inputs.current_price,
+    range.low,
+    range.base,
+    range.high,
+    { downsideFloor: assetFloor }
+  );
 
   // Forensic checks if data supplied
   let forensicReport = null;

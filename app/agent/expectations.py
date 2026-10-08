@@ -77,15 +77,18 @@ Return strictly valid JSON matching this exact structure:
     "base_case": {
       "fcf_growth_rate": 0.08,
       "discount_rate": 0.10,
+      "fcf_trajectory": [1200.0, 2500.0, 4500.0, 6000.0, 7500.0],
       "rationale": "Steady execution matching baseline industry CAGR..."
     },
     "high_case": {
       "fcf_growth_rate": 0.18,
       "discount_rate": 0.09,
+      "fcf_trajectory": [1500.0, 3500.0, 6000.0, 8500.0, 11000.0],
       "rationale": "High operating leverage on next-gen product ramp..."
     }
   }
 }
+Note on fcf_trajectory: If the company is emerging from a CapEx cycle or capacity inflection where trailing FCF is depressed or negative, you may optionally provide an explicit 5-year fcf_trajectory in base_case and/or high_case (in millions USD) reflecting capacity ramp and operating leverage.
 """
 
 
@@ -117,6 +120,8 @@ class ExpectationGapAnalysis:
     base_case_discount: float
     high_case_growth: float
     high_case_discount: float
+    base_case_trajectory: tuple[float, ...] = ()
+    high_case_trajectory: tuple[float, ...] = ()
     implied_fcf_growth_rate: float | None = None
     consensus_growth_estimate: float | None = None
     expectation_edge: float | None = None
@@ -130,6 +135,13 @@ class ExpectationGapAnalysis:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for state persistence."""
+        base_assump: dict[str, Any] = {"growth": self.base_case_growth, "discount": self.base_case_discount}
+        if self.base_case_trajectory:
+            base_assump["fcf_trajectory"] = list(self.base_case_trajectory)
+        high_assump: dict[str, Any] = {"growth": self.high_case_growth, "discount": self.high_case_discount}
+        if self.high_case_trajectory:
+            high_assump["fcf_trajectory"] = list(self.high_case_trajectory)
+
         return {
             "verdict": self.verdict,
             "summary": self.summary,
@@ -148,8 +160,8 @@ class ExpectationGapAnalysis:
             "degradation_reasons": list(self.degradation_reasons),
             "assumptions": {
                 "low": {"growth": self.low_case_growth, "discount": self.low_case_discount},
-                "base": {"growth": self.base_case_growth, "discount": self.base_case_discount},
-                "high": {"growth": self.high_case_growth, "discount": self.high_case_discount},
+                "base": base_assump,
+                "high": high_assump,
             },
         }
 
@@ -562,6 +574,11 @@ Analyze what is priced in vs. consensus forecasts and formulate the 3-case DCF p
             degradation.append("model_implied_growth_claim_conflicted_with_calculator")
             commentary = ""
 
+        raw_base_traj = base_case.get("fcf_trajectory")
+        base_traj = tuple(float(x) for x in raw_base_traj) if isinstance(raw_base_traj, list) and raw_base_traj else ()
+        raw_high_traj = high_case.get("fcf_trajectory")
+        high_traj = tuple(float(x) for x in raw_high_traj) if isinstance(raw_high_traj, list) and raw_high_traj else ()
+
         gap_analysis = ExpectationGapAnalysis(
             verdict=verdict,
             summary=str(parsed.get("expectation_gap_summary", "Expectation gap analyzed.")),
@@ -574,6 +591,8 @@ Analyze what is priced in vs. consensus forecasts and formulate the 3-case DCF p
             base_case_discount=float(base_case.get("discount_rate", 0.10)),
             high_case_growth=float(high_case.get("fcf_growth_rate", 0.15)),
             high_case_discount=float(high_case.get("discount_rate", 0.09)),
+            base_case_trajectory=base_traj,
+            high_case_trajectory=high_traj,
             implied_fcf_growth_rate=implied_growth,
             consensus_growth_estimate=consensus_growth,
             expectation_edge=(

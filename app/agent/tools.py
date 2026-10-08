@@ -39,6 +39,9 @@ from app.sec.evidence import search_sec_evidence as _search_sec_evidence, read_s
 from app.sec.embeddings import get_sec_query_embedder
 from app.storage.cases import case_path
 from app.agent.sanitizer import sanitize_payload
+from app.agent.contracts import ChannelCheckReceipt, CHANNEL_CHECK_TYPES, CHANNEL_IMPLICATIONS
+from uuid import uuid4
+from pydantic import ValidationError
 
 
 @dataclass
@@ -653,6 +656,72 @@ def create_agent_tools(
         })
 
     @tool
+    def record_channel_check(
+        target_ticker: str,
+        channel_type: str,
+        observed_metric: str,
+        observed_value: float | str,
+        source_url_or_channel: str,
+        baseline_value: float | str | None = None,
+        implication: str = "neutral",
+        quote_or_evidence: str = "",
+        observed_at_utc: str | None = None,
+        receipt_id: str | None = None,
+        candidate_id: str | None = None,
+    ) -> str:
+        """Record an auditable Fisher scuttlebutt channel observation receipt.
+
+        Conforms to Mosaic Theory: individually non-material, publicly observable facts
+        (distributor stockouts, spot pricing, developer telemetry, operator feedback, merchant adoption)
+        with source, metric, and verbatim quote/evidence.
+        """
+        clean_ticker = (target_ticker or "").strip().upper()
+        cand_id = candidate_id or f"cand_{clean_ticker.lower()}"
+        suppressed = _guard_check("record_channel_check", {
+            "target_ticker": clean_ticker,
+            "channel_type": channel_type,
+            "observed_metric": observed_metric,
+            "observed_value": str(observed_value),
+            "source_url_or_channel": source_url_or_channel,
+        })
+        if suppressed:
+            return suppressed
+        try:
+            if run_as_of and observed_at_utc and str(observed_at_utc)[:10] > run_as_of[:10]:
+                return json.dumps({
+                    "status": "unavailable",
+                    "reason": f"Observation date {observed_at_utc} is after backtest cutoff {run_as_of}.",
+                    "target_ticker": clean_ticker,
+                    "candidate_id": cand_id,
+                })
+
+            rid = receipt_id or f"cc_{clean_ticker.lower()}_{uuid4().hex[:8]}"
+            receipt = ChannelCheckReceipt(
+                receipt_id=rid,
+                channel_type=channel_type,  # type: ignore[arg-type]
+                source_url_or_channel=source_url_or_channel,
+                target_ticker=clean_ticker,
+                observed_metric=observed_metric,
+                observed_value=observed_value,
+                baseline_value=baseline_value,
+                implication=implication,  # type: ignore[arg-type]
+                quote_or_evidence=quote_or_evidence,
+                observed_at_utc=observed_at_utc or (run_as_of if run_as_of else None),
+            )
+            data = receipt.to_dict()
+            return json.dumps({
+                "status": "ok",
+                "candidate_id": cand_id,
+                "ticker": clean_ticker,
+                "receipt": data,
+                **data,
+            })
+        except ValidationError as ve:
+            return json.dumps({"status": "invalid_input", "message": f"Channel check validation error: {ve}"})
+        except Exception as exc:
+            return json.dumps({"status": "error", "message": f"record_channel_check error: {exc}"})
+
+    @tool
     def evaluate_valuation(
         ticker: str,
         candidate_id: str | None = None,
@@ -786,8 +855,8 @@ def create_agent_tools(
             workspace = dict(workspace) if isinstance(workspace, dict) else {}
             if run_as_of:
                 workspace["as_of_date"] = run_as_of
-            for context_key in ("market_context", "sec_financials", "consensus_snapshot", "expectation_gap", "macro_series"):
-                if context_key not in workspace and isinstance(state.get(context_key), dict):
+            for context_key in ("market_context", "sec_financials", "consensus_snapshot", "expectation_gap", "macro_series", "channel_check_receipts"):
+                if context_key not in workspace and state.get(context_key):
                     workspace[context_key] = state[context_key]
             if "macro_series" not in workspace:
                 capability_macro = (state.get("capability_outputs") or {}).get("macro_context", {}).get("macro_series")
@@ -811,7 +880,7 @@ def create_agent_tools(
         search_sec_evidence, read_sec_evidence, verify_sec_claim, get_sec_financials,
         investigate_sec,
         get_ownership_and_insider_activity, get_macro_context, register_candidate, screen_stocks, compare_candidates,
-        evaluate_valuation, conduct_candidate_diligence,
+        record_channel_check, evaluate_valuation, conduct_candidate_diligence,
     ]
     return [*core_tools, *investment_tools]
 

@@ -27,6 +27,7 @@ def test_tool_registry_contains_all_10_tools():
         "register_candidate",
         "screen_stocks",
         "compare_candidates",
+        "record_channel_check",
         "conduct_candidate_diligence",
         "evaluate_valuation",
     }

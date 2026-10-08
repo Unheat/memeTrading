@@ -392,3 +392,40 @@ def test_memo_omits_arbitrage_block_without_channel_report():
     state["status"] = "completed"
     memo = render_forensic_memo(state, final_text="")
     assert "Expectation Arbitrage (3-Pillar Synthesis)" not in memo
+
+
+def test_record_channel_check_tool_and_ingestion():
+    import json
+    from langchain_core.messages import ToolMessage
+    from app.agent.tools import create_agent_tools
+    from app.agent.tool_result_ingestion import ingest_tool_results
+
+    tools = {t.name: t for t in create_agent_tools()}
+    assert "record_channel_check" in tools
+
+    raw = tools["record_channel_check"].invoke({
+        "target_ticker": "MU",
+        "channel_type": "distributor_inventory",
+        "observed_metric": "DDR5_lead_time_weeks",
+        "observed_value": 24.0,
+        "source_url_or_channel": "https://www.digikey.com",
+        "implication": "bullish_inflection",
+        "quote_or_evidence": "Lead times reached 24 weeks.",
+    })
+    data = json.loads(raw)
+    assert data["status"] == "ok"
+    assert data["ticker"] == "MU"
+    assert data["receipt"]["observed_metric"] == "DDR5_lead_time_weeks"
+
+    req = ResearchRequest(query="Analyze MU", ticker="MU", company="Micron")
+    state = create_initial_state(req, case_id="case_mu")
+    state["candidates"]["cand_mu"] = {"ticker": "MU", "channel_check_receipts": []}
+
+    msg = ToolMessage(content=raw, name="record_channel_check", tool_call_id="call_cc_1")
+    update = ingest_tool_results(state, [msg])
+    assert len(update["channel_check_receipts"]) == 1
+    assert update["channel_check_receipts"][0]["observed_metric"] == "DDR5_lead_time_weeks"
+    cand_receipts = update["candidates"]["cand_mu"].get("channel_check_receipts", [])
+    assert len(cand_receipts) == 1
+    assert cand_receipts[0]["observed_metric"] == "DDR5_lead_time_weeks"
+

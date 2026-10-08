@@ -78,6 +78,8 @@ If you uncover an immediate disqualifying deal-breaker during your investigation
 6. **Candidate Diligence & Valuation**:
    - `conduct_candidate_diligence`: Launch isolated deep diligence sub-agent (Reverse DCF, Bull operating leverage, and Bear Red Team with numeric kill criteria).
    - `evaluate_valuation`: Deterministic Reverse DCF, Fair Value ranges (Low/Base/High), and 3:1 asymmetry test via `calculator.mjs`.
+7. **Primary Scuttlebutt Channel Checks (Fisher Ground Truth)**:
+   - `record_channel_check`: Record auditable Philip Fisher scuttlebutt channel observations conforming to Mosaic Theory (distributor stockouts/lead times, spot pricing spreads, developer telemetry, sysadmin feedback, merchant adoption). Use this whenever primary research, news, or trade reports reveal ground-truth operational demand/supply shifts ahead of backward-looking SEC filings.
 
 Do not stop after a single surface search. Follow up on high-signal leads, read linked presentation PDFs, investigate primary SEC filings, and synthesize conclusions only when backed by verifiable evidence."""
 

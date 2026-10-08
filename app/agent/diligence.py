@@ -59,6 +59,7 @@ def run_candidate_diligence(
         "macro_series": ws.get("macro_series"),
         "sec_corpora": ws.get("sec_corpora", []),
         "evidence": ws.get("evidence", []),
+        "channel_check_receipts": ws.get("channel_check_receipts", []),
         "trigger": {"query": f"Deep diligence on {clean_ticker}", "theme": "Enterprise AI & Cloud"},
     }
 

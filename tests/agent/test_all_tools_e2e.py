@@ -56,6 +56,14 @@ class ToolCoverageModel:
                 ("compare_candidates", {"candidate_ids": ["cand_msft"], "metrics": ["revenue"]}),
                 ("conduct_candidate_diligence", {"ticker": "MSFT", "candidate_id": "cand_msft"}),
                 ("evaluate_valuation", {"ticker": "MSFT", "candidate_id": "cand_msft"}),
+                ("record_channel_check", {
+                    "target_ticker": "MSFT",
+                    "candidate_id": "cand_msft",
+                    "channel_type": "distributor_inventory",
+                    "observed_metric": "lead_time_weeks",
+                    "observed_value": 12.0,
+                    "source_url_or_channel": "https://example.test/channel",
+                }),
             ]
         else:
             return AIMessage(content="Microsoft is the only evidence-backed candidate collected; the requested one-company ranking is complete.")

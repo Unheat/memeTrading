@@ -25,7 +25,7 @@ _CANDIDATE_SCOPED_TOOLS = frozenset({
     "get_market_data", "get_sec_financials", "get_company_research", "list_sec_filings",
     "pull_sec_filings", "verify_sec_claim", "search_sec_evidence", "read_sec_evidence",
     "get_ownership_and_insider_activity", "conduct_candidate_diligence", "evaluate_valuation",
-    "investigate_sec",
+    "investigate_sec", "record_channel_check",
 })
 
 
@@ -362,6 +362,9 @@ def _route_success(
         update.setdefault("capability_outputs", {}).setdefault(tool_name, []).append(clean)
     elif tool_name in {"search_articles", "search_social", "search_web", "read_article", "read_document"}:
         _record_source_payload(update, tool_name, clean)
+    elif tool_name == "record_channel_check":
+        receipt = clean.get("receipt") if isinstance(clean.get("receipt"), Mapping) else clean
+        update.setdefault("channel_check_receipts", []).append(dict(receipt))
 
     if candidate is not None and not multi_candidate:
         if candidate.get("cik") and not update.get("cik"):
@@ -602,6 +605,9 @@ def _route_candidate_tool(
         candidate["quant_report"] = payload.get("quant_report")
         if payload.get("valuation"):
             candidate["valuation"] = dict(payload["valuation"])
+    elif tool_name == "record_channel_check":
+        receipt = payload.get("receipt") if isinstance(payload.get("receipt"), Mapping) else payload
+        candidate.setdefault("channel_check_receipts", []).append(dict(receipt))
 
 
 def _payload_cik(payload: Mapping[str, Any]) -> str | None:

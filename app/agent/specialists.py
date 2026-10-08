@@ -766,9 +766,19 @@ def run_quant_analysis(state: InvestigationState) -> dict[str, Any]:
     consensus_mean = _number(mean_target_row.get("value") if isinstance(mean_target_row, dict) else mean_target_row)
 
     book_val = None
-    sec_equity = _number(_mapping(sec.get("stockholders_equity")).get(bs_period)) or _number(_mapping(sec.get("total_assets")).get(bs_period))
+    tbv_per_share = None
+    assets = _number(_mapping(sec.get("total_assets")).get(bs_period))
+    curr_liab = _number(_mapping(sec.get("current_liabilities")).get(bs_period))
+    tot_debt = _number(_mapping(sec.get("total_debt")).get(bs_period))
+    sec_equity = _number(_mapping(sec.get("stockholders_equity")).get(bs_period))
+    if sec_equity is None and assets is not None:
+        # Approximate equity from Assets - Total Debt - Current Liabilities when explicitly available
+        approx_liab = (curr_liab or 0.0) + (tot_debt or 0.0)
+        sec_equity = assets - approx_liab if approx_liab > 0 else None
+
     if sec_equity and shares and shares > 0:
         book_val = round(sec_equity / shares, 2)
+        tbv_per_share = book_val
 
     source_mapping = {
         "current_price": market_inputs["provenance"]["price_input_field"],
@@ -788,14 +798,25 @@ def run_quant_analysis(state: InvestigationState) -> dict[str, Any]:
         },
     }
 
-    dcf_cases = [
-        {"case": "low", "fcf_growth_rate": low_growth, "discount_rate": low_discount},
-        {"case": "base", "fcf_growth_rate": base_growth, "discount_rate": base_discount},
-        {"case": "high", "fcf_growth_rate": high_growth, "discount_rate": high_discount},
-    ]
+    dcf_cases = []
+    for c_name, g_rate, d_rate in [
+        ("low", low_growth, low_discount),
+        ("base", base_growth, base_discount),
+        ("high", high_growth, high_discount),
+    ]:
+        case_dict = {"case": c_name, "fcf_growth_rate": g_rate, "discount_rate": d_rate}
+        traj = dyn_assumptions.get(c_name, {}).get("fcf_trajectory")
+        if isinstance(traj, list) and len(traj) > 0:
+            case_dict["fcf_trajectory"] = traj
+        dcf_cases.append(case_dict)
 
     model = {
-        "inputs": {"current_price": price, "fcf_base": fcf_base, "shares_diluted": shares, "net_cash": net_cash},
+        "inputs": {
+            "current_price": price,
+            "fcf_base": fcf_base,
+            "shares_diluted": shares,
+            "net_cash": net_cash,
+        },
         "assumptions": assumptions,
         "dcf": {
             "terminal_growth_rate": terminal_growth,
@@ -803,6 +824,8 @@ def run_quant_analysis(state: InvestigationState) -> dict[str, Any]:
             "cases": dcf_cases,
         },
     }
+    if tbv_per_share is not None:
+        model["inputs"]["tangible_book_value_per_share"] = tbv_per_share
 
     if fwd_eps or consensus_mean or book_val:
         model["triangulation"] = {
