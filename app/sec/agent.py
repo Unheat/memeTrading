@@ -75,6 +75,7 @@ def create_sec_subagent_tools(
     case_dir: Path,
     clean_ticker: str,
     cand_id: str,
+    as_of_date: str | None = None,
 ) -> list[Any]:
     """Create private specialist tools for the SEC Analyst sub-agent."""
     list_filings_call_count = 0
@@ -94,7 +95,7 @@ def create_sec_subagent_tools(
                 ),
             })
         try:
-            disc_res = _list_sec_filings(ticker=clean_ticker, forms=forms, since=since)
+            disc_res = _list_sec_filings(ticker=clean_ticker, forms=forms, since=since, until=as_of_date)
             if disc_res.error:
                 return json.dumps({"status": "error", "code": disc_res.error.code, "message": disc_res.error.message})
             filing_summaries = [
@@ -115,7 +116,7 @@ def create_sec_subagent_tools(
         """Download and immediately index a selected filing into the local vector corpus (Auto-Index on Pull)."""
         try:
             req_form = form.strip().upper()
-            disc_res = _list_sec_filings(ticker=clean_ticker, forms=[req_form])
+            disc_res = _list_sec_filings(ticker=clean_ticker, forms=[req_form], until=as_of_date)
             if disc_res.error or not disc_res.filings:
                 return json.dumps({"status": "unavailable", "message": f"No {req_form} filings found for ${clean_ticker}."})
 
@@ -238,7 +239,7 @@ def create_sec_subagent_tools(
     def get_ownership_and_insider_activity(limit: int = 20) -> str:
         """Audit Form 4 insider transactions, isolating open-market buys/sales from tax withholding."""
         try:
-            res = _get_ownership_and_insider_activity(clean_ticker, candidate_id=cand_id, limit=limit)
+            res = _get_ownership_and_insider_activity(clean_ticker, candidate_id=cand_id, limit=limit, as_of_date=as_of_date)
             return json.dumps(res)
         except Exception as exc:
             return json.dumps({"status": "error", "message": f"get_ownership_and_insider_activity failed: {exc}"})
@@ -320,6 +321,7 @@ def run_sec_investigation(
     candidate_id: str | None = None,
     model: Any | None = None,
     top_k: int = 5,
+    as_of_date: str | None = None,
 ) -> dict[str, Any]:
     """Execute an autonomous SEC filing research investigation for one company.
 
@@ -332,6 +334,7 @@ def run_sec_investigation(
         candidate_id: Optional owning candidate identifier.
         model: Optional LLM instance for specialist synthesis.
         top_k: Number of hybrid RAG chunks to retrieve.
+        as_of_date: Optional historical Point-in-Time cutoff (YYYY-MM-DD); filings after this date are excluded.
 
     Returns:
         Structured dictionary containing synthesis, assessment, and evidence receipts.
@@ -352,13 +355,14 @@ def run_sec_investigation(
         case_dir=case_dir,
         clean_ticker=clean_ticker,
         cand_id=cand_id,
+        as_of_date=as_of_date,
     )
 
     # Deterministic Pre-Acquisition Bootstrap: ensure local corpus is indexed before sub-agent runs
     index_file = case_dir / "sec" / "index" / "sec.faiss"
     if not index_file.exists():
         forms_to_search = [form.strip().upper()] if form else ["10-K", "10-Q", "8-K"]
-        disc_res = _list_sec_filings(ticker=clean_ticker, forms=forms_to_search)
+        disc_res = _list_sec_filings(ticker=clean_ticker, forms=forms_to_search, until=as_of_date)
         if disc_res.filings:
             selected_docs = [
                 SelectedSecDocument(
@@ -438,7 +442,7 @@ def run_sec_investigation(
     # 2. Deterministic 1-Pass Retrieval Fallback (for test doubles, non-tool-calling models, or empty sub-agent receipts)
     if not index_file.exists():
         forms_to_search = [form.strip().upper()] if form else ["10-K", "10-Q", "8-K"]
-        disc_res = _list_sec_filings(ticker=clean_ticker, forms=forms_to_search)
+        disc_res = _list_sec_filings(ticker=clean_ticker, forms=forms_to_search, until=as_of_date)
         if disc_res.filings:
             selected_docs = [
                 SelectedSecDocument(

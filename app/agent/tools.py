@@ -105,6 +105,16 @@ def create_agent_tools(
         if suppressed:
             return suppressed
         try:
+            if run_as_of:
+                return json.dumps({
+                    "status": "unavailable",
+                    "ticker": ticker.strip().upper() if ticker else None,
+                    "reason": f"Historical social sentiment is unavailable as of {run_as_of} to prevent lookahead bias.",
+                    "as_of": run_as_of,
+                    "total_mentions": 0,
+                    "sentiment_score": 0.0,
+                    "posts": [],
+                })
             res = _search_social(query=query, ticker=ticker, time_window=time_window)
             return json.dumps(sanitize_payload(res.to_dict()))
         except Exception as exc:
@@ -253,6 +263,18 @@ def create_agent_tools(
         if suppressed:
             return suppressed
         try:
+            if run_as_of:
+                return json.dumps({
+                    "status": "unavailable",
+                    "ticker": ticker.strip().upper(),
+                    "candidate_id": candidate_id,
+                    "reason": f"Historical point-in-time consensus estimates as of {run_as_of} are unavailable to prevent lookahead bias.",
+                    "as_of": run_as_of,
+                    "price_targets": None,
+                    "ratings": None,
+                    "eps_estimates": [],
+                    "revenue_estimates": [],
+                })
             res = _get_company_research(ticker=ticker)
             d = res.to_dict()
             if candidate_id:
@@ -428,6 +450,7 @@ def create_agent_tools(
                 form=form,
                 candidate_id=cand_id,
                 model=model,
+                as_of_date=run_as_of,
             )
             return json.dumps(res)
         except Exception as exc:
@@ -514,7 +537,10 @@ def create_agent_tools(
         if suppressed:
             return suppressed
         try:
-            res = _get_ownership_and_insider_activity(ticker=ticker, candidate_id=candidate_id, limit=limit)
+            try:
+                res = _get_ownership_and_insider_activity(ticker=ticker, candidate_id=candidate_id, limit=limit, as_of_date=run_as_of)
+            except TypeError:
+                res = _get_ownership_and_insider_activity(ticker=ticker, candidate_id=candidate_id, limit=limit)
             if isinstance(res, dict) and candidate_id:
                 res["candidate_id"] = candidate_id
             return json.dumps(res)
@@ -528,7 +554,10 @@ def create_agent_tools(
         if suppressed:
             return suppressed
         try:
-            res = _get_macro_context(series_ids=series_ids)
+            try:
+                res = _get_macro_context(series_ids=series_ids, as_of_date=run_as_of)
+            except TypeError:
+                res = _get_macro_context(series_ids=series_ids)
             return json.dumps({"status": "ok", "macro_series": res})
         except Exception as exc:
             return json.dumps({"status": "error", "message": f"get_macro_context error: {exc}"})
@@ -656,14 +685,17 @@ def create_agent_tools(
             sec_ctx = workspace.get("sec_financials") or state.get("sec_financials")
             consensus_ctx = workspace.get("consensus_snapshot") or state.get("consensus_snapshot")
             if not isinstance(market_ctx, dict) or not market_ctx:
-                market_ctx = _get_market_data(clean_ticker).to_dict()
+                market_ctx = _get_market_data(clean_ticker, as_of_date=run_as_of).to_dict()
             if not isinstance(sec_ctx, dict) or not sec_ctx:
-                sec_ctx = _get_sec_financials(clean_ticker).to_dict()
+                sec_ctx = _get_sec_financials(clean_ticker, as_of_date=run_as_of).to_dict()
             if not isinstance(consensus_ctx, dict) or not consensus_ctx:
-                try:
-                    consensus_ctx = _get_company_research(clean_ticker).to_dict()
-                except Exception:
+                if run_as_of:
                     consensus_ctx = None
+                else:
+                    try:
+                        consensus_ctx = _get_company_research(clean_ticker).to_dict()
+                    except Exception:
+                        consensus_ctx = None
 
             # Prefer the expectations analyst's authored assumptions so this valuation uses
             # the same inputs as the diligence-internal run (audit 2026-09-26, Fix 2).
@@ -675,7 +707,10 @@ def create_agent_tools(
                 macro_source = "injected_state"
             else:
                 try:
-                    macro_series = _get_macro_context(["DGS10"])
+                    try:
+                        macro_series = _get_macro_context(["DGS10"], as_of_date=run_as_of)
+                    except TypeError:
+                        macro_series = _get_macro_context(["DGS10"])
                     macro_source = "fred_fetched"
                 except Exception as exc:
                     logger.warning("evaluate_valuation FRED DGS10 fetch failed for %s: %s; using static default rf", clean_ticker, exc)
@@ -749,6 +784,8 @@ def create_agent_tools(
             candidates = state.get("candidates") or {}
             workspace = candidates.get(cand_id) if isinstance(candidates, dict) else None
             workspace = dict(workspace) if isinstance(workspace, dict) else {}
+            if run_as_of:
+                workspace["as_of_date"] = run_as_of
             for context_key in ("market_context", "sec_financials", "consensus_snapshot", "expectation_gap", "macro_series"):
                 if context_key not in workspace and isinstance(state.get(context_key), dict):
                     workspace[context_key] = state[context_key]

@@ -72,10 +72,11 @@ def get_macro_series(series_id: str, limit: int = 30) -> list[dict[str, Any]]:
     return observations
 
 
-def get_macro_context(series_ids: list[str]) -> dict[str, dict[str, Any]]:
+def get_macro_context(series_ids: list[str], as_of_date: str | None = None) -> dict[str, dict[str, Any]]:
     """Build a macro-context snapshot for multiple FRED series.
 
     :param series_ids: Non-empty list of FRED series identifiers.
+    :param as_of_date: Optional historical Point-in-Time cutoff (YYYY-MM-DD); observations after this date are filtered out.
     :returns: Per-series dict {"latest_value", "latest_date", "observations",
               "provider", "as_of", "status"}; failed/empty series carry
               status="unavailable" and never raise to the caller.
@@ -83,10 +84,13 @@ def get_macro_context(series_ids: list[str]) -> dict[str, dict[str, Any]]:
     if not series_ids:
         raise ValueError("series_ids must be a non-empty list")
 
-    as_of = datetime.now(timezone.utc).isoformat()
+    as_of = as_of_date or datetime.now(timezone.utc).isoformat()
+    cutoff = str(as_of_date)[:10] if as_of_date else None
     context: dict[str, dict[str, Any]] = {}
     for series_id in series_ids:
         observations = get_macro_series(series_id)
+        if cutoff and observations:
+            observations = [obs for obs in observations if str(obs.get("date", "")) <= cutoff]
         if observations:
             context[series_id] = {
                 "latest_value": observations[-1]["value"],

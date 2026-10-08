@@ -17,6 +17,7 @@ def get_ownership_and_insider_activity(
     ticker: str,
     candidate_id: str | None = None,
     limit: int = 20,
+    as_of_date: str | None = None,
 ) -> dict[str, Any]:
     """Retrieve structured insider trading and ownership disclosures for a company.
 
@@ -24,6 +25,7 @@ def get_ownership_and_insider_activity(
         ticker: Uppercase ticker symbol.
         candidate_id: Optional registered candidate identifier.
         limit: Maximum number of recent transactions to return.
+        as_of_date: Optional historical Point-in-Time cutoff (YYYY-MM-DD); transactions filed after this date are excluded.
 
     Returns:
         Structured audit report distinguishing open-market trades from routine vesting.
@@ -32,6 +34,7 @@ def get_ownership_and_insider_activity(
     if not clean_ticker or not clean_ticker.isalpha():
         return {"status": "error", "message": "Valid ticker symbol is required."}
 
+    cutoff = str(as_of_date)[:10] if as_of_date else None
     transactions: list[dict[str, Any]] = []
     buys = 0
     sales = 0
@@ -43,6 +46,9 @@ def get_ownership_and_insider_activity(
         if client.is_configured:
             finnhub_rows = client.get_insider_transactions(clean_ticker, limit=limit)
             for row in finnhub_rows:
+                filed_at_val = row.get("filed_at")
+                if cutoff and filed_at_val and str(filed_at_val)[:10] > cutoff:
+                    continue
                 code = str(row.get("transaction_code") or "").upper()
                 shares = float(row.get("shares") or 0.0)
                 change = float(row.get("change") or 0.0)
@@ -57,7 +63,7 @@ def get_ownership_and_insider_activity(
                     "shares": shares,
                     "change": change,
                     "price": row.get("price"),
-                    "filed_at": row.get("filed_at"),
+                    "filed_at": filed_at_val,
                     "source_url": row.get("web_url"),
                 })
     except Exception as exc:
@@ -66,7 +72,7 @@ def get_ownership_and_insider_activity(
     # 2. Discover recent official Form 4 filings via Edgar
     recent_form4s: list[dict[str, Any]] = []
     try:
-        filing_res = list_sec_filings(clean_ticker, forms=["4"])
+        filing_res = list_sec_filings(clean_ticker, forms=["4"], until=as_of_date)
         if filing_res.filings:
             recent_form4s = [f.to_dict() for f in filing_res.filings[:5]]
     except Exception as exc:

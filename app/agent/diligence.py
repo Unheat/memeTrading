@@ -63,10 +63,11 @@ def run_candidate_diligence(
     }
 
     # If market context is missing, fetch it
+    as_of = ws.get("as_of_date")
     if not cand_state.get("market_context"):
         try:
             from app.market.market_data import get_market_data
-            cand_state["market_context"] = get_market_data(clean_ticker).to_dict()
+            cand_state["market_context"] = get_market_data(clean_ticker, as_of_date=as_of).to_dict()
         except Exception as exc:
             logger.debug("Failed to fetch market data for %s: %s", clean_ticker, exc)
 
@@ -74,7 +75,7 @@ def run_candidate_diligence(
     if not cand_state.get("sec_financials"):
         try:
             from app.sec.financials import get_sec_financials
-            cand_state["sec_financials"] = get_sec_financials(clean_ticker).to_dict()
+            cand_state["sec_financials"] = get_sec_financials(clean_ticker, as_of_date=as_of).to_dict()
         except Exception as exc:
             logger.debug("Failed to fetch SEC financials for %s: %s", clean_ticker, exc)
 
