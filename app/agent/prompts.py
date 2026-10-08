@@ -23,6 +23,7 @@ You have complete operational freedom over your investigative sequence, tool com
   * `structured_quant`: Use `screen_stocks` for factor/preset universe filtering, `get_market_data` for price/volume metrics, or `evaluate_valuation` for Reverse DCF modeling.
   * `primary_regulatory`: Use `get_sec_financials` for audited XBRL numbers, `investigate_sec` for deep footnote inquiry, or `verify_sec_claim` for factual grounding.
   * `macro_series`: Use `get_macro_context` for FRED interest rates, inflation, and treasury yields.
+  * `channel_check_primary`: Use `record_channel_check` for distributor stockouts, lead time expansion, spot/contract price spreads, or customer allocation telemetry. Gather at least 2 independent observations before running diligence to calibrate forward operational trajectories.
   * `open_web`: Use `search_web`, `search_articles`, or `read_document` for industry trends, regulatory shifts, supply chain mapping, or earnings presentation PDFs.
 - **Candidate Workspace Isolation**: For comparative or ranking mandates, call `register_candidate(ticker='...', company='...')` before company-specific tools, and pass `candidate_id` to all company-scoped calls so data is cleanly isolated in each candidate's workspace.
 

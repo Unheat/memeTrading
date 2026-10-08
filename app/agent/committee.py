@@ -53,7 +53,9 @@ You do not chase hype, retail fads, or management promises. You demand concrete 
 
 ### 2. The Strict "Passing Discipline" (Saying NO to Hot Names)
 You take pride in rejecting widely popular stocks when institutional fundamentals do not justify the risk. You enforce the firm's strict precedent:
-- **Cyclical Commodity Producers**: When trading near cyclical margin peaks with CapEx intensity > 30% and impending competitor capacity additions, peak cycle multiples are an illusion. High CapEx burdens and commoditized pricing mean you PASS when trading near or above fair value with low margin of safety.
+- **Cyclical Commodity Producers vs. Structural Scuttlebutt Inflections**:
+  * *Standard Cyclical Producers*: When trading near cyclical margin peaks with CapEx intensity > 30%, commoditized standardized parts, and no customer pre-commitments, peak cycle multiples are an illusion. High CapEx burdens and commoditized pricing mean you PASS when trading near or above fair value with low margin of safety.
+  * *Scuttlebutt Inflection Exception*: If Primary Channel Checks confirm `CHANNEL_ACCELERATION` or `UNPRICED_CHANNEL_ACCELERATION` (e.g. customized bottleneck co-packaging like HBM, multi-quarter lead time expansion, customer prepayments, or severe wafer area cannibalization), the company has transient or structural pricing power and operating leverage. Evaluate the trade on forward operating leverage and contracted backlog support rather than assuming an immediate cyclical collapse.
 - **Multiple Compression & Entrant Cannibalization**: When a high-multiple tollbooth trades at 40x+ P/E while well-funded rivals secure regulatory or commercial qualification, future ROIC and margins will compress. PASS until multiple normalizes.
 - **Excessive Leverage & Zero Margin of Error**: High Net Debt / EBITDA (> 4.0x) leaves the balance sheet fragile to debt refinancing cliffs and capex overruns. PASS.
 - **Structural Price Wars & Regulatory Drag**: Domestic market share erosion, cloud price slashing, and sovereign regulatory intervention permanently cap multiples. PASS.
@@ -232,6 +234,25 @@ def run_investment_committee(state: InvestigationState, model: Any) -> dict[str,
             bear_anchor_source = "dcf_low_fallback"
 
     # Calculate 3:1 Reward-to-Risk Ratio
+    channel_rep = state.get("channel_check_report") or {}
+    ch_verdict = str(channel_rep.get("channel_verdict") or "").upper()
+    arbitrage_verdict = str((state.get("expectation_gap") or {}).get("arbitrage_verdict") or "").upper()
+    is_channel_accel = ch_verdict == "CHANNEL_ACCELERATION" or arbitrage_verdict == "UNPRICED_CHANNEL_ACCELERATION"
+
+    if is_channel_accel and current_price:
+        # In a confirmed CHANNEL_ACCELERATION regime, demand outstrips supply;
+        # upside is anchored to the bull operating leverage target or high DCF,
+        # and downside is bounded by technical pullback / contracted backlog support.
+        high_fv = (quant_val.get("fair_value_range") or {}).get("high")
+        if high_fv and float(high_fv) > (base_target or 0.0):
+            base_target = float(high_fv)
+            upside_anchor_source = "quant_high_channel_acceleration"
+
+        pullback_floor = round(current_price * 0.82, 2)
+        if bear_floor and bear_floor < pullback_floor:
+            bear_floor = pullback_floor
+            bear_anchor_source = "channel_acceleration_pullback_floor"
+
     ratio = None
     kelly_size = 0.0
     if current_price and base_target and bear_floor and base_target > current_price and bear_floor < current_price:
@@ -306,6 +327,9 @@ def run_investment_committee(state: InvestigationState, model: Any) -> dict[str,
             "forensic_verdict": forensic.get("verdict"),
             "moat_rating": (moat.get("analysis") or {}).get("moat_rating") if isinstance(moat.get("analysis"), dict) else None,
             "thematic_thesis": thematic.get("thesis"),
+            "channel_verdict": ch_verdict if ch_verdict else "INSUFFICIENT_CHANNEL_DATA",
+            "arbitrage_verdict": arbitrage_verdict if arbitrage_verdict else None,
+            "channel_check_summary": channel_rep.get("synthesis_summary") or "",
             "bull_thesis": bull_report.bull_thesis_summary if bull_report else "No bull model.",
             "bull_catalysts": list(bull_report.catalysts) if bull_report else [],
             "bull_target_price": bull_report.bull_target_price if bull_report else None,

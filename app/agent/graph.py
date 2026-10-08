@@ -885,6 +885,23 @@ def create_research_graph(
         # Run single-stock gate checks and committee deliberation on target or #1 candidate
         eval_ticker = ticker if (ticker and ticker != "UNKNOWN") else (c_ticker if chosen_candidate else None)
         if eval_ticker and eval_ticker != "UNKNOWN":
+            # Refresh channel check report if candidate has collected receipts
+            cc_receipts = []
+            if chosen_candidate and chosen_candidate.get("channel_check_receipts"):
+                cc_receipts = list(chosen_candidate.get("channel_check_receipts"))
+            elif state.get("channel_check_receipts"):
+                cc_receipts = list(state.get("channel_check_receipts"))
+
+            existing_cc = updates.get("channel_check_report") or state.get("channel_check_report") or (dossier.get("channel_check_report") if dossier else None)
+            if cc_receipts and (not existing_cc or existing_cc.get("receipts_count", 0) < len(cc_receipts) or existing_cc.get("status") == "insufficient_data"):
+                from app.agent.specialists import run_channel_check_analysis
+                refreshed_cc = run_channel_check_analysis({
+                    "ticker": eval_ticker,
+                    "channel_check_receipts": cc_receipts,
+                    "social_signal": state.get("capability_outputs", {}).get("social_signal") or state.get("social_signal"),
+                }, model)
+                updates["channel_check_report"] = refreshed_cc.get("channel_check_report")
+
             st = {**state, **updates, "ticker": eval_ticker}
             if chosen_candidate:
                 if not st.get("market_context") and chosen_candidate.get("market_context"):

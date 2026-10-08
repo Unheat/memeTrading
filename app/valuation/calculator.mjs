@@ -50,10 +50,19 @@ export function dcf({
     throw new Error(`shares_diluted must be positive, got ${shares}`);
   }
 
+  let normalizedTrajectory = trajectory;
+  if (Array.isArray(trajectory) && trajectory.length > 0) {
+    const maxVal = Math.max(...trajectory.map((v) => Math.abs(Number(v) || 0)));
+    if ((shares > 1e6 || Math.abs(netCash) > 1e6 || (fcfBase && Math.abs(fcfBase) > 1e6)) && maxVal > 0 && maxVal < 1e6) {
+      const multiplier = maxVal < 1e3 ? 1e9 : 1e6;
+      normalizedTrajectory = trajectory.map((v) => Number(v) * multiplier);
+    }
+  }
+
   const flows = [];
   for (let y = 1; y <= years; y++) {
-    const fcf = trajectory?.length
-      ? (trajectory[y - 1] ?? trajectory[trajectory.length - 1])
+    const fcf = normalizedTrajectory?.length
+      ? (normalizedTrajectory[y - 1] ?? normalizedTrajectory[normalizedTrajectory.length - 1])
       : fcfBase * (1 + growth) ** y;
     flows.push({ year: y, fcf, pv: fcf / (1 + discount) ** y });
   }

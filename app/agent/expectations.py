@@ -77,18 +77,16 @@ Return strictly valid JSON matching this exact structure:
     "base_case": {
       "fcf_growth_rate": 0.08,
       "discount_rate": 0.10,
-      "fcf_trajectory": [1200.0, 2500.0, 4500.0, 6000.0, 7500.0],
       "rationale": "Steady execution matching baseline industry CAGR..."
     },
     "high_case": {
       "fcf_growth_rate": 0.18,
       "discount_rate": 0.09,
-      "fcf_trajectory": [1500.0, 3500.0, 6000.0, 8500.0, 11000.0],
       "rationale": "High operating leverage on next-gen product ramp..."
     }
   }
 }
-Note on fcf_trajectory: If the company is emerging from a CapEx cycle or capacity inflection where trailing FCF is depressed or negative, you may optionally provide an explicit 5-year fcf_trajectory in base_case and/or high_case (in millions USD) reflecting capacity ramp and operating leverage.
+Note on fcf_trajectory: Only include "fcf_trajectory": [y1, y2, y3, y4, y5] in base_case or high_case when trailing Base FCF is negative or depressed (< 0). When Base FCF is positive and healthy, omit fcf_trajectory completely so the deterministic calculator compounds from the base FCF. If provided, values must be in millions USD reflecting the company's real operational scale.
 """
 
 
@@ -512,6 +510,7 @@ Market Data:
 - Current Price: {price_f}
 - Shares Outstanding: {shares_f}
 - Base FCF (CFO - CapEx): {fcf}
+- Effective Annualized FCF Base: {effective_fcf}
 - Net Cash (Cash - Debt): {net_cash}
 - 20-day Volume Ratio: {(market.get("volume_ratio_20d") or {}).get("value")}
 

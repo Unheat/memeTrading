@@ -807,7 +807,12 @@ def run_quant_analysis(state: InvestigationState) -> dict[str, Any]:
         case_dict = {"case": c_name, "fcf_growth_rate": g_rate, "discount_rate": d_rate}
         traj = dyn_assumptions.get(c_name, {}).get("fcf_trajectory")
         if isinstance(traj, list) and len(traj) > 0:
-            case_dict["fcf_trajectory"] = traj
+            max_v = max((abs(float(x)) for x in traj if x is not None), default=0.0)
+            if (shares and shares > 1e6 or fcf_base and fcf_base > 1e6) and max_v > 0 and max_v < 1e6:
+                multiplier = 1e9 if max_v < 1e3 else 1e6
+                case_dict["fcf_trajectory"] = [round(float(x) * multiplier, 2) for x in traj]
+            else:
+                case_dict["fcf_trajectory"] = traj
         dcf_cases.append(case_dict)
 
     model = {
