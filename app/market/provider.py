@@ -35,10 +35,12 @@ def _normalize_period(period: str) -> str:
     return normalized
 
 
-def _yf_history(ticker: str, period: str) -> "object":  # returns pandas DataFrame
+def _yf_history(ticker: str, period: str, end: str | None = None) -> "object":  # returns pandas DataFrame
     """Seam over yfinance so tests can patch without importing pandas/yfinance."""
     import yfinance as yf
 
+    if end:
+        return yf.Ticker(ticker).history(period=period, end=end)
     return yf.Ticker(ticker).history(period=period)
 
 
@@ -59,8 +61,20 @@ def fetch_history(ticker: str, period: str = DEFAULT_PERIOD, as_of_date: str | N
     :raises MarketDataError: On empty frame or upstream failure.
     """
     normalized_period = _normalize_period(period)
+    end_date = None
+    if as_of_date:
+        try:
+            from datetime import date, timedelta
+            cutoff_dt = date.fromisoformat(str(as_of_date)[:10])
+            end_date = (cutoff_dt + timedelta(days=1)).isoformat()
+        except Exception:
+            end_date = None
+
     try:
-        frame = _yf_history(ticker, normalized_period)
+        try:
+            frame = _yf_history(ticker, normalized_period, end=end_date)
+        except TypeError:
+            frame = _yf_history(ticker, normalized_period)
     except Exception as exc:
         raise MarketDataError(PROVIDER_NAME, f"history fetch failed for {ticker}: {exc}") from exc
 
