@@ -696,16 +696,50 @@ def create_agent_tools(
                 })
 
             rid = receipt_id or f"cc_{clean_ticker.lower()}_{uuid4().hex[:8]}"
+
+            # Defensive coercion for model-authored channel types and implications
+            def _norm_ct(val: str) -> str:
+                s = str(val or "").lower().strip()
+                if any(k in s for k in ("lead_time", "inventory", "stockout", "allocation", "supply", "distributor")):
+                    return "distributor_inventory"
+                if any(k in s for k in ("spot", "price", "pricing", "contract", "spread", "cost", "asp")):
+                    return "spot_pricing"
+                if any(k in s for k in ("developer", "telemetry", "github", "sdk", "api")):
+                    return "developer_telemetry"
+                if any(k in s for k in ("operator", "sysadmin", "feedback", "hyperscaler", "cloud")):
+                    return "sysadmin_operator_feedback"
+                if any(k in s for k in ("adoption", "merchant", "customer")):
+                    return "merchant_adoption"
+                if any(k in s for k in ("churn", "cancellation")):
+                    return "customer_churn"
+                if any(k in s for k in ("shelf", "retail")):
+                    return "retail_shelf_check"
+                return "distributor_inventory"
+
+            def _norm_imp(val: str) -> str:
+                s = str(val or "").lower().strip()
+                if any(k in s for k in ("bull", "positive", "expand", "increase", "up", "growth", "high", "tight", "gain", "surge", "accelerat")):
+                    return "bullish_inflection"
+                if any(k in s for k in ("bear", "negative", "drop", "decline", "down", "collapse", "compress", "glut", "slow")):
+                    return "bearish_inflection"
+                return "neutral"
+
+            clean_ct = _norm_ct(channel_type)
+            clean_imp = _norm_imp(implication)
+            evidence_text = quote_or_evidence
+            if not evidence_text and clean_imp != str(implication):
+                evidence_text = str(implication)
+
             receipt = ChannelCheckReceipt(
                 receipt_id=rid,
-                channel_type=channel_type,  # type: ignore[arg-type]
+                channel_type=clean_ct,  # type: ignore[arg-type]
                 source_url_or_channel=source_url_or_channel,
                 target_ticker=clean_ticker,
                 observed_metric=observed_metric,
                 observed_value=observed_value,
                 baseline_value=baseline_value,
-                implication=implication,  # type: ignore[arg-type]
-                quote_or_evidence=quote_or_evidence,
+                implication=clean_imp,  # type: ignore[arg-type]
+                quote_or_evidence=evidence_text,
                 observed_at_utc=observed_at_utc or (run_as_of if run_as_of else None),
             )
             data = receipt.to_dict()
