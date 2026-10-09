@@ -10,7 +10,7 @@
 [![LangGraph DAG](https://img.shields.io/badge/Orchestration-LangGraph%20Gated%20DAG-FF6F00.svg?style=flat-square&logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
 [![SEC EDGAR Audited](https://img.shields.io/badge/Compliance-SEC%20EDGAR%20Audited-008080.svg?style=flat-square&logo=safari&logoColor=white)](app/sec/)
 [![Reverse DCF](https://img.shields.io/badge/Valuation-Reverse%20DCF%20(Mauboussin)-7C3AED.svg?style=flat-square)](app/valuation/)
-[![Deterministic Gates](https://img.shields.io/badge/Quality-510%2B%20Unit%20Tests%20Passing-10B981.svg?style=flat-square&logo=pytest&logoColor=white)](tests/)
+[![Deterministic Gates](https://img.shields.io/badge/Quality-511%2B%20Unit%20Tests%20Passing-10B981.svg?style=flat-square&logo=pytest&logoColor=white)](tests/)
 
 <br/>
 
@@ -51,12 +51,12 @@ grassroots demand signal (Reddit, forums, news)
 
 - 🔍 **Immutable SEC Evidence Ledger:** Every material revenue, inventory, and margin claim is anchored in official SEC EDGAR filings (`10-K`, `10-Q`, `8-K`) with exact accession numbers and disk receipts. Zero hallucinations.
 - 🧭 **Dual-Track SEC Evidence Engine:** Structured financial facts (XBRL statements, Form 4 trades) are parsed **deterministically** via edgartools — they never touch vector retrieval or an LLM. Qualitative filing text (MD&A, risk factors, footnotes, 8-Ks) flows through a **section-aware RAG pipeline**: filings are pre-parsed into SEC-item sections with Markdown pipe tables, chunked with section labels, and searched via hybrid FAISS+BM25 with optional section targeting (e.g. `section="Item 7"`).
-- 📡 **Philip Fisher Scuttlebutt & Channel Checks:** Audits ground-truth leading indicators (developer commit velocity, distributor stockouts, spot-vs-contract spreads, operator chatter) into Point72 concordance matrices and 3-way Expectation Arbitrage.
+- 📡 **Philip Fisher Scuttlebutt & Channel Checks:** Audits ground-truth leading indicators (developer commit velocity, distributor stockouts, spot-vs-contract spreads, operator chatter) via the model-callable `record_channel_check` tool with defensive alias coercion. Tabulates Point72 concordance matrices and 3-way Expectation Arbitrage. Enforces the **Scuttlebutt Inflection Exception** in the CIO committee to recognize structural growth inflections (promoting upside to forward operating leverage and bounding downside by contracted pullback support).
 - 📊 **Keyless Quantitative Equity Screener:** Instant factor-based and Wall Street preset screening across US exchanges (market cap, P/E multiples, revenue growth) with zero paid API keys or third-party subscriptions.
-- 📉 **Reverse DCF (Expectations Investing):** Instead of guessing future stock prices, the engine solves the discounted cash flow equation backwards: what cash-flow growth rate and ROIC is the current share price pricing in?
+- 📉 **Reverse DCF (Expectations Investing) & Downside Floor:** Instead of guessing future stock prices, the engine solves the discounted cash flow equation backwards: what cash-flow growth rate and ROIC is the current share price pricing in? Includes unit-scale auto-normalization and structural downside floor decoupling ($\max(\text{Low DCF}, \text{Tangible Book Value per Share})$).
 - 🛡️ **Forensic Accounting Shields:** Automatically computes the **Beneish M-Score** (manipulation risk), **Sloan Accrual Ratio** (earnings quality), and **Days of Inventory Outstanding (DIO)** drift to catch cyclical tops early.
 - 🏛️ **Unified 3-Mandate CIO Governance:** Enforces institutional capital governance across single-stock 3:1 asymmetry & fractional Kelly sizing, screening winner audits with actionable limit order prices, and top-down macroeconomic regimes (FRED rates, yield curve slopes, sector tilts).
-- ⏱️ **Point-in-Time (PIT) Integrity:** Supports historical cutoff dates (`--as-of YYYY-MM-DD`) that strictly discard future filings and drop undated web content to eliminate lookahead bias during backtests.
+- ⏱️ **Point-in-Time (PIT) Temporal Air-Gapping:** Air-gaps historical backtests (`--as-of YYYY-MM-DD`) by strictly clamping SEC filings, Form 4 insider XML, FRED macroeconomic series, and market price bars to the cutoff date. Disables contemporary Wall Street consensus models and live social sentiment in backtest mode to eliminate lookahead bias.
 - 🎬 **Dual Deliverables Engine:** Emits both exhaustive institutional investment memos (`memo.md`) and viral video reel packages (`faceless/dialogue.json`) featuring animated character duos like Peter & Stewie or Rick & Morty.
 - 📰 **The Meme Forensic Journal ([Live Edge Portal](https://memetrading-journal.andangtruong085.workers.dev/)):** Distraction-free Wall Street Journal broadsheet editorial portal deployed live to Cloudflare Workers. Features interactive SEC EDGAR footnote popovers, synchronized 9:16 animated video briefings, and zero duplicate bibliographies.
 - 🎛️ **Local Operator Studio (`python main.py --studio`):** Visual browser dashboard to run investigations, review articles, render reels, and 1-click publish without memorizing CLI arguments.
@@ -377,16 +377,11 @@ The repository maintains an extensive test suite verifying deterministic data pi
 
 ```bash
 # Run the complete test suite (excluding slow live network smoke tests)
-pytest tests -q --ignore=tests/smoke
+pytest --ignore=tests/smoke
 ```
 
 ```
-........................................................................ [ 20%]
-........................................................................ [ 41%]
-........................................................................ [ 62%]
-........................................................................ [ 83%]
-..........................................................               [100%]
-346 passed in 76.64s
+======================= 511 passed, 4 warnings in 19.87s =======================
 ```
 
 ---

@@ -21,12 +21,13 @@ Act as Chief Investment Officer (CIO) and Chair of the Investment Committee: wei
 - `bear_floor: float | None`
 
 ### `run_investment_committee(state: InvestigationState, model: Any) -> dict[str, Any]`
-- **Input**: `InvestigationState` with facts, market context, consensus snapshot, and adversarial report.
+- **Input**: `InvestigationState` with facts, market context, consensus snapshot, channel check report, and adversarial report.
 - **Process**:
   1. Check Pre-Trade Gates: 20d ADDV $\ge \$5\text{M}$ and Earnings Proximity $\ne \text{"BLACKOUT\_RISK"}$.
-  2. Compute 3:1 Asymmetry ratio against deterministic upside and bear downside anchors.
-  3. Compute Fractional Kelly size via `compute_fractional_kelly`.
-  4. Prompt model under CIO persona (`cio-ic.prompt.md` standard) to deliberate on conviction.
+  2. Scuttlebutt Inflection Evaluation: If `channel_verdict == "CHANNEL_ACCELERATION"` or `arbitrage_verdict == "UNPRICED_CHANNEL_ACCELERATION"`, promote upside target to `quant_high_channel_acceleration` and bound bear floor by contracted pullback support ($18\%$ below market price).
+  3. Compute 3:1 Asymmetry ratio against deterministic upside and bear downside anchors.
+  4. Compute Fractional Kelly size via `compute_fractional_kelly`.
+  5. Prompt model under CIO persona (`cio-ic.prompt.md` standard) to deliberate on conviction, passing discipline, and Scuttlebutt exceptions.
 - **Output**: Dictionary updating `state["ic_verdict"]`.
 
 ### `MacroDirective`

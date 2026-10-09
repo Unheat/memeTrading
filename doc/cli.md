@@ -105,9 +105,11 @@ python main.py -t MU -q "DRAM cycle pricing power" --article-video --character-p
 ### Point-in-Time (PIT) Discipline
 
 When `--as-of YYYY-MM-DD` is specified:
-1. **SEC Filings Clamping:** Filings (`10-K`, `10-Q`, `8-K`) with filing dates after the cutoff date are strictly filtered out of catalog searches and download requests.
-2. **Web & Article Filtering:** Articles or web search results with publication dates past the cutoff are removed.
-3. **Undated Content Dropped:** In historical backtest mode, undated web content is dropped to prevent lookahead contamination. In live mode (`--as-of` omitted), undated content is preserved.
+1. **SEC Filings Clamping:** Filings (`10-K`, `10-Q`, `8-K`) with filing dates after the cutoff date are strictly filtered out of catalog searches, XBRL extractions, and automated sub-agent retrieval (`until=as_of_date`).
+2. **Form 4 & Macro Series Air-Gapping:** Form 4 insider transactions and FRED macroeconomic time-series observations after the cutoff are dropped (`date <= as_of_date`).
+3. **Market Price History Windowing:** Daily price bars and volume metrics from yfinance are windowed with `end=as_of_date`.
+4. **Consensus & Social Block:** Future Wall Street analyst models (`get_company_research`) and contemporary retail social chatter (`search_social`) return `unavailable` to prevent forward lookahead contamination.
+5. **Undated Web Content Dropped:** In historical backtest mode, undated web content is dropped to prevent lookahead contamination. In live mode (`--as-of` omitted), undated web pages are preserved.
 
 ---
 

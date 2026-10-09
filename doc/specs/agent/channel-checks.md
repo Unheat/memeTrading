@@ -109,6 +109,37 @@ without weakening the deterministic citation and evidence-integrity gates.
   no channel data → `INSUFFICIENT_CHANNEL_DATA` with `status="insufficient_data"`.
 - No new LLM-arithmetic: numeric fields come from deterministic classification only.
 
+### R7 — Active Scuttlebutt Intake Tool (`record_channel_check`)
+`app/agent/tools.py`:
+- Exposes `@tool record_channel_check` in `create_agent_tools()`.
+- Implements defensive string coercion:
+  - `channel_type`: Maps descriptive aliases (`distributor_spot_contract`, `lead_time_allocation`) to canonical literals (`distributor_inventory`, `spot_pricing`, etc.).
+  - `implication`: Maps sentiment adjectives (`positive`, `tight`, `surge`, `accelerating`) to `bullish_inflection` and negative phrasing to `bearish_inflection`.
+  - Analytical text passed in `implication` is preserved in `quote_or_evidence`.
+- Enforces Point-in-Time temporal boundary: in backtests (`run_as_of`), observation dates exceeding the cutoff return `unavailable`.
+
+### R8 — Candidate and State Workspace Ingestion
+`app/agent/tool_result_ingestion.py`:
+- Adds `"record_channel_check"` to `_CANDIDATE_SCOPED_TOOLS`.
+- Ingests validated receipts into both `candidate["channel_check_receipts"]` and `state["channel_check_receipts"]`.
+
+### R9 — Dynamic Pre-Committee Channel Refresh
+`app/agent/graph.py::diligence_node`:
+- Prior to running gate checks and committee deliberation, scans for newly ingested receipts.
+- Re-executes `run_channel_check_analysis()` dynamically if receipts exist but the existing report is missing, outdated, or marked `insufficient_data`.
+
+### R10 — Scuttlebutt Inflection Exception & Downside Floor
+`app/agent/committee.py` & `app/valuation/calculator.mjs`:
+- In `CHANNEL_ACCELERATION` regimes (e.g. 100% capacity pre-commitments, wafer area cannibalization), the CIO treats the company as a structural inflection rather than a commodity-peak trap.
+- Upside promotes to `quant_high_channel_acceleration`.
+- Downside is bounded by contracted support / technical pullback floor (18% below spot) or Tangible Book Value per share.
+- Calculates asymmetric risk/reward: $(\text{Upside} / \text{Downside}) \ge 3.0\times$ hurdle, unlocking High Conviction allocation.
+
+### R11 — Unit-Scale Auto-Normalization
+`app/valuation/calculator.mjs` & `app/agent/specialists.py`:
+- Automatically detects unit scale discrepancies between authored cash flow trajectories (often in millions USD) and balance sheet shares/cash (in raw units).
+- Scales trajectory inputs by `1e6` or `1e9` when raw shares exceed 1 million, preventing decimal fair value collapse.
+
 ## Acceptance criteria
 
 1. `ChannelCheckReceipt` and `ChannelCheckReport` validate via Pydantic and serialize via

@@ -6,28 +6,30 @@ Define the complete LangChain tool registry, duplicate suppression, deterministi
 
 ## Tool registry
 
-`create_agent_tools(cases_root)` returns these 20 model-visible tools:
+`create_agent_tools(cases_root)` returns these 22 model-visible tools:
 
 1. `search_social`: Social chatter and hype velocity.
 2. `search_articles`: Curated financial news and GDELT articles.
 3. `read_article`: Clean prose extraction from news articles via Trafilatura.
 4. `read_document`: Primary document reader supporting PDF presentations/reports (via `pdfplumber`) and HTML document/PDF link harvesting (via `BeautifulSoup`).
 5. `search_web`: Broad web search via DuckDuckGo, supporting `file_type='pdf'` for direct document discovery.
-6. `get_market_data`: Live market price, volume ratio, ATR, and liquidity context.
-7. `get_company_research`: Wall Street consensus EPS/revenue estimates and price targets.
-8. `list_sec_filings`: Official EDGAR metadata filing discovery (10-K, 10-Q, 8-K, Form 4).
+6. `get_market_data`: Live market price, volume ratio, ATR, and liquidity context (Point-in-Time windowing: `end=as_of_date`).
+7. `get_company_research`: Wall Street consensus EPS/revenue estimates and price targets (blocked in backtests).
+8. `list_sec_filings`: Official EDGAR metadata filing discovery (10-K, 10-Q, 8-K, Form 4) with `until=as_of_date` filtering.
 9. `pull_sec_filings`: Download selected filings into local case corpus.
 10. `search_sec_evidence`: Exploratory hybrid FAISS dense + BM25 sparse + RRF search in local SEC chunks.
 11. `read_sec_evidence`: Read exact filing chunks with preceding and following context.
 12. `verify_sec_claim`: Ground key factual assertions against local SEC filings.
-13. `get_sec_financials`: Deterministic XBRL metrics (gross margin %, inventory QoQ change, net cash, capex).
-14. `investigate_sec`: High-leverage SEC Specialist Sub-Agent investigating disclosures, commitments, lease liabilities, and footnotes.
-15. `get_ownership_and_insider_activity`: Audit Form 4 insider transactions, isolating open-market buys/sales from tax withholding.
-16. `get_macro_context`: Pull official macroeconomic indicators from FRED (e.g. DGS10, FEDFUNDS, CPIAUCSL).
-17. `register_candidate`: Register a discovered candidate company for isolated research tracking, or register early vetoes.
-18. `compare_candidates`: Generate normalized cross-company comparison cards across registered candidates.
-19. `evaluate_valuation`: Deterministic Reverse DCF, Fair Value ranges, and 3:1 asymmetry test via calculator.mjs.
-20. `conduct_candidate_diligence`: Launch isolated candidate deep diligence sub-agent with Bull/Bear adversarial audit.
+13. `get_sec_financials`: Deterministic XBRL metrics (gross margin %, inventory QoQ change, net cash, capex, TTM FCF).
+14. `investigate_sec`: High-leverage SEC Specialist Sub-Agent investigating disclosures, commitments, lease liabilities, and footnotes (deterministic pre-acquisition bootstrap).
+15. `get_ownership_and_insider_activity`: Audit Form 4 insider transactions, isolating open-market buys/sales from tax withholding (PIT clamped).
+16. `get_macro_context`: Pull official macroeconomic indicators from FRED (e.g. DGS10, FEDFUNDS, CPIAUCSL) clamped to `as_of_date`.
+17. `register_candidate`: Register a discovered candidate company for isolated research tracking, or register early vetoes (`status='vetoed'`).
+18. `screen_stocks`: Keyless quantitative equity factor and preset screening across US exchanges.
+19. `compare_candidates`: Generate normalized cross-company comparison cards across registered candidates.
+20. `record_channel_check`: Record auditable Philip Fisher scuttlebutt channel observation receipts with defensive alias coercion and PIT date validation.
+21. `evaluate_valuation`: Deterministic Reverse DCF, Fair Value ranges, and 3:1 asymmetry test via calculator.mjs.
+22. `conduct_candidate_diligence`: Launch isolated candidate deep diligence sub-agent with Bull/Bear adversarial audit.
 
 `ToolCallGuard` suppresses repeated identical signatures within a run. Tool exceptions become structured error payloads so the agent can adapt without crashing the graph.
 
@@ -48,9 +50,9 @@ evidence completion (G1)
   └→ explicit named-company allocation request only: G1 → G2 → G3 → G4 → committee
 ```
 
-The agent node receives `build_research_system_prompt`, context-compacts complete tool exchanges, binds the 17-tool registry, and clips calls to the remaining budget.
+The agent node receives `build_research_system_prompt`, context-compacts complete tool exchanges, binds the 22-tool registry, and clips calls to the remaining budget.
 
-When the model returns text without tool calls, `should_continue` checks `_has_evidence_gaps(state)`. If candidates lack market/SEC data, if comparisons are missing, or if discovered PDF links have not been read, it routes to `reflect`, which injects a targeted gap-reflection prompt and loops back to `agent` to drive deeper rounds of tool calls.
+When the model returns text without tool calls, `should_continue` checks `_has_evidence_gaps(state)`. If candidates lack market/SEC data, if comparisons are missing, or if discovered PDF links have not been read, it routes to `reflect`, which injects a targeted gap-reflection prompt and loops back to `agent` to drive deeper rounds of tool calls. Prior to the final committee node, `diligence_node` dynamically refreshes `channel_check_report` from any newly recorded channel observation receipts.
 
 ## Donor code provenance
 

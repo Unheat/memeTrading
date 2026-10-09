@@ -92,11 +92,12 @@ flowchart TD
             end
         end
 
-        subgraph T_MKT["3. Market & Context Data"]
-            t_mkt["get_market_data: Real-time price, volume ratio, 50/200 SMA, ATR"]
-            t_co["get_company_research: Wall Street consensus targets & estimates"]
-            t_own["get_ownership_and_insider_activity: Form 4 insider trades (Code P vs S vs F)"]
-            t_macro["get_macro_context: Official FRED Treasury yields, inflation, rates"]
+        subgraph T_MKT["3. Market, Context & Scuttlebutt Data"]
+            t_mkt["get_market_data: Real-time price, volume ratio, 50/200 SMA, ATR<br/>(Point-in-Time windowing: end=as_of_date)"]
+            t_co["get_company_research: Wall Street consensus targets & estimates<br/>(Blocked in backtests to eliminate lookahead bias)"]
+            t_own["get_ownership_and_insider_activity: Form 4 insider trades (Code P vs S vs F)<br/>(Point-in-Time clamped: date <= as_of_date)"]
+            t_macro["get_macro_context: Official FRED Treasury yields, inflation, rates<br/>(Point-in-Time clamped: date <= as_of_date)"]
+            t_cc["record_channel_check: Philip Fisher scuttlebutt receipts<br/>(distributor stockouts, spot/contract spreads, lead times,<br/>developer telemetry with defensive alias coercion)"]
         end
 
         subgraph T_COMP["4. Candidate Screening & Ranking"]
@@ -114,7 +115,7 @@ flowchart TD
                 ENG_FOR["Forensic Accounting<br/>Full 8-Factor Beneish M-Score & Sloan Accruals"]
                 ENG_MOAT["Moat Analyst (7 Powers)<br/>rating + durability → dossier & CIO payload"]
                 ENG_CHAN["Channel Checks Specialist<br/>Point72 Concordance Matrix (Scuttlebutt receipts)"]
-                ENG_QNT["Stage 2: Deterministic Quant DCF & Triangulation<br/>calculator.mjs — consumes Stage-1 expectation_gap<br/>• Dynamic FRED DGS10 WACC & Blume Beta<br/>• CapEx Normalization & Hyper-Growth Regime<br/>• Multi-Method Triangulation (DCF + Multiples + P/TBV)"]
+                ENG_QNT["Stage 2: Deterministic Quant DCF & Triangulation<br/>calculator.mjs — consumes Stage-1 expectation_gap<br/>• Dynamic FRED DGS10 WACC & Blume Beta<br/>• CapEx Normalization & Hyper-Growth Regime<br/>• Multi-Method Triangulation (DCF + Multiples + P/TBV)<br/>• Unit-Scale Normalization (Raw vs Millions)"]
                 ENG_BULL["Bull Advocate<br/>catalysts + numeric bull_target_price (1 structured retry)"]
                 ENG_BEAR["Hostile Bear Red Team<br/>kill criteria + numeric bear_floor_price"]
 
@@ -172,11 +173,11 @@ flowchart TD
         subgraph GATES["3. Governance Gates (Deterministic Instant Math)"]
             G_ACC["<b>Accounting Gate (G2)</b><br/>Beneish M-Score manipulation check (reused from dossier)"]:::gate
             G_VAL["<b>Valuation Gate (G3)</b><br/>DCF growth hurdle reproducibility check (calculator.mjs)"]:::gate
-            G_ASYM["<b>Asymmetry Gate (G4)</b><br/>Reward-to-Risk ratio ≥ configured asymmetry_hurdle<br/>(mandate-style profile, default 3.0x)"]:::gate
+            G_ASYM["<b>Asymmetry Gate (G4)</b><br/>Reward-to-Risk ratio ≥ configured asymmetry_hurdle<br/>(Decoupled Downside: Tangible Book Value or Pullback Floor)"]:::gate
             G_ACC --> G_VAL --> G_ASYM
         end
 
-        COMM["<b>4. Unified 3-Mandate Investment Committee (CIO Deliberation)</b><br/>• Single-Stock: Evaluates Bull vs Bear evidence, 3:1 asymmetry, & tiered Kelly sizing<br/>• Screening Winner Audit: Audits Candidate #1 for standalone risk/reward & limit price<br/>• Macro Strategy: Classifies FRED monetary & yield curve regimes; issues MacroDirective sector tilts"]:::gate
+        COMM["<b>4. Unified 3-Mandate Investment Committee (CIO Deliberation)</b><br/>• Single-Stock: Evaluates Bull vs Bear evidence, 3:1 asymmetry, Scuttlebutt Inflection Exception, & tiered Kelly sizing<br/>• Screening Winner Audit: Audits Candidate #1 for standalone risk/reward & limit price<br/>• Macro Strategy: Classifies FRED monetary & yield curve regimes; issues MacroDirective sector tilts"]:::gate
 
         G_EV --> PROMO --> GATES --> COMM
     end
@@ -187,7 +188,7 @@ flowchart TD
 
     %% Class assignments
     class S1,S2,S3,S4,S5 stage;
-    class t_web,t_art,t_doc,t_soc,t_sec_fin,sec_list,sec_pull,sec_search,sec_chunk,sec_claim,sec_insider,t_mkt,t_co,t_own,t_macro,t_scr,t_reg,t_cmp,t_val,p_scr,p_web,p_art,p_soc tool;
+    class t_web,t_art,t_doc,t_soc,t_sec_fin,sec_list,sec_pull,sec_search,sec_chunk,sec_claim,sec_insider,t_mkt,t_co,t_own,t_macro,t_cc,t_scr,t_reg,t_cmp,t_val,p_scr,p_web,p_art,p_soc tool;
     class ENG_EXP,ENG_FOR,ENG_MOAT,ENG_CHAN,ENG_QNT,ENG_BULL,ENG_BEAR,sec_sub_desc,p_eval,p_plan,p_seed engine;
     class G_EV,G_ACC,G_VAL,G_ASYM,COMM,GATES gate;
     class PROMO read;
@@ -201,11 +202,11 @@ flowchart TD
 |---|---|---|
 | **Heavy Modeling & Sub-Agents** | Runs per-candidate on demand via `conduct_candidate_diligence(ticker)`: Quant DCF (with dynamic FRED WACC, CapEx normalization, and Multi-Method Triangulation), Forensics, Moat, Channel Checks (Scuttlebutt), Bull Advocate, and Bear Red Team. Or commands the `investigate_sec` analyst sub-agent for deep filing retrieval. | **Zero engine execution.** It never spins up sub-agents or re-runs models. |
 | **Candidate Selection & Screening** | Dynamically screens candidates quantitatively (`screen_stocks`), registers workspaces (`register_candidate`), declares early vetoes (`status='vetoed'`), and builds cross-candidate comparison matrices (`compare_candidates`). | Promotes the **winning candidate's dossier (#1)** into state, auditing its standalone risk/reward and calculating actionable limit order prices (`top_candidate_ticker`). |
-| **Evidence & Compliance** | Commands `investigate_sec` to auto-discover, pull, chunk, and cite 10-K/10-Qs; verifies rumors via `verify_sec_claim`. | Evaluates the **Evidence Gate (G1)**: ensures primary SEC citations and market context exist before voting. |
-| **Scuttlebutt Channel Checks** | Extracts ground-truth channel receipts (developer velocity, retail stockouts, spot-vs-contract spreads, operator chatter); builds Point72 concordance matrix. | Synthesizes **3-Way Expectation Arbitrage**: compares channel momentum ($g_{\text{channel}}$) against reverse DCF implied growth ($g_{\text{implied}}$) and consensus ($g_{\text{consensus}}$). |
-| **Audit Gates** | Collects raw metrics (deterministic Reverse DCF implied growth, Beneish M-Score, Bear floor, Multi-method divergence flag). | Runs **instant mathematical checks**: Accounting Gate (G2), Valuation Gate (G3), and Asymmetry Gate (G4 $\ge$ the configured `asymmetry_hurdle`, default 3.0x). |
-| **Capital Allocation & Sizing** | Formulates thesis, numeric bull target price, and downside floor prices (both debate anchors are validated; missing anchors degrade the report and fall back to labeled Street/DCF anchors). | The **Chief Investment Officer (CIO)** conducts a single formal deliberation with enforced anchor provenance, assigns conviction tier, and sizes via **tiered Fractional Kelly**: near-miss ratios land in a zero-capital `PAPER_TRADE_WATCH` queue for calibration. |
-| **Macro / Thematic Regimes** | Collects macroeconomic time-series from FRED (`FEDFUNDS`, `DGS10`, `T10Y2Y`, `CPIAUCSL`, `UNRATE`) via `get_macro_context`. | In pure top-down investigations, CIO issues a **`MacroDirective`**: classifies policy stance, yield curve slopes, and sector overweight/underweight tilts. |
+| **Evidence & Compliance** | Commands `investigate_sec` to auto-discover, pull, chunk, and cite 10-K/10-Qs; verifies rumors via `verify_sec_claim`. Clamps historical queries to `until=run_as_of` in backtest mode. | Evaluates the **Evidence Gate (G1)**: ensures primary SEC citations and market context exist before voting. |
+| **Scuttlebutt Channel Checks** | Ingests primary channel receipts via `record_channel_check` with defensive alias coercion; extracts ground-truth telemetry (developer velocity, distributor lead times, spot-vs-contract spreads, operator chatter); builds Point72 concordance matrix. | Refreshes channel telemetry dynamically; synthesizes **3-Way Expectation Arbitrage**: compares channel momentum ($g_{\text{channel}}$) against reverse DCF implied growth ($g_{\text{implied}}$) and consensus ($g_{\text{consensus}}$). Applies **Scuttlebutt Inflection Exception** when channel acceleration confirms pricing power. |
+| **Audit Gates** | Collects raw metrics (deterministic Reverse DCF implied growth, Beneish M-Score, Bear floor, Tangible Book Value per share, Multi-method divergence flag). | Runs **instant mathematical checks**: Accounting Gate (G2), Valuation Gate (G3), and Asymmetry Gate (G4 $\ge$ configured hurdle, with downside floor bounded by Tangible Book Value or contracted support). |
+| **Capital Allocation & Sizing** | Formulates thesis, numeric bull target price, and downside floor prices (both debate anchors are validated; missing anchors degrade the report and fall back to labeled Street/DCF anchors). | The **Chief Investment Officer (CIO)** conducts a single formal deliberation with enforced anchor provenance, recognizes Scuttlebutt Inflections, assigns conviction tier, and sizes via **tiered Fractional Kelly**: near-miss ratios land in a zero-capital `PAPER_TRADE_WATCH` queue for calibration. |
+| **Macro / Thematic Regimes** | Collects macroeconomic time-series from FRED (`FEDFUNDS`, `DGS10`, `T10Y2Y`, `CPIAUCSL`, `UNRATE`) via `get_macro_context` (clamped to historical `as_of_date`). | In pure top-down investigations, CIO issues a **`MacroDirective`**: classifies policy stance, yield curve slopes, and sector overweight/underweight tilts. |
 
 ---
 
@@ -309,6 +310,37 @@ Institutional equity research cannot rely exclusively on SEC filings because reg
    - **Solvency Gate**: Forensic SEC accounting execution (Beneish M-Score $< -1.78$, Sloan accruals $< 8\%$).
    $$\Delta_{\text{arbitrage}} = g_{\text{channel}} - \max(g_{\text{implied}}, g_{\text{consensus}})$$
    Surfaces true expectation arbitrage before quarterly prints confirm the trend.
+
+### 3.10 Point-in-Time (PIT) Temporal Air-Gapping & Dual-Mode Backtesting
+To guarantee historical research validity and eliminate lookahead bias:
+1. **Temporal Clamping across All Data Providers**:
+   - `get_sec_financials` & `list_sec_filings`: filters filings with `filing_date <= as_of_date`.
+   - `investigate_sec`: deterministic pre-acquisition bootstrap supplies `until=run_as_of` to EDGAR queries.
+   - `get_ownership_and_insider_activity`: Form 4 transactions filtered by `transaction_date <= as_of_date`.
+   - `get_macro_context`: FRED macroeconomic time-series clamped to `date <= as_of_date`.
+   - `get_market_data`: historical daily bars windowed with `end=as_of_date` via yfinance.
+2. **Forward Consensus & Social Sentiment Blocking**:
+   - In backtest mode (`run_as_of` set), `get_company_research` returns `unavailable` (preventing future Wall Street price targets from leaking into the past).
+   - `search_social` returns `unavailable` for backtests (preventing contemporary retail chatter from leaking into past periods).
+3. **Dual-Mode Web Policy**:
+   - Historical backtests drop undated web pages or enforce temporal filtering.
+   - Live research mode retains full, unconstrained access to real-time and undated web documents.
+
+### 3.11 Scuttlebutt Intake, Dynamic Scale Normalization & Downside Floor Anchoring
+When evaluating growth inflection regimes (e.g. semiconductor fab capacity ramps, hyperscaler AI infrastructure builds):
+1. **Active Scuttlebutt Intake (`record_channel_check`)**:
+   - The agent records observable facts into immutable `ChannelCheckReceipt` structures.
+   - Includes defensive alias coercion (`_norm_ct` and `_norm_imp`) to prevent model formatting variations from triggering validation failures.
+2. **Unit-Scale Auto-Normalization (`calculator.mjs` & `specialists.py`)**:
+   - Detects unit scale discrepancies between authored cash flow trajectories (often in millions USD) and balance sheet shares/cash (in raw dollars).
+   - Automatically normalizes trajectory inputs by `1e6` or `1e9` to match the shares base, preventing mathematical fair value collapse.
+3. **Decoupled Downside Floor**:
+   - In `app/valuation/calculator.mjs::computeAsymmetricRiskReward`, downside risk is bounded by:
+     $$\text{Effective Downside} = \max(\text{Low Fair Value}, \text{Downside Floor})$$
+   - `downsideFloor` is passed as Tangible Book Value per share ($\text{TBV} / \text{share}$) or contracted support, preventing trough quarters from artificially depressing the reward-to-risk ratio.
+4. **Scuttlebutt Inflection Exception in CIO Deliberation (`app/agent/committee.py`)**:
+   - When `channel_check_report` confirms `CHANNEL_ACCELERATION` (e.g. 100% capacity pre-commitments, wafer area cannibalization), the CIO promotes the upside anchor to the operating leverage target (`quant_high_channel_acceleration`) and bounds downside to contracted pullback support (18% below spot).
+   - Unlocks asymmetric capital allocation for structural inflections while enforcing strict quantitative kill triggers.
 
 ---
 

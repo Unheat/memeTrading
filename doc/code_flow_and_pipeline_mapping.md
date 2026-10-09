@@ -120,10 +120,11 @@ Discovery, Screening & Market Data  investigate_sec()           conduct_candidat
 • get_market_data                                                        ▼
 • register_candidate                                            1. Expectations Analyst (expectations.py)
 • compare_candidates                                            2. Forensic Accounting (specialists.py)
-                                                                3. Moat Analysis (specialists.py)
-                                                                4. Quant DCF Engine (specialists.py)
-                                                                5. Bull Advocate (bull.py)
-                                                                6. Bear Red Team (adversarial.py)
+• record_channel_check                                          3. Moat Analysis (specialists.py)
+  (Scuttlebutt ground truth)                                    4. Channel Checks (specialists.py)
+                                                                5. Quant DCF Engine (specialists.py)
+                                                                6. Bull Advocate (bull.py)
+                                                                7. Bear Red Team (adversarial.py)
 ```
 
 #### The Dual-Track SEC Evidence Boundary
@@ -223,14 +224,15 @@ The SEC evidence layer routes each data type through exactly one of two tracks (
 2. **Unified 3-Mandate Routing**:
    - **Top-Down Macro / Thematic**: If the query is macroeconomic or thematic with zero equity candidates (`candidates={}`), `diligence_node` calls `run_macro_investment_committee()`, deterministically classifying monetary policy and yield curve regimes from FRED data, and generating a `MacroDirective` with sector tilts.
    - **Cross-Sectional Screening**: In multi-candidate screening mode, workspaces are preserved for cross-peer comparison, and Candidate #1 (the Top Pick by reward-to-risk ratio) is promoted to `top_candidate_ticker` for standalone CIO audit.
-   - **Bottom-Up Single Stock**: The single candidate dossier (DCF fair value, Bull catalysts & numeric target, Bear kill criteria & floor, Beneish verdict, full moat report, and channel check report) is promoted into top-level state variables.
+   - **Bottom-Up Single Stock**: The single candidate dossier (DCF fair value, Bull catalysts & numeric target, Bear kill criteria & floor, Beneish verdict, full moat report, and channel check report) is promoted into top-level state variables. Before committee deliberation, `diligence_node` dynamically refreshes `channel_check_report` from any collected receipts to incorporate late-breaking scuttlebutt observations.
 3. **Governance Gates (Instant Deterministic Math)**:
    - **Accounting Gate (G2)**: `evaluate_accounting_gate()` checks the Beneish M-Score ($M \le -1.78$).
    - **Valuation Gate (G3)**: `evaluate_valuation_gate()` verifies calculator reproducibility and reasonable growth hurdles.
-   - **Asymmetry Gate (G4)**: `evaluate_asymmetry_gate()` enforces the reward-to-risk hurdle from the deterministic DCF risk/reward (the committee applies the configured `asymmetry_hurdle`, default $3.0\times$). Data integrity failures (`validation_required`) are strictly separated from disciplined strategic PASS / watchlist conclusions (`fails_asymmetric_hurdle` with actionable limit order guidance).
+   - **Asymmetry Gate (G4)**: `evaluate_asymmetry_gate()` enforces the reward-to-risk hurdle from the deterministic DCF risk/reward (the committee applies the configured `asymmetry_hurdle`, default $3.0\times$). Downside risk is bounded by `downsideFloor` ($\text{TBV} / \text{share}$ or contracted pullback floor in `CHANNEL_ACCELERATION`), decoupling the ratio from artificial trailing cash-flow lows.
 4. **Investment Committee Deliberation**: `run_investment_committee()` ([`committee.py:154`](../app/agent/committee.py:154)) runs a single formal CIO deliberation using `CIO_SYSTEM_PROMPT`. It:
-   - Synthesizes Bull upside catalysts versus Bear kill criteria with **enforced anchor provenance**: the payload separates `upside_anchor` (source: `consensus_mean` / `quant_fair_value` / `bull_target_price` / `consensus_high_fallback`) from `dcf_base_fair_value`, records `bear_anchor_source` (`red_team_bear_floor` / `dcf_low_fallback`), and the CIO must cite the anchor source accurately in `anchor_citation`.
-   - Enforces the strict "Passing Discipline" (rejecting cyclical peak multiples, commoditized capex traps, or excessive debt).
+   - Synthesizes Bull upside catalysts versus Bear kill criteria with **enforced anchor provenance**: the payload separates `upside_anchor` (source: `consensus_mean` / `quant_fair_value` / `bull_target_price` / `quant_high_channel_acceleration`) from `dcf_base_fair_value`, records `bear_anchor_source` (`red_team_bear_floor` / `dcf_low_fallback` / `channel_acceleration_pullback_floor`), and the CIO must cite the anchor source accurately in `anchor_citation`.
+   - Evaluates the **Scuttlebutt Inflection Exception**: When `channel_check_report` confirms `CHANNEL_ACCELERATION` (e.g. 100% capacity pre-commitments or severe wafer cannibalization), the CIO evaluates forward operating leverage and backlog durability rather than assuming an immediate cyclical collapse.
+   - Enforces the strict "Passing Discipline" (rejecting commoditized unbacked capex traps or excessive debt).
    - Applies **tiered sizing** from config-driven hurdles in `budget_state`: ratio $< 2.0\times$ → `VALIDATION_WATCH`; $[2.0\times, \text{hurdle})$ → `PAPER_TRADE_WATCH` (`paper_trade: true`, zero capital, kept for calibration); $\ge$ hurdle → quarter-Kelly (8% cap); $\ge 5.0\times$ with fully available debate reports → half-Kelly (10% cap).
    - Outputs an `ICVerdict` schema with verdict, conviction tier, tiered Kelly position size, anchor fields, `paper_trade`, and `bear_floor`.
 5. **State Transition**: Connects directly to `END`.
@@ -268,6 +270,7 @@ The remaining modules in `app/agent/` provide the runtime, state, and serializat
 | `app/agent/planning.py` | `generate_research_plan` | Stage 1 (`planner`) | `planner_node` | `ResearchPlanSchema` |
 | `app/agent/graph.py` | `executor_node` | Stage 2 (`executor`) | `planner` or `ingest` or `reflect` | `messages` (AIMessage with `tool_calls`) |
 | `app/agent/tools.py` | `create_agent_tools` | Stage 2 (`tools`) | `executor_node` | Dispatches tools to external providers |
+| `app/agent/tools.py` | `record_channel_check` | Stage 2 Tool | `executor_node` | Records structured Philip Fisher scuttlebutt receipts (`ChannelCheckReceipt`) with defensive alias coercion |
 | `app/agent/diligence.py` | `run_candidate_diligence` | Stage 2 (`tools`) | Tool `conduct_candidate_diligence` | `diligence_dossier` on candidate workspace |
 | `app/agent/expectations.py` | `run_expectations_analyst` | Stage 2 Sub-Agent | `run_candidate_diligence` | `expectation_gap` analysis |
 | `app/agent/specialists.py` | `run_forensic_analysis` | Stage 2 Sub-Agent | `run_candidate_diligence` | `forensic_report` (Beneish M-Score, Sloan) |

@@ -59,7 +59,7 @@ The system organizes institutional equity research into a **5-Stage Model-Direct
                ┌────────────────────────────────────────────────────────┐
                │ STAGE 2: DEEP RESEARCH AGENT LOOP (executor)           │
                │  • The Analyst Workbench: Model-directed reasoning loop│
-               │  • 20 Normalized Tools across 6 capabilities:          │
+               │  • 22 Normalized Tools across 7 capabilities:          │
                │    - Discovery: search_social, search_articles, web    │
                │    - Primary Docs: read_article, read_document (PDF)   │
                │    - SEC Sub-Agent: investigate_sec, verify_sec_claim  │
@@ -67,12 +67,14 @@ The system organizes institutional equity research into a **5-Stage Model-Direct
                │                  de-cumulation & 8 forensic concepts)  │
                │    - Context: get_market_data, get_company_research,   │
                │               get_macro_context, insider activity      │
-               │    - Screening: register_candidate (early vetoes),     │
+               │    - Scuttlebutt: record_channel_check (Fisher ground   │
+               │                   truth receipts & alias coercion)     │
+               │    - Screening: screen_stocks, register_candidate,     │
                │                 compare_candidates                     │
                │  • Diligence Sub-Agents on demand via tools:           │
                │    - conduct_candidate_diligence(ticker) sub-agent     │
-               │      (Expectations -> Forensics -> Quant DCF ->        │
-               │       Bull Advocate -> Hostile Bear Red Team)          │
+               │      (Expectations -> Forensics -> Moat -> Channels -> │
+               │       Quant DCF -> Bull Advocate -> Hostile Red Team)  │
                │    - evaluate_valuation(ticker) Reverse DCF            │
                └───────────────────────────┬────────────────────────────┘
                                            │ (Tool Call Dispatches)
@@ -105,11 +107,12 @@ The system organizes institutional equity research into a **5-Stage Model-Direct
                │       - Accounting Gate (G2: Full 8-Factor Beneish)    │
                │       - Valuation Gate (G3: calculator.mjs check)      │
                │       - Asymmetry Gate (G4: >= configured hurdle,      │
-               │         default 3.0x; mandate-style profiles)          │
+               │         default 3.0x; supported by Tangible Book Value │
+               │         or technical pullback floor)                   │
                │  • 4. Investment Committee (CIO Deliberation):         │
                │       - Single LLM deliberation on Bull vs Bear evidence│
-               │       - Passing Discipline + Tiered Kelly Sizing       │
-               │         (paper-trade queue for near-miss ratios)       │
+               │       - Passing Discipline + Scuttlebutt Exception     │
+               │       - Tiered Kelly Sizing (paper-trade queue)        │
                │       - Sizes portfolio weight via Fractional Kelly    │
                │  • Renders Final Institutional Memo & Audit JSON       │
                └───────────────────────────┬────────────────────────────┘
