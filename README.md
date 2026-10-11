@@ -395,6 +395,14 @@ pytest --ignore=tests/smoke
 
 ---
 
+## 📄 License
+
+This project is licensed under the **Apache License, Version 2.0**. See the [LICENSE](LICENSE) file for the full license text.
+
+For third-party open-source software and architectural attributions, see the [NOTICE](NOTICE) file.
+
+---
+
 <div align="center">
   <sub>Built for precision fundamental equity research. Star ⭐ this repository if you believe in evidence-backed investing!</sub>
 </div>

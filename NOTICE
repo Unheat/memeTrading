@@ -1,0 +1,57 @@
+MemeTrading Investment Research & Media Generation Pipeline
+Copyright 2026 UnHeat <anbi2682006@gmail.com>
+
+This product is licensed under the Apache License, Version 2.0.
+
+This product includes software and architectural patterns adapted from or
+incorporating third-party open-source projects:
+
+1. Faceless Video Generation Engine
+   Directly incorporates software from faceless
+   Copyright (c) 2026 Creatorberry
+   License: MIT License
+
+2. Institutional Valuation Engine & Research Schemas
+   Directly incorporates and adapts software from investment-research
+   Copyright (c) 2026 Supanut Chailungka
+   License: MIT License
+
+3. Trading Agents & Date Window Frameworks
+   Adapts schemas, evaluation backtest, and date window logic from tradingagents
+   Copyright (c) Turing Dynamics
+   License: Apache License, Version 2.0
+
+4. EDGAR Tools
+   Adapts Form 4 XML parsing and financial extraction patterns from edgartools
+   Copyright (c) 2022 Dwight Gunning
+   License: MIT License
+
+5. Stock Market Intelligence
+   Adapts technical indicators and sentiment adapters from stock-market-intelligence
+   Copyright (c) 2026 HalcyonVector (Sagnik)
+   License: MIT License
+
+6. GPT Researcher
+   Adapts research ledger and query planning concepts from gpt-researcher
+   Copyright (c) Assaf Elovic
+   License: Apache License, Version 2.0
+
+7. Enterprise Agentic RAG Platform
+   Adapts vector retrieval and claim verification patterns from enterprise-agentic-rag-platform
+   Copyright (c) 2026 digit987 / ara-5
+   License: MIT License
+
+8. Reddit Stock AI Agent Recommendation
+   Adapts Reddit social scraping and post filtering from reddit-stock-ai-agent-recommendation
+   Copyright (c) 2025 Johnny Chang
+   License: MIT License
+
+9. Finance News Aggregator
+   Adapts RSS feed templates from finance-news-aggregator
+   Copyright (c) 2020 Alex Reed
+   License: MIT License
+
+10. AI Hedge Fund
+    Adapts research completeness gate semantics from ai-hedge-fund
+    Copyright (c) 2024 Virat Singh
+    License: MIT License
