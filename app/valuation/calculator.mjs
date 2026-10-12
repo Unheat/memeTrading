@@ -42,6 +42,7 @@ export function dcf({
   shares,
   netCash = 0,
   trajectory = null,
+  cashFlowMode = "fcff",
 }) {
   if (discount <= terminalGrowth) {
     throw new Error(`discount_rate (${discount}) must exceed terminal_growth_rate (${terminalGrowth})`);
@@ -72,11 +73,24 @@ export function dcf({
   const pvTerminal = terminalValue / (1 + discount) ** years;
 
   const pvFlows = flows.reduce((s, f) => s + f.pv, 0);
-  const enterpriseValue = pvFlows + pvTerminal;
-  const equityValue = enterpriseValue + netCash;
+  let enterpriseValue;
+  let equityValue;
+  if (cashFlowMode === "fcfe") {
+    // Levered FCFE belongs directly to equity holders.
+    // The PV of FCFE discounted at Cost of Equity is Equity Value.
+    // Net cash is NOT added because cash balance/interest income are already accounted for in FCFE.
+    equityValue = pvFlows + pvTerminal;
+    enterpriseValue = equityValue - netCash;
+  } else {
+    // Unlevered FCFF belongs to all capital providers.
+    // Discounted at WACC to get Enterprise Value, plus Net Cash to get Equity Value.
+    enterpriseValue = pvFlows + pvTerminal;
+    equityValue = enterpriseValue + netCash;
+  }
   const fairValuePerShare = equityValue > 0 ? equityValue / shares : 0.0;
 
   return {
+    cash_flow_mode: cashFlowMode,
     pv_explicit_flows: round(pvFlows),
     pv_terminal: round(pvTerminal),
     terminal_share_of_value: round(pvTerminal / (pvFlows + pvTerminal), 3),
@@ -99,6 +113,7 @@ export function solveReverseDCF({
   terminalGrowthRate,
   years = 5,
   netCash = 0,
+  cashFlowMode = "fcff",
 }) {
   if (!currentPrice || currentPrice <= 0 || !shares || shares <= 0) {
     return null;
@@ -115,7 +130,7 @@ export function solveReverseDCF({
   }
 
   const targetEquityValue = currentPrice * shares;
-  const targetEV = targetEquityValue - netCash;
+  const targetEV = cashFlowMode === "fcfe" ? targetEquityValue : targetEquityValue - netCash;
 
   if (targetEV <= 0) {
     return {
@@ -596,6 +611,7 @@ export function compute(model) {
   }
   const { inputs, dcf: dcfSpec, sotp: sotpSpec, forensic: forensicData } = model;
   const years = dcfSpec.projection_years ?? 5;
+  const cashFlowMode = inputs.cash_flow_mode || "fcff";
 
   const results = {};
   for (const c of dcfSpec.cases) {
@@ -608,6 +624,7 @@ export function compute(model) {
       shares: inputs.shares_diluted,
       netCash: inputs.net_cash ?? 0,
       trajectory: c.fcf_trajectory,
+      cashFlowMode,
     });
   }
 
@@ -720,6 +737,7 @@ export function compute(model) {
     terminalGrowthRate: dcfSpec.terminal_growth_rate,
     years,
     netCash: inputs.net_cash ?? 0,
+    cashFlowMode,
   });
 
   // SOTP calculation if available

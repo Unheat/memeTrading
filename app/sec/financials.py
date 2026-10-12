@@ -348,16 +348,19 @@ def _extract_fact_quarterly_capex(company: Any, periods: list[str]) -> dict[str,
         if not facts:
             return capex_by_period
 
-        import re
-
         def _parse_period_year_q(p_str: str) -> tuple[int | None, int | None]:
-            m_q = re.search(r"Q([1-4])\s*(\d{4})", p_str, re.I)
-            if m_q:
-                return int(m_q.group(2)), int(m_q.group(1))
-            m_yq = re.search(r"(\d{4})\s*[-_\sQ]\s*Q?([1-4])", p_str, re.I)
-            if m_yq:
-                return int(m_yq.group(1)), int(m_yq.group(2))
-            return None, None
+            clean = str(p_str or "").replace("-", " ").replace("_", " ").upper().strip()
+            parts = clean.split()
+            fy: int | None = None
+            fq: int | None = None
+            for part in parts:
+                if part.isdigit() and len(part) == 4:
+                    fy = int(part)
+                elif part.startswith("Q") and len(part) == 2 and part[1].isdigit():
+                    q_num = int(part[1])
+                    if 1 <= q_num <= 4:
+                        fq = q_num
+            return fy, fq
 
         concepts = [
             "paymentstoacquireproductiveassets",
@@ -431,6 +434,94 @@ def _extract_fact_quarterly_capex(company: Any, periods: list[str]) -> dict[str,
         logger.debug("Failed fact-level CapEx fallback: %s", exc)
 
     return capex_by_period
+
+
+def _extract_fact_quarterly_cfo(company: Any, periods: list[str]) -> dict[str, float | None]:
+    """Fallback extraction and de-cumulation of discrete quarterly CFO directly from company facts.
+
+    Handles cumulative durations in Form 10-Q (e.g. Q2 reported as 180-day H1 fact,
+    Q3 reported as 270-day 9M fact) by arithmetically deriving discrete 3-month quarters
+    (Q2 = H1 - Q1, Q3 = 9M - H1, Q4 = FY - 9M).
+    """
+    cfo_by_period: dict[str, float | None] = {}
+    try:
+        facts = getattr(company, "facts", None)
+        if not facts:
+            return cfo_by_period
+
+        def _parse_period_year_q(p_str: str) -> tuple[int | None, int | None]:
+            clean = str(p_str or "").replace("-", " ").replace("_", " ").upper().strip()
+            parts = clean.split()
+            fy: int | None = None
+            fq: int | None = None
+            for part in parts:
+                if part.isdigit() and len(part) == 4:
+                    fy = int(part)
+                elif part.startswith("Q") and len(part) == 2 and part[1].isdigit():
+                    q_num = int(part[1])
+                    if 1 <= q_num <= 4:
+                        fq = q_num
+            return fy, fq
+
+        concepts = [
+            "netcashprovidedbyusedinoperatingactivities",
+            "netcashprovidedbyoperatingactivities",
+            "operatingcashflow",
+        ]
+
+        for p in periods:
+            fy, fq = _parse_period_year_q(p)
+            if fy is None or fq is None:
+                continue
+
+            extracted_val = None
+            for concept in concepts:
+                candidates = []
+                fy_cands = []
+                q3_cands = []
+                h1_cands = []
+                q1_cands = []
+                for f in facts:
+                    if f.period_type == "duration" and f.fiscal_year == fy and concept in str(f.concept).lower():
+                        if f.period_start and f.period_end:
+                            days = (f.period_end - f.period_start).days
+                            if f.fiscal_period == f"Q{fq}" and 70 <= days <= 110 and f.value is not None:
+                                candidates.append((f.period_end, getattr(f, "filing_date", None) or f.period_end, float(f.value)))
+                            elif f.fiscal_period == "Q1" and 70 <= days <= 110 and f.value is not None:
+                                q1_cands.append((f.period_end, float(f.value)))
+                            elif f.fiscal_period == "Q2" and 130 <= days <= 210 and f.value is not None:
+                                h1_cands.append((f.period_end, float(f.value)))
+                            elif fq == 4 and f.fiscal_period == "FY" and 350 <= days <= 380 and f.value is not None:
+                                fy_cands.append((f.period_end, float(f.value)))
+                            elif f.fiscal_period == "Q3" and 211 <= days <= 300 and f.value is not None:
+                                q3_cands.append((f.period_end, float(f.value)))
+
+                if candidates:
+                    candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
+                    extracted_val = candidates[0][2]
+                    break
+                elif fq == 2 and h1_cands and q1_cands:
+                    h1_cands.sort(key=lambda x: x[0], reverse=True)
+                    q1_cands.sort(key=lambda x: x[0], reverse=True)
+                    extracted_val = round(h1_cands[0][1] - q1_cands[0][1], 2)
+                    break
+                elif fq == 3 and q3_cands and (h1_cands or q1_cands):
+                    q3_cands.sort(key=lambda x: x[0], reverse=True)
+                    base = h1_cands[0][1] if h1_cands else q1_cands[0][1]
+                    extracted_val = round(q3_cands[0][1] - base, 2)
+                    break
+                elif fq == 4 and fy_cands and q3_cands:
+                    fy_cands.sort(key=lambda x: x[0], reverse=True)
+                    q3_cands.sort(key=lambda x: x[0], reverse=True)
+                    extracted_val = round(fy_cands[0][1] - q3_cands[0][1], 2)
+                    break
+
+            if extracted_val is not None:
+                cfo_by_period[p] = extracted_val
+    except Exception as exc:
+        logger.debug("Failed fact-level CFO fallback: %s", exc)
+
+    return cfo_by_period
 
 
 def _get_company(ticker: str) -> Any:
@@ -598,6 +689,14 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4, as_of_date: str | None
         for p, val in fact_capex.items():
             if val is not None:
                 result["capex"][p] = val
+
+    # De-cumulate discrete quarterly CFO from facts if available to avoid cumulative 10-Q distortion
+    cfo_candidates = [p for p in result["periods"] if "Q2" in str(p).upper() or "Q3" in str(p).upper() or "Q4" in str(p).upper() or result["cash_from_operations"].get(p) is None]
+    if cfo_candidates:
+        fact_cfo = _extract_fact_quarterly_cfo(company, cfo_candidates)
+        for p, val in fact_cfo.items():
+            if val is not None:
+                result["cash_from_operations"][p] = val
 
     # Enforce positive CapEx convention across all extracted periods
     for p in result["periods"]:

@@ -149,6 +149,26 @@ def test_shortlist_4_pillar_momentum_and_quality() -> None:
     assert shortlist[0]["ticker"] == "HIGH_MOM"
 
 
+def test_shortlist_penalizes_negative_pe_loss_makers() -> None:
+    """Negative P/E companies (cash-burners) must rank at the bottom of the value factor."""
+    rows = [
+        _row("PROFITABLE_CHEAP", 10e9, 12.0, "2.0 Buy (10)"),
+        _row("PROFITABLE_GROWTH", 10e9, 35.0, "2.0 Buy (10)"),
+        _row("BURNING_CASH", 10e9, -5.0, "2.0 Buy (10)"),
+        _row("DISASTER_LOSS", 10e9, -50.0, "2.0 Buy (10)"),
+    ]
+    shortlist = build_deterministic_shortlist(rows, top_n=8)
+    by_ticker = {r["ticker"]: r for r in shortlist}
+    # Profitable cheap stock must have the highest value score
+    assert by_ticker["PROFITABLE_CHEAP"]["value_score"] > by_ticker["PROFITABLE_GROWTH"]["value_score"]
+    # Profitable growth stock must have higher value score than loss-makers
+    assert by_ticker["PROFITABLE_GROWTH"]["value_score"] > by_ticker["BURNING_CASH"]["value_score"]
+    assert by_ticker["PROFITABLE_GROWTH"]["value_score"] > by_ticker["DISASTER_LOSS"]["value_score"]
+    # Severe loss-maker (-5.0 has worse negative E/P than -50.0) ranks lower
+    assert by_ticker["PROFITABLE_CHEAP"]["value_score"] == pytest.approx(1.0)
+    assert by_ticker["BURNING_CASH"]["value_score"] == pytest.approx(0.0)
+
+
 def test_candidate_allocation_schema() -> None:
     """Verify CandidateAllocation is part of ResearchPlanSchema."""
     from app.agent.planning import CandidateAllocation, ResearchPlanSchema

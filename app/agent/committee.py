@@ -242,16 +242,38 @@ def run_investment_committee(state: InvestigationState, model: Any) -> dict[str,
     if is_channel_accel and current_price:
         # In a confirmed CHANNEL_ACCELERATION regime, demand outstrips supply;
         # upside is anchored to the bull operating leverage target or high DCF,
-        # and downside is bounded by technical pullback / contracted backlog support.
+        # and downside is bounded by dynamic volatility support (ATR) and cycle trough valuation.
         high_fv = (quant_val.get("fair_value_range") or {}).get("high")
         if high_fv and float(high_fv) > (base_target or 0.0):
             base_target = float(high_fv)
             upside_anchor_source = "quant_high_channel_acceleration"
 
-        pullback_floor = round(current_price * 0.82, 2)
-        if bear_floor and bear_floor < pullback_floor:
-            bear_floor = pullback_floor
-            bear_anchor_source = "channel_acceleration_pullback_floor"
+        atr_obj = market.get("atr_14")
+        atr_num = atr_obj.get("value") if isinstance(atr_obj, dict) else atr_obj
+        try:
+            atr_val = float(atr_num) if atr_num is not None and float(atr_num) > 0 else None
+        except (ValueError, TypeError):
+            atr_val = None
+
+        if atr_val is not None:
+            dyn_floor = round(current_price - 2.5 * atr_val, 2)
+        else:
+            dyn_floor = round(current_price * 0.82, 2)
+
+        low_fv = (quant_val.get("fair_value_range") or {}).get("low")
+        if low_fv and float(low_fv) > 0:
+            dyn_floor = max(dyn_floor, float(low_fv))
+
+        # Dynamic floor is bounded between 60% and 92% of market price
+        dyn_floor = min(dyn_floor, round(current_price * 0.92, 2))
+        dyn_floor = max(dyn_floor, round(current_price * 0.60, 2))
+
+        if bear_floor and bear_floor < dyn_floor:
+            bear_floor = dyn_floor
+            bear_anchor_source = "channel_acceleration_dynamic_floor"
+        elif not bear_floor:
+            bear_floor = dyn_floor
+            bear_anchor_source = "channel_acceleration_dynamic_floor"
 
     ratio = None
     kelly_size = 0.0

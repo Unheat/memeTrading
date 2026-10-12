@@ -228,6 +228,33 @@ CHANNEL_CHECK_TYPES = Literal[
 ]
 CHANNEL_IMPLICATIONS = Literal["bullish_inflection", "neutral", "bearish_inflection"]
 
+CHANNEL_TIERS = Literal[
+    "tier_1_physical_core",
+    "tier_2_distribution",
+    "tier_3_developer",
+    "tier_4_public",
+]
+OBSERVATION_GRADES = Literal[
+    "grade_a_hard_metric",
+    "grade_b_action",
+    "grade_c_soft",
+    "grade_d_rumor",
+]
+
+TIER_WEIGHTS: dict[str, float] = {
+    "tier_1_physical_core": 1.00,
+    "tier_2_distribution": 0.60,
+    "tier_3_developer": 0.30,
+    "tier_4_public": 0.05,
+}
+
+GRADE_WEIGHTS: dict[str, float] = {
+    "grade_a_hard_metric": 1.00,
+    "grade_b_action": 0.70,
+    "grade_c_soft": 0.30,
+    "grade_d_rumor": 0.05,
+}
+
 
 class ChannelCheckReceipt(BaseModel):
     """One auditable ground-truth channel observation (Fisher scuttlebutt receipt).
@@ -248,6 +275,8 @@ class ChannelCheckReceipt(BaseModel):
     observed_value: float | str
     baseline_value: float | str | None = None
     implication: CHANNEL_IMPLICATIONS = "neutral"
+    tier: CHANNEL_TIERS = "tier_2_distribution"
+    grade: OBSERVATION_GRADES = "grade_b_action"
     quote_or_evidence: str = ""
     observed_at_utc: str | None = None
 
@@ -268,6 +297,8 @@ class ChannelCheckReceipt(BaseModel):
             "observed_value": self.observed_value,
             "baseline_value": self.baseline_value,
             "implication": self.implication,
+            "tier": self.tier,
+            "grade": self.grade,
             "quote_or_evidence": self.quote_or_evidence,
             "observed_at_utc": self.observed_at_utc,
         }
@@ -290,6 +321,9 @@ class ChannelCheckReport(BaseModel):
     bullish_count: int = 0
     bearish_count: int = 0
     discordant_signals: int = 0
+    weighted_bull_score: float = 0.0
+    weighted_bear_score: float = 0.0
+    net_channel_momentum: float = 0.0
     channel_implied_growth: float | None = None
     channel_verdict: Literal[
         "CHANNEL_ACCELERATION",
@@ -309,6 +343,9 @@ class ChannelCheckReport(BaseModel):
             "bullish_count": self.bullish_count,
             "bearish_count": self.bearish_count,
             "discordant_signals": self.discordant_signals,
+            "weighted_bull_score": self.weighted_bull_score,
+            "weighted_bear_score": self.weighted_bear_score,
+            "net_channel_momentum": self.net_channel_momentum,
             "channel_implied_growth": self.channel_implied_growth,
             "channel_verdict": self.channel_verdict,
             "synthesis_summary": self.synthesis_summary,

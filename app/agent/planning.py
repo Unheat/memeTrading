@@ -53,8 +53,18 @@ def _percentile_ranks(values: list[Optional[float]]) -> list[float]:
 
     indexed.sort(key=lambda pair: pair[1])
     denom = len(indexed) - 1
-    for pos, (i, _v) in enumerate(indexed):
-        ranks[i] = pos / denom
+    if denom == 0:
+        return ranks
+
+    # Handle ties by averaging positions of identical values
+    val_positions: dict[float, list[int]] = {}
+    for pos, (i, v) in enumerate(indexed):
+        val_positions.setdefault(v, []).append(pos)
+
+    for i, v in indexed:
+        positions = val_positions[v]
+        avg_pos = sum(positions) / len(positions)
+        ranks[i] = avg_pos / denom
     return ranks
 
 
@@ -130,13 +140,28 @@ def build_deterministic_shortlist(
     if not gated:
         return []
 
-    # 1. Value Pillar: cheaper P/E ranks higher
-    value_basis = [(r["forward_pe"] if r["forward_pe"] is not None else r["trailing_pe"]) for r in gated]
-    value_pcts = [1.0 - p for p in _percentile_ranks(value_basis)]
+    # 1. Value Pillar: Earnings Yield (E/P = 1 / P/E).
+    # Higher earnings yield ranks higher. Negative P/E (loss-makers) yields negative E/P,
+    # correctly ranking distressed companies at the bottom instead of falsely as "deep value".
+    earnings_yields: list[Optional[float]] = []
+    for r in gated:
+        pe = r["forward_pe"] if r["forward_pe"] is not None else r["trailing_pe"]
+        if pe is not None and pe != 0:
+            earnings_yields.append(1.0 / pe)
+        else:
+            earnings_yields.append(None)
+    value_pcts = _percentile_ranks(earnings_yields)
 
     # 2. Quality Pillar: lower consensus rating (bullish) + positive operating margin
     ratings = [_parse_analyst_rating(r["analyst_rating"])[0] for r in gated]
-    conviction_pcts = [1.0 - p for p in _percentile_ranks(ratings)]
+    valid_ratings_count = sum(1 for r in ratings if r is not None)
+    if valid_ratings_count < 2:
+        conviction_pcts = [
+            min(max(round((5.0 - r) / 4.0, 4), 0.0), 1.0) if r is not None else SHORTLIST_NEUTRAL_PERCENTILE
+            for r in ratings
+        ]
+    else:
+        conviction_pcts = [1.0 - p for p in _percentile_ranks(ratings)]
     margin_pcts = _percentile_ranks([r["operating_margin"] for r in gated])
     # Blend analyst conviction with reported operating margin when available
     quality_pcts = [

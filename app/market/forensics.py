@@ -48,12 +48,45 @@ def compute_beneish_m_score(
         - 0.327 * lvgi
     )
 
+    # Cash-confirmed hypergrowth adjustment:
+    # If revenue is growing rapidly (SGI > 1.25) but total accruals are non-positive (TATA <= 0.0),
+    # meaning earnings are backed by real cash conversion (CFO >= Net Income/Operating Income),
+    # evaluate organic growth adjusted M-Score by capping SGI at 1.25 to prevent false-positive fraud flags.
+    organic_growth_confirmed = bool(sgi > 1.25 and tata <= 0.0)
+    effective_sgi = min(sgi, 1.25) if organic_growth_confirmed else sgi
+    adjusted_m_score = (
+        -4.84
+        + 0.920 * dsri
+        + 0.528 * gmi
+        + 0.404 * aqi
+        + 0.892 * effective_sgi
+        + 0.115 * depi
+        - 0.172 * sgai
+        + 4.679 * tata
+        - 0.327 * lvgi
+    )
+
+    # Beneish 5-variable model (Beneish 1997, cutoff -2.22)
+    m5_score = -6.065 + 0.823 * dsri + 0.906 * gmi + 0.593 * aqi + 0.717 * sgi + 0.107 * depi
+
     is_manipulator = m_score > -1.78
+    if is_manipulator and organic_growth_confirmed and adjusted_m_score <= -1.78:
+        # Overrule false positive: hypergrowth is verified by cash conversion
+        is_manipulator = False
+        verdict = "ORGANIC_GROWTH_CONFIRMED_CLEAN"
+    elif is_manipulator:
+        verdict = "HIGH_RISK_EARNINGS_MANIPULATION"
+    else:
+        verdict = "CLEAN_LOW_MANIPULATION_RISK"
+
     return {
         "m_score": _round(m_score, 3),
+        "adjusted_m_score": _round(adjusted_m_score, 3),
+        "m5_score": _round(m5_score, 3),
+        "organic_growth_confirmed": organic_growth_confirmed,
         "is_manipulator_probability_high": is_manipulator,
         "threshold": -1.78,
-        "verdict": "HIGH_RISK_EARNINGS_MANIPULATION" if is_manipulator else "CLEAN_LOW_MANIPULATION_RISK",
+        "verdict": verdict,
         "indices": {
             "dsri": _round(dsri, 3),
             "gmi": _round(gmi, 3),

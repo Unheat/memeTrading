@@ -20,7 +20,12 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.agent.contracts import ChannelCheckReceipt, ChannelCheckReport
+from app.agent.contracts import (
+    ChannelCheckReceipt,
+    ChannelCheckReport,
+    TIER_WEIGHTS,
+    GRADE_WEIGHTS,
+)
 from app.agent.state import InvestigationState
 from app.valuation.engine import run_calculator
 
@@ -421,14 +426,6 @@ def _normalize_receipt(
     Accepts receipts that already carry explicit structured fields (from social
     providers or upstream tool ingestion). Observations without an explicit
     implication classify as neutral — never guessed from prose.
-
-    Args:
-        item: Raw observation mapping.
-        ticker: Candidate ticker for receipt ownership.
-        idx: Sequence index for deterministic receipt ids.
-
-    Returns:
-        Validated receipt, or None when the item lacks the minimum identity fields.
     """
     observed_metric = str(item.get("observed_metric") or item.get("metric") or "").strip()
     observed_value = item.get("observed_value", item.get("value"))
@@ -437,6 +434,15 @@ def _normalize_receipt(
     implication = str(item.get("implication") or "neutral").strip()
     if implication not in {"bullish_inflection", "neutral", "bearish_inflection"}:
         implication = "neutral"
+
+    tier = str(item.get("tier") or "tier_2_distribution").strip()
+    if tier not in TIER_WEIGHTS:
+        tier = "tier_2_distribution"
+
+    grade = str(item.get("grade") or "grade_b_action").strip()
+    if grade not in GRADE_WEIGHTS:
+        grade = "grade_b_action"
+
     try:
         return ChannelCheckReceipt(
             receipt_id=str(item.get("receipt_id") or f"cc_{ticker.lower()}_{idx:02d}"),
@@ -447,6 +453,8 @@ def _normalize_receipt(
             observed_value=observed_value if isinstance(observed_value, (int, float, str)) else str(observed_value),
             baseline_value=item.get("baseline_value"),
             implication=implication,  # type: ignore[arg-type]
+            tier=tier,  # type: ignore[arg-type]
+            grade=grade,  # type: ignore[arg-type]
             quote_or_evidence=str(item.get("quote_or_evidence") or item.get("quote") or "")[:500],
             observed_at_utc=str(item.get("observed_at_utc") or datetime.now(timezone.utc).isoformat()),
         )
@@ -455,13 +463,21 @@ def _normalize_receipt(
         return None
 
 
-def _classify_channel_verdict(bullish: int, bearish: int, total: int) -> str:
-    """Deterministically classify the channel verdict from receipt counts.
+def _classify_channel_verdict(
+    bullish: int,
+    bearish: int,
+    total: int,
+    weighted_bull: float = 0.0,
+    weighted_bear: float = 0.0,
+) -> str:
+    """Deterministically classify the channel verdict from credibility-weighted receipt momentum.
 
     Args:
         bullish: Count of bullish-inflection receipts.
         bearish: Count of bearish-inflection receipts.
         total: Total validated receipts.
+        weighted_bull: Credibility-weighted score of bullish receipts.
+        weighted_bear: Credibility-weighted score of bearish receipts.
 
     Returns:
         One of CHANNEL_ACCELERATION, CHANNEL_BREAKDOWN, MIXED_CHANNEL,
@@ -469,6 +485,21 @@ def _classify_channel_verdict(bullish: int, bearish: int, total: int) -> str:
     """
     if total < CHANNEL_CHECK_MIN_RECEIPTS:
         return "INSUFFICIENT_CHANNEL_DATA"
+
+    # Rule: Directional acceleration/breakdown strictly requires at least 2 concordant signals
+    if bullish < 2 and bearish < 2:
+        return "MIXED_CHANNEL"
+
+    total_weight = weighted_bull + weighted_bear
+    if total_weight > 0:
+        net_momentum = (weighted_bull - weighted_bear) / total_weight
+        # Credibility-weighted momentum thresholds
+        if bullish >= 2 and net_momentum >= 0.20 and weighted_bull >= 0.40:
+            return "CHANNEL_ACCELERATION"
+        if bearish >= 2 and net_momentum <= -0.20 and weighted_bear >= 0.40:
+            return "CHANNEL_BREAKDOWN"
+        return "MIXED_CHANNEL"
+
     if bullish >= 2 and bullish > bearish:
         return "CHANNEL_ACCELERATION"
     if bearish >= 2 and bearish > bullish:
@@ -538,15 +569,27 @@ def run_channel_check_analysis(state: InvestigationState, model: Any | None = No
                 pass
 
     receipts: list[dict[str, Any]] = []
+    weighted_bull = 0.0
+    weighted_bear = 0.0
     for idx, item in enumerate(raw_items, start=1):
         receipt = _normalize_receipt(item, ticker, idx)
         if receipt is not None:
-            receipts.append(receipt.to_dict())
+            r_dict = receipt.to_dict()
+            receipts.append(r_dict)
+            tw = TIER_WEIGHTS.get(r_dict.get("tier", "tier_2_distribution"), 0.60)
+            gw = GRADE_WEIGHTS.get(r_dict.get("grade", "grade_b_action"), 0.70)
+            w = tw * gw
+            if r_dict["implication"] == "bullish_inflection":
+                weighted_bull += w
+            elif r_dict["implication"] == "bearish_inflection":
+                weighted_bear += w
 
     bullish = sum(1 for r in receipts if r["implication"] == "bullish_inflection")
     bearish = sum(1 for r in receipts if r["implication"] == "bearish_inflection")
     total = len(receipts)
-    verdict = _classify_channel_verdict(bullish, bearish, total)
+    total_w = weighted_bull + weighted_bear
+    net_momentum = round((weighted_bull - weighted_bear) / total_w, 3) if total_w > 0 else 0.0
+    verdict = _classify_channel_verdict(bullish, bearish, total, weighted_bull, weighted_bear)
     discordant = min(bullish, bearish)
 
     report = ChannelCheckReport(
@@ -557,6 +600,9 @@ def run_channel_check_analysis(state: InvestigationState, model: Any | None = No
         bullish_count=bullish,
         bearish_count=bearish,
         discordant_signals=discordant,
+        weighted_bull_score=round(weighted_bull, 3),
+        weighted_bear_score=round(weighted_bear, 3),
+        net_channel_momentum=net_momentum,
         channel_implied_growth=None,  # populated only by deterministic KPI calibration upstream
         channel_verdict=verdict,  # type: ignore[arg-type]
         synthesis_summary="",

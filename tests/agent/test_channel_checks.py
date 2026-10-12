@@ -429,3 +429,55 @@ def test_record_channel_check_tool_and_ingestion():
     assert len(cand_receipts) == 1
     assert cand_receipts[0]["observed_metric"] == "DDR5_lead_time_weeks"
 
+
+def test_channel_check_credibility_tier_weighting():
+    """Tier 1 foundry allocation data outweighs multiple Tier 4 social retail receipts."""
+    req = ResearchRequest(query="Analyze MU", ticker="MU", company="Micron")
+    state = create_initial_state(req, case_id="case_mu")
+    state["channel_check_receipts"] = [
+        # Two Tier-1 physical core receipts (e.g. foundry packaging, hyperscaler order backlog)
+        {
+            "receipt_id": "cc_t1_1",
+            "channel_type": "distributor_inventory",
+            "target_ticker": "MU",
+            "observed_metric": "HBM3E_allocation_lead_time",
+            "observed_value": 44.0,
+            "tier": "tier_1_physical_core",
+            "grade": "grade_a_hard_metric",
+            "implication": "bullish_inflection",
+            "quote_or_evidence": "Foundry packaging capacity fully allocated through Q4.",
+        },
+        {
+            "receipt_id": "cc_t1_2",
+            "channel_type": "spot_pricing",
+            "target_ticker": "MU",
+            "observed_metric": "DDR5_spot_contract_spread",
+            "observed_value": "+18%",
+            "tier": "tier_1_physical_core",
+            "grade": "grade_a_hard_metric",
+            "implication": "bullish_inflection",
+            "quote_or_evidence": "Spot prices surging 18% above contract pricing.",
+        },
+        # One Tier-4 retail forum complaint (bearish noise)
+        {
+            "receipt_id": "cc_t4_1",
+            "channel_type": "developer_telemetry",
+            "target_ticker": "MU",
+            "observed_metric": "retail_sentiment_drop",
+            "observed_value": -1,
+            "tier": "tier_4_public",
+            "grade": "grade_c_soft",
+            "implication": "bearish_inflection",
+            "quote_or_evidence": "Reddit forum user complaint about consumer PC price.",
+        },
+    ]
+    result = run_channel_check_analysis(state, model=None)
+    report = result["channel_check_report"]
+    assert report["channel_verdict"] == "CHANNEL_ACCELERATION"
+    # Tier 1 receipts have weight 1.0 * 1.0 = 1.0 each (total 2.0)
+    # Tier 4 has weight 0.05 * 0.3 = 0.015
+    assert report["weighted_bull_score"] == pytest.approx(2.0, abs=0.01)
+    assert report["weighted_bear_score"] == pytest.approx(0.015, abs=0.01)
+    assert report["net_channel_momentum"] > 0.95
+
+

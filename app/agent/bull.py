@@ -31,8 +31,11 @@ operating leverage, pricing power, unmodeled TAM expansion, accelerating gross m
 CRITICAL BULL STANDARDS:
 1. Three Minimum Falsifiable Catalysts: Formulate at least 3 distinct, observable catalysts with specific timelines (e.g. "Catalyst 1: Next-gen high-margin product ramp drives 350 bps gross margin expansion over next 2 quarters", "Catalyst 2: Hyperscaler enterprise backlog secures 100% capacity pre-commitments").
 2. Operating Leverage Drivers: Identify explicit structural drivers where revenue growth outpaces fixed fab/operating costs, driving outsized EPS acceleration.
-3. Realistic Bull Target Price: Formulate a disciplined upside price target based on historical expansion multiples and fundamental earnings power.
-4. What Would Change My Mind: Define explicit conditions where you would abandon this bull thesis.
+3. Fundamental Parameter Deltas:
+   - revenue_cagr_delta_bps: Projected 3-year revenue CAGR lift above consensus in basis points (e.g. 400 for +4.0%).
+   - operating_margin_delta_bps: Projected operating margin expansion in basis points (e.g. 300 for +3.0%).
+4. Realistic Bull Target Price: Formulate a disciplined upside price target based on historical expansion multiples and fundamental earnings power.
+5. What Would Change My Mind: Define explicit conditions where you would abandon this bull thesis.
 
 Return strictly valid JSON matching this exact structure:
 {
@@ -45,6 +48,8 @@ Return strictly valid JSON matching this exact structure:
     "Driver 1...",
     "Driver 2..."
   ],
+  "revenue_cagr_delta_bps": 400,
+  "operating_margin_delta_bps": 300,
   "bull_target_price": 120.0,
   "bull_thesis_summary": "Core structural upside argument...",
   "invalidation_conditions": [
@@ -133,6 +138,26 @@ Construct the institutional Bull Case. Identify the core upside mispricing, at l
                 target_price = None
             if target_price is not None and target_price > 0:
                 break
+
+            # Deterministic parameter bridge: derive target from fundamental deltas or high-case DCF
+            rev_bps = data.get("revenue_cagr_delta_bps")
+            margin_bps = data.get("operating_margin_delta_bps")
+            curr_p = (market.get("quote") or {}).get("price")
+            high_dcf = (((state.get("quant_report") or {}).get("valuation") or {}).get("fair_value_range") or {}).get("high")
+            if curr_p and (rev_bps is not None or margin_bps is not None):
+                try:
+                    r_d = float(rev_bps or 0) / 10000.0
+                    m_d = float(margin_bps or 0) / 10000.0
+                    calc_target = round(float(curr_p) * (1.0 + r_d * 1.5 + m_d * 2.0), 2)
+                    if calc_target > float(curr_p):
+                        target_price = calc_target
+                        break
+                except (ValueError, TypeError):
+                    pass
+            elif high_dcf and float(high_dcf) > 0 and (not curr_p or float(high_dcf) > float(curr_p)):
+                target_price = float(high_dcf)
+                break
+
             degradation_reasons.append(f"attempt {attempt + 1}: bull_target_price missing or non-positive")
             target_price = None
 
