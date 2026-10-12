@@ -77,6 +77,26 @@ class PacketEvidenceItem:
         return asdict(self)
 
 
+def _shingle_set(text: str, n: int = 5) -> set[tuple[str, ...]]:
+    """Compute n-word shingles for verbatim phrase comparison."""
+    clean = text.lower()
+    for ch in '.,;:!?"\'()[]{}/\\-_–—':
+        clean = clean.replace(ch, " ")
+    words = [w for w in clean.split() if len(w) > 1]
+    if len(words) < n:
+        return {tuple(words)} if words else set()
+    return {tuple(words[i : i + n]) for i in range(len(words) - n + 1)}
+
+
+def _jaccard_similarity(set_a: set, set_b: set) -> float:
+    """Compute Jaccard similarity between two shingle sets."""
+    if not set_a or not set_b:
+        return 0.0
+    intersection = len(set_a & set_b)
+    union = len(set_a | set_b)
+    return intersection / union if union > 0 else 0.0
+
+
 def build_evidence_packet(
     state: Mapping[str, Any],
     candidate_id: str | None = None,
@@ -94,6 +114,7 @@ def build_evidence_packet(
         Dictionary mapping item_id to PacketEvidenceItem dictionaries.
     """
     items: dict[str, dict[str, Any]] = {}
+    registered_shingles: list[tuple[str, set[tuple[str, ...]]]] = []
 
     def _register(
         item_id: str,
@@ -107,14 +128,37 @@ def build_evidence_packet(
             return
         if candidate_id and cand_id and cand_id != candidate_id:
             return
+
+        cleaned_fact = fact.strip()
+        curr_shingles = _shingle_set(cleaned_fact, n=5)
+
+        # PR wire syndication deduplication: check Jaccard similarity against existing items
+        if len(curr_shingles) >= 2:
+            for prev_id, prev_shingles in registered_shingles:
+                if _jaccard_similarity(curr_shingles, prev_shingles) >= 0.80:
+                    # Found duplicate statement / syndicated quote: collapse into primary item
+                    prev_item = items.get(prev_id)
+                    if prev_item:
+                        prev_loc = prev_item.get("locator") or ""
+                        # If literally the same locator or internal re-registration, ignore silently
+                        if not locator or locator in prev_loc:
+                            return
+                        # Distinct external locator: record syndication reprint
+                        prev_item["locator"] = f"{prev_loc}; syndicated: {locator}".strip("; ")
+                        if not str(prev_item.get("fact_summary", "")).startswith("[Syndicated PR/Wire]"):
+                            prev_item["fact_summary"] = f"[Syndicated PR/Wire]: {prev_item.get('fact_summary', '')}"
+                    return
+
         items[item_id] = PacketEvidenceItem(
             item_id=item_id,
             source_type=source_type,
-            fact_summary=fact.strip(),
+            fact_summary=cleaned_fact,
             candidate_id=cand_id,
             ticker=ticker,
             locator=locator,
         ).to_dict()
+        if len(curr_shingles) >= 2:
+            registered_shingles.append((item_id, curr_shingles))
 
     # 1. FactCards from state and candidate workspaces
     global_facts = state.get("fact_cards") or ()

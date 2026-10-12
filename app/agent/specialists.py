@@ -396,21 +396,69 @@ Analyze secular capex wave phase, bottleneck monopoly score (1-10), and thematic
             if raw_text.startswith("json"):
                 raw_text = raw_text[4:].strip()
         parsed = json.loads(raw_text)
+
+        # Micro-to-Macro Economic Moat Gating:
+        # A secular macro wave does not translate into shareholder value if the candidate
+        # operates a commoditized low-margin business (gross margin < 35%) lacking a wide economic moat.
+        sec = _mapping(state.get("sec_financials"))
+        latest_p = _latest_period(sec)
+        gross_margin = _number(_mapping(sec.get("gross_margin_pct")).get(latest_p)) if latest_p else None
+
+        moat_rep = _mapping(state.get("moat_report"))
+        moat_analysis = _mapping(moat_rep.get("analysis"))
+        moat_rating = str(moat_analysis.get("moat_rating") or moat_rep.get("rating") or "").lower()
+        has_strong_moat = any(m in moat_rating for m in ("wide", "strong", "high", "monopoly"))
+
+        if gross_margin is not None and gross_margin < 0.35 and not has_strong_moat:
+            parsed["thematic_tailwinds"] = "COMMODITIZED_CAPEX_TRAP"
+            curr_score = parsed.get("bottleneck_monopoly_score", 5)
+            if isinstance(curr_score, (int, float)):
+                parsed["bottleneck_monopoly_score"] = min(int(curr_score), 3)
+            trap_note = (
+                f"COMMODITIZED_CAPEX_TRAP: Secular tailwind rejected. Candidate gross margin "
+                f"({round(gross_margin * 100, 1)}% < 35%) and lack of wide economic moat indicate commoditized "
+                f"capex absorption rather than monopoly pricing power."
+            )
+            parsed["micro_gating_warning"] = trap_note
+            thesis_text = f"[{trap_note}] {parsed.get('thematic_summary', raw_text[:300])}".strip()
+        else:
+            thesis_text = parsed.get("thematic_summary", raw_text[:300])
+
         return {
             "thematic_report": {
                 "status": "available",
-                "thesis": parsed.get("thematic_summary", raw_text[:300]),
+                "thesis": thesis_text,
                 "analysis": parsed,
                 "evidence": evidence,
             }
         }
     except Exception as exc:
         logger.warning("Thematic analysis model call failed: %s; falling back to compact summary", exc)
+        fallback_analysis = {"thematic_tailwinds": "STRONG_SECULAR", "bottleneck_monopoly_score": 7}
+        fallback_thesis = f"Secular theme {theme} supported by {len(evidence)} verified primary citations."
+
+        sec = _mapping(state.get("sec_financials"))
+        latest_p = _latest_period(sec)
+        gross_margin = _number(_mapping(sec.get("gross_margin_pct")).get(latest_p)) if latest_p else None
+        moat_rep = _mapping(state.get("moat_report"))
+        moat_analysis = _mapping(moat_rep.get("analysis"))
+        moat_rating = str(moat_analysis.get("moat_rating") or moat_rep.get("rating") or "").lower()
+        has_strong_moat = any(m in moat_rating for m in ("wide", "strong", "high", "monopoly"))
+
+        if gross_margin is not None and gross_margin < 0.35 and not has_strong_moat:
+            fallback_analysis["thematic_tailwinds"] = "COMMODITIZED_CAPEX_TRAP"
+            fallback_analysis["bottleneck_monopoly_score"] = 3
+            fallback_analysis["micro_gating_warning"] = (
+                f"COMMODITIZED_CAPEX_TRAP: Secular tailwind rejected. Candidate gross margin "
+                f"({round(gross_margin * 100, 1)}% < 35%) and lack of wide economic moat."
+            )
+            fallback_thesis = f"[COMMODITIZED_CAPEX_TRAP]: {fallback_thesis}"
+
         return {
             "thematic_report": {
                 "status": "available",
-                "thesis": f"Secular theme {theme} supported by {len(evidence)} verified primary citations.",
-                "analysis": {"thematic_tailwinds": "STRONG_SECULAR", "bottleneck_monopoly_score": 7},
+                "thesis": fallback_thesis,
+                "analysis": fallback_analysis,
                 "evidence": evidence,
             }
         }
@@ -592,6 +640,22 @@ def run_channel_check_analysis(state: InvestigationState, model: Any | None = No
     verdict = _classify_channel_verdict(bullish, bearish, total, weighted_bull, weighted_bear)
     discordant = min(bullish, bearish)
 
+    # Bullwhip check: if channel indicators appear bullish, but DIO > 135d and inventory QoQ > 15%,
+    # flag phantom inventory hoarding rather than genuine end-market demand acceleration.
+    sec = _mapping(state.get("sec_financials"))
+    latest_p = _latest_period(sec)
+    phantom_warning = None
+    if verdict == "CHANNEL_ACCELERATION" and latest_p:
+        dio_val = _number(_mapping(sec.get("dio")).get(latest_p))
+        inv_qoq_val = _number(_mapping(sec.get("inventory_qoq_change_pct")).get(latest_p))
+        if dio_val is not None and dio_val > 135.0 and inv_qoq_val is not None and inv_qoq_val > 0.15:
+            verdict = "SUSPECTED_PHANTOM_INVENTORY_HOARDING"
+            phantom_warning = (
+                f"WARNING: Suspected phantom inventory hoarding / bullwhip over-ordering! "
+                f"Channel lead times indicate acceleration, but candidate Days Inventory Outstanding ({dio_val}d > 135d) "
+                f"and inventory QoQ change (+{round(inv_qoq_val * 100, 1)}% > 15%) reveal severe inventory accumulation."
+            )
+
     report = ChannelCheckReport(
         ticker=ticker,
         status="available" if total >= CHANNEL_CHECK_MIN_RECEIPTS else "insufficient_data",
@@ -605,7 +669,7 @@ def run_channel_check_analysis(state: InvestigationState, model: Any | None = No
         net_channel_momentum=net_momentum,
         channel_implied_growth=None,  # populated only by deterministic KPI calibration upstream
         channel_verdict=verdict,  # type: ignore[arg-type]
-        synthesis_summary="",
+        synthesis_summary=phantom_warning or "",
     )
 
     if model is not None and hasattr(model, "invoke") and total > 0:
@@ -628,7 +692,10 @@ momentum vs. what Wall Street models. Do not invent numbers not present in the r
             ])
             summary = str(getattr(resp, "content", "")).strip()
             if summary:
-                report.synthesis_summary = summary[:800]
+                if phantom_warning:
+                    report.synthesis_summary = f"{phantom_warning} {summary[:600]}".strip()
+                else:
+                    report.synthesis_summary = summary[:800]
         except Exception as exc:
             logger.warning("Channel-check model synthesis failed for %s: %s", ticker, exc)
             report.status = "degraded" if report.status == "available" else report.status

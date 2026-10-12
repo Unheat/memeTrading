@@ -330,6 +330,7 @@ class ChannelCheckReport(BaseModel):
         "CHANNEL_BREAKDOWN",
         "MIXED_CHANNEL",
         "INSUFFICIENT_CHANNEL_DATA",
+        "SUSPECTED_PHANTOM_INVENTORY_HOARDING",
     ] = "INSUFFICIENT_CHANNEL_DATA"
     synthesis_summary: str = ""
 

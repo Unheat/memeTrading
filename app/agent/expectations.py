@@ -305,6 +305,8 @@ def _classify_expectation_arbitrage(
         return None, "CHANNEL_BREAKDOWN_SHORT"
     if channel_verdict == "CHANNEL_ACCELERATION":
         return None, "CONSENSUS_ALIGNED"
+    if channel_verdict == "SUSPECTED_PHANTOM_INVENTORY_HOARDING":
+        return None, "PRICED_TO_PERFECTION" if (implied is not None and math.isfinite(implied) and implied > 0.15) else "UNCERTAIN_DISPERSION"
     return None, "UNCERTAIN_DISPERSION"
 
 

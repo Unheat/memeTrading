@@ -86,6 +86,8 @@ def run_adversarial_red_team(state: InvestigationState, model: Any) -> dict[str,
     consensus = state.get("consensus_snapshot") or {}
     quant = state.get("quant_report") or {}
     quant_val = quant.get("valuation") or {}
+    sec = state.get("sec_financials") or {}
+    cust_conc = sec.get("customer_concentration") or {}
 
     facts_payload = json.dumps(
         {
@@ -98,9 +100,22 @@ def run_adversarial_red_team(state: InvestigationState, model: Any) -> dict[str,
             "market_context": market,
             "consensus_snapshot": consensus,
             "quant_valuation_low_case": ((quant_val.get("fair_value_range") or {}).get("low") or (quant_val.get("cases", {}).get("low", {}) or {}).get("fair_value_per_share")),
+            "customer_concentration": cust_conc,
         },
         indent=2,
     )
+
+    concentration_mandate = ""
+    if cust_conc.get("has_concentration_risk"):
+        top_pct = cust_conc.get("top_customer_pct")
+        top_str = f"{top_pct}%" if top_pct is not None else ">= 10%"
+        major_custs = cust_conc.get("major_customers") or []
+        cust_details = ", ".join(f"{c.get('customer')}: {c.get('pct')}%" for c in major_custs) if major_custs else top_str
+        concentration_mandate = f"""
+CRITICAL RED-TEAM MANDATE (ASC 280-10-50-42 Customer Concentration):
+SEC disclosures reveal severe customer concentration risk ({cust_details})!
+You MUST formulate at least one explicit structural flaw/objection addressing customer pricing power, margin squeeze, dual-sourcing threats, or in-house substitution risk.
+"""
 
     human_prompt = f"""Conduct a hostile short-seller red team attack on ${ticker}.
 
@@ -108,7 +123,7 @@ Verified Evidence and Facts gathered:
 ```json
 {facts_payload}
 ```
-
+{concentration_mandate}
 Identify the 4 structural flaws, 2 numeric kill triggers, and realistic, empirically grounded bear floor price.
 """
 

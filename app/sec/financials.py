@@ -50,6 +50,7 @@ class SecFinancialsResult:
     dio: dict[str, float | None] = field(default_factory=dict)
     dso: dict[str, float | None] = field(default_factory=dict)
     cik: str | None = None
+    customer_concentration: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to JSON-serializable dictionary."""
@@ -86,6 +87,7 @@ class SecFinancialsResult:
             "ttm_fcf": self.ttm_fcf,
             "dio": dict(self.dio),
             "dso": dict(self.dso),
+            "customer_concentration": dict(self.customer_concentration),
         }
 
     @classmethod
@@ -124,6 +126,7 @@ class SecFinancialsResult:
             dio=dict(data.get("dio", {})),
             dso=dict(data.get("dso", {})),
             cik=str(data["cik"]) if data.get("cik") else None,
+            customer_concentration=dict(data.get("customer_concentration", {})),
         )
 
 
@@ -524,6 +527,100 @@ def _extract_fact_quarterly_cfo(company: Any, periods: list[str]) -> dict[str, f
     return cfo_by_period
 
 
+def _extract_customer_concentration(company: Any, as_of_date: str | None = None) -> dict[str, Any]:
+    """Extract ASC 280-10-50-42 customer concentration footnotes from XBRL facts.
+
+    Discloses if any single customer accounts for >= 10% of total revenue.
+    """
+    concentration_result: dict[str, Any] = {
+        "has_concentration_risk": False,
+        "top_customer_pct": None,
+        "major_customers": [],
+        "aggregate_major_pct": None,
+    }
+    try:
+        facts = getattr(company, "facts", None)
+        if not facts:
+            return concentration_result
+
+        concentration_concepts = [
+            "concentrationriskpercentage1",
+            "majorcustomersrevenuepercentage",
+            "concentrationriskpercentage",
+            "concentrationriskbenchmarkpercentage",
+            "customerconcentrationriskpercentage",
+        ]
+
+        found_customers: list[dict[str, Any]] = []
+
+        for f in facts:
+            if as_of_date:
+                f_date = getattr(f, "filing_date", None)
+                if f_date and str(f_date) > as_of_date:
+                    continue
+                if f.period_end and str(f.period_end) > as_of_date:
+                    continue
+
+            concept_lower = str(getattr(f, "concept", "")).lower()
+            if not any(c in concept_lower for c in concentration_concepts):
+                continue
+
+            val = getattr(f, "value", None)
+            if val is None:
+                continue
+
+            try:
+                num_val = float(val)
+            except (ValueError, TypeError):
+                continue
+
+            # Standardize percentage: 0.17 -> 17.0%, 17.0 -> 17.0%
+            if 0.0 < num_val <= 1.0:
+                pct = round(num_val * 100.0, 2)
+            elif 1.0 < num_val <= 100.0:
+                pct = round(num_val, 2)
+            else:
+                continue
+
+            cust_name = None
+            dim = getattr(f, "dimensions", None) or getattr(f, "member", None)
+            if dim:
+                cust_name = str(dim).replace("Member", "").replace("Axis", "").strip()
+            if not cust_name:
+                cust_name = f"Customer {len(found_customers) + 1}"
+
+            period_end_str = str(getattr(f, "period_end", "") or "")
+            found_customers.append({
+                "customer": cust_name,
+                "pct": pct,
+                "period_end": period_end_str,
+            })
+
+        if found_customers:
+            latest_period_end = max((c["period_end"] for c in found_customers if c["period_end"]), default="")
+            if latest_period_end:
+                current_records = [c for c in found_customers if c["period_end"] == latest_period_end]
+            else:
+                current_records = found_customers
+
+            deduped: dict[str, float] = {}
+            for rec in current_records:
+                name = rec["customer"]
+                deduped[name] = max(deduped.get(name, 0.0), rec["pct"])
+
+            major_list = [{"customer": k, "pct": v} for k, v in deduped.items() if v >= 10.0]
+            if major_list:
+                major_list.sort(key=lambda x: x["pct"], reverse=True)
+                concentration_result["has_concentration_risk"] = True
+                concentration_result["top_customer_pct"] = major_list[0]["pct"]
+                concentration_result["major_customers"] = major_list
+                concentration_result["aggregate_major_pct"] = round(sum(m["pct"] for m in major_list), 2)
+    except Exception as exc:
+        logger.debug("Failed customer concentration extraction: %s", exc)
+
+    return concentration_result
+
+
 def _get_company(ticker: str) -> Any:
     """Instantiate edgartools Company object."""
     from edgar import Company
@@ -702,6 +799,9 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4, as_of_date: str | None
     for p in result["periods"]:
         if result["capex"].get(p) is not None:
             result["capex"][p] = abs(result["capex"][p])
+
+    # Extract ASC 280-10-50-42 customer concentration footnotes
+    result["customer_concentration"] = _extract_customer_concentration(company, as_of_date=as_of_date)
 
     if not result["periods"]:
         raise ValueError(f"No XBRL reporting periods found for ticker {ticker}")
@@ -920,4 +1020,5 @@ def get_sec_financials(ticker: str, periods: int = 4, as_of_date: str | None = N
         dio=dio,
         dso=dso,
         cik=str(raw.get("cik") or "") or None,
+        customer_concentration=raw.get("customer_concentration", {}),
     )
