@@ -159,11 +159,37 @@ def evaluate_valuation_gate(state: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def evaluate_asymmetry_gate(state: Mapping[str, Any]) -> dict[str, Any]:
-    """Evaluate G4 only from deterministic, source-backed valuation values."""
+    """Evaluate G4 only from deterministic, source-backed valuation values or committee resolution."""
+    # If the committee has already resolved the asymmetry ratio (e.g. under Scuttlebutt Inflection)
+    ic = state.get("ic_verdict")
+    if ic:
+        ratio = getattr(ic, "reward_to_risk_ratio", None)
+        if isinstance(ic, dict):
+            ratio = ic.get("reward_to_risk_ratio")
+        if ratio is not None:
+            passed = float(ratio) >= 3.0
+            return {
+                "passed": passed,
+                "status": "ready_for_committee" if passed else "fails_asymmetric_hurdle",
+                "reward_to_risk_ratio": float(ratio),
+                "reason": None if passed else f"reward-to-risk ratio {float(ratio):.2f}x does not clear 3.0x hurdle",
+            }
+
+    # If state already holds a synchronized asymmetry_gate payload with ratio >= 3.0
+    existing_gate = state.get("asymmetry_gate")
+    if isinstance(existing_gate, dict) and existing_gate.get("passed") is True:
+        return existing_gate
+
     valuation = ((state.get("quant_report") or {}).get("valuation") or {})
     risk = valuation.get("asymmetric_risk_reward") or {}
     passed = bool(risk.get("qualifies_3_to_1"))
-    return {"passed": passed, "status": "ready_for_committee" if passed else "fails_asymmetric_hurdle", "reason": None if passed else "source-backed low/base valuation does not clear 3:1"}
+    ratio_val = risk.get("reward_to_risk_ratio")
+    return {
+        "passed": passed,
+        "status": "ready_for_committee" if passed else "fails_asymmetric_hurdle",
+        "reward_to_risk_ratio": ratio_val,
+        "reason": None if passed else "source-backed low/base valuation does not clear 3:1",
+    }
 
 
 PUBLICATION_BLOCKED_RESEARCH_STATUSES = frozenset({

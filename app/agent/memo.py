@@ -531,10 +531,44 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
     ranking = "Not requested" if not requested_count else f"Requested ranking count: {requested_count}; registered candidates: {len(candidates)}"
     ranking_line = f"**Ranking Requirement**: {ranking}\n" if requested_count else ""
 
-    # 0. Executive allocation and research synthesis from deep model
+    # 0. Executive allocation and research synthesis from deep model & Investment Committee
     synthesis_section = ""
     decision_text = extract_terminal_model_decision(state, final_text)
-    if decision_text:
+
+    ic = state.get("ic_verdict")
+    top_t = state.get("top_candidate_ticker") or getattr(ic, "ticker", "") or state.get("ticker") or ""
+
+    if ic and getattr(ic, "cio_deliberation_summary", None) and getattr(ic, "ticker", "") != "UNKNOWN":
+        ratio_str = f"{ic.reward_to_risk_ratio:.2f}x" if getattr(ic, "reward_to_risk_ratio", None) is not None else "N/A"
+        alloc_str = f"{ic.kelly_position_size_pct * 100:.1f}%" if getattr(ic, "kelly_position_size_pct", None) is not None else "0.0%"
+        target_str = f"${ic.upside_anchor:.2f}" if getattr(ic, "upside_anchor", None) is not None else "N/A"
+        floor_str = f"${ic.bear_floor:.2f}" if getattr(ic, "bear_floor", None) is not None else "N/A"
+        target_src = f" ({ic.upside_anchor_source})" if getattr(ic, "upside_anchor_source", None) else ""
+        floor_src = f" ({ic.bear_anchor_source})" if getattr(ic, "bear_anchor_source", None) else ""
+
+        committee_header = f"### Investment Committee Deliberation (${top_t})" if top_t else "### Investment Committee Deliberation"
+        committee_block = f"""{committee_header}
+| Capital Allocation | Committee Verdict | Conviction Tier | Reward-to-Risk | Upside Target | Downside Floor |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **{alloc_str}** | **{getattr(ic, 'verdict', 'N/A')}** | **{getattr(ic, 'conviction_tier', 'N/A')}** | **{ratio_str}** | **{target_str}**{target_src} | **{floor_str}**{floor_src} |
+
+**CIO Deliberation Summary**:
+> {getattr(ic, 'cio_deliberation_summary', '')}
+"""
+        cio_summary_snippet = str(getattr(ic, "cio_deliberation_summary", ""))[:100]
+        if decision_text and (cio_summary_snippet not in decision_text):
+            synthesis_section = f"""
+## Executive Allocation & Research Synthesis
+{committee_block}
+### Grounded Research Synthesis & Field Telemetry
+{decision_text}
+"""
+        else:
+            synthesis_section = f"""
+## Executive Allocation & Research Synthesis
+{committee_block}
+"""
+    elif decision_text:
         synthesis_section = f"""
 ## Executive Allocation & Research Synthesis
 {decision_text}
@@ -595,7 +629,7 @@ def render_research_report(state: InvestigationState, final_text: str) -> str:
 
     ic = state.get("ic_verdict")
     top_t = state.get("top_candidate_ticker") or getattr(ic, "ticker", "")
-    if ic and getattr(ic, "cio_deliberation_summary", None) and getattr(ic, "ticker", "") != "UNKNOWN":
+    if ic and getattr(ic, "cio_deliberation_summary", None) and getattr(ic, "ticker", "") != "UNKNOWN" and "### Investment Committee Deliberation" not in synthesis_section:
         header_title = f"### Investment Committee Deliberation (${top_t})" if top_t and top_t != "UNKNOWN" else "### Investment Committee Deliberation"
         specialist_blocks.append(
             f"{header_title}\n"

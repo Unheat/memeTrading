@@ -450,7 +450,22 @@ Deliberate as CIO, cite `upside_anchor_source` accurately in the required `ancho
         paper_trade=paper_trade,
         bear_floor=bear_floor,
     )
-    return {"ic_verdict": verdict_obj}
+    asymmetry_gate_payload = {
+        "passed": bool(ratio is not None and ratio >= asymmetry_hurdle),
+        "status": "ready_for_committee" if (ratio is not None and ratio >= asymmetry_hurdle) else "fails_asymmetric_hurdle",
+        "reward_to_risk_ratio": ratio,
+        "asymmetry_hurdle": asymmetry_hurdle,
+        "upside_anchor": base_target,
+        "upside_anchor_source": upside_anchor_source,
+        "bear_floor": bear_floor,
+        "bear_anchor_source": bear_anchor_source,
+        "scuttlebutt_acceleration": is_channel_accel,
+        "reason": None if (ratio is not None and ratio >= asymmetry_hurdle) else f"reward-to-risk ratio {ratio}x does not clear {asymmetry_hurdle}x hurdle",
+    }
+    return {
+        "ic_verdict": verdict_obj,
+        "asymmetry_gate": asymmetry_gate_payload,
+    }
 
 
 def run_macro_investment_committee(

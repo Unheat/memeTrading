@@ -926,6 +926,25 @@ def create_research_graph(
             except Exception as exc:
                 logger.debug("Investment committee failed: %s", exc)
 
+            ic = updates.get("ic_verdict")
+            if ic and getattr(ic, "cio_deliberation_summary", None):
+                target_str = f"${ic.upside_anchor:.2f}" if ic.upside_anchor else "N/A"
+                floor_str = f"${ic.bear_floor:.2f}" if ic.bear_floor else "N/A"
+                ratio_str = f"{ic.reward_to_risk_ratio:.2f}x" if ic.reward_to_risk_ratio else "N/A"
+                alloc_str = f"{ic.kelly_position_size_pct * 100:.1f}%" if ic.kelly_position_size_pct is not None else "0.0%"
+                cio_terminal_text = (
+                    f"### Investment Committee Deliberation (${eval_ticker})\n"
+                    f"- **Verdict**: {ic.verdict}\n"
+                    f"- **Conviction**: {ic.conviction_tier}\n"
+                    f"- **Reward-to-Risk Ratio**: {ratio_str}\n"
+                    f"- **Kelly Portfolio Allocation**: {alloc_str}\n"
+                    f"- **Upside Target**: {target_str} ({ic.upside_anchor_source or 'N/A'})\n"
+                    f"- **Downside Bear Floor**: {floor_str} ({ic.bear_anchor_source or 'N/A'})\n\n"
+                    f"**CIO Deliberation Summary**:\n> {ic.cio_deliberation_summary}"
+                )
+                updates["diagnostic_terminal_model_text"] = cio_terminal_text
+                updates["messages"] = [AIMessage(content=cio_terminal_text)]
+
             if not is_multi_candidate:
                 if (
                     updates["accounting_gate"].get("passed") is False
