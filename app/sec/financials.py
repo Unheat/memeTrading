@@ -563,6 +563,54 @@ def _extract_fact_quarterly_cfo(company: Any, periods: list[str]) -> dict[str, f
     return cfo_by_period
 
 
+def _extract_fact_accounts_payable(company: Any, periods: list[str]) -> dict[str, float | None]:
+    """Fallback extraction of balance sheet accounts payable directly from company facts."""
+    ap_by_period: dict[str, float | None] = {}
+    try:
+        facts = getattr(company, "facts", None)
+        if not facts:
+            return ap_by_period
+
+        import re
+        concepts = [
+            "accountspayabletradecurrent",
+            "accountspayablecurrent",
+            "accountspayableandaccruedliabilitiescurrent",
+            "tradeandotherpayablescurrent",
+        ]
+
+        for p in periods:
+            m = re.match(r"(?:(\d{4})[-_])?Q([1-4])(?:\s+(\d{4}))?", str(p), re.I)
+            m_fy = re.match(r"FY\s*(\d{4})", str(p), re.I)
+            if m:
+                fy = int(m.group(1) or m.group(3))
+                fq = int(m.group(2))
+            elif m_fy:
+                fy = int(m_fy.group(1))
+                fq = 4
+            else:
+                continue
+
+            extracted_val = None
+            for concept in concepts:
+                candidates = []
+                for f in facts:
+                    if f.period_type == "instant" and f.fiscal_year == fy and concept in str(f.concept).lower():
+                        if f.fiscal_period in (f"Q{fq}", "FY" if fq == 4 else f"Q{fq}") and f.value is not None:
+                            candidates.append((getattr(f, "filing_date", None) or f.period_end, float(f.value)))
+                if candidates:
+                    candidates.sort(key=lambda x: x[0], reverse=True)
+                    extracted_val = candidates[0][1]
+                    break
+
+            if extracted_val is not None:
+                ap_by_period[p] = extracted_val
+    except Exception as exc:
+        logger.debug("Failed fact-level accounts payable fallback: %s", exc)
+
+    return ap_by_period
+
+
 def _extract_customer_concentration(company: Any, as_of_date: str | None = None) -> dict[str, Any]:
     """Extract ASC 280-10-50-42 customer concentration footnotes from XBRL facts.
 
@@ -882,6 +930,14 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4, as_of_date: str | None
         for p, val in fact_cfo.items():
             if val is not None:
                 result["cash_from_operations"][p] = val
+
+    # Check for missing Accounts Payable (e.g. condensed 10-Q balance sheet) and fall back to company facts
+    missing_ap_periods = [p for p in result["periods"] if result["accounts_payable"].get(p) is None]
+    if missing_ap_periods:
+        fact_ap = _extract_fact_accounts_payable(company, missing_ap_periods)
+        for p, val in fact_ap.items():
+            if val is not None:
+                result["accounts_payable"][p] = val
 
     # Enforce positive CapEx convention across all extracted periods
     for p in result["periods"]:
