@@ -288,9 +288,11 @@ def run_investment_committee(state: InvestigationState, model: Any) -> dict[str,
             # Evidence-backed win probability estimation (Bayesian shrinkage in metrics.py)
             forensic_rep = state.get("forensic_report") or {}
             moat_rep = state.get("moat_report") or {}
-            is_clean_forensic = "CLEAN" in str(forensic_rep.get("verdict") or "").upper()
-            moat_rating = str((moat_rep.get("analysis") or {}).get("moat_rating") or "").lower()
-            is_wide_moat = "wide" in moat_rating or "strong" in moat_rating
+            clean_forensic_v = str(forensic_rep.get("verdict") or "").strip().upper()
+            is_clean_forensic = clean_forensic_v in {"CLEAN_INVESTMENT_GRADE", "CLEAN", "QUALIFIED_NORMALIZED_ADJUSTMENT"}
+
+            clean_moat_v = str((moat_rep.get("analysis") or {}).get("moat_rating") or moat_rep.get("rating") or "").strip().upper()
+            is_wide_moat = clean_moat_v in {"WIDE", "STRONG", "HIGH", "MONOPOLY"}
             has_severe_objections = bool(adversarial and len(adversarial.falsifiable_objections) >= 3)
 
             evidence_p = 0.50
@@ -377,17 +379,14 @@ Deliberate as CIO, cite `upside_anchor_source` accurately in the required `ancho
     anchor_citation = ""
 
     try:
+        from app.agent.contracts import parse_llm_json_block
         response = model.invoke([
             SystemMessage(content=CIO_SYSTEM_PROMPT),
             HumanMessage(content=cio_prompt),
         ])
         raw_text = str(getattr(response, "content", "")).strip()
-        if raw_text.startswith("```"):
-            raw_text = raw_text.strip("`")
-            if raw_text.startswith("json"):
-                raw_text = raw_text[4:].strip()
         try:
-            parsed = json.loads(raw_text)
+            parsed = parse_llm_json_block(raw_text)
             cio_verdict_str = str(parsed.get("committee_verdict", "VALIDATION_WATCH"))
             cio_conviction = str(parsed.get("conviction_tier", "VALIDATION 🔥"))
             cio_summary = str(parsed.get("cio_deliberation_summary", raw_text[:500]))
@@ -395,22 +394,16 @@ Deliberate as CIO, cite `upside_anchor_source` accurately in the required `ancho
             anchor_citation = str(parsed.get("anchor_citation", ""))
         except Exception as parse_exc:
             cio_summary = raw_text[:500] if raw_text else f"CIO deliberation completed: {parse_exc}"
-            if "APPROVED_LONG" in raw_text or "HIGH CONVICTION" in raw_text or (ratio and ratio >= asymmetry_hurdle and is_liquid and not is_blackout):
-                confidence = state.get("confidence")
-                if ratio and ratio >= asymmetry_hurdle and confidence is not None and confidence >= 0.70:
-                    cio_verdict_str = "APPROVED_LONG_HIGH"
-                    cio_conviction = "HIGH CONVICTION 🔥🔥🔥"
-                elif ratio and ratio >= asymmetry_hurdle:
-                    cio_verdict_str = "APPROVED_LONG_MEDIUM"
-                    cio_conviction = "MEDIUM CONVICTION 🔥🔥"
     except Exception as exc:
         logger.warning("CIO LLM deliberation failed for %s: %s", ticker, exc)
         cio_summary = f"CIO deliberation generated under fallback: {exc}"
 
     # Tiered hard risk limits (Batch D):
+    # Deterministic governance overrides any unvalidated model output:
+    #   not liquid or blackout               -> PASSED_STRICT_DISCIPLINE (zero capital)
     #   ratio < paper_trade_ratio            -> VALIDATION_WATCH (zero capital)
     #   paper_trade_ratio <= ratio < hurdle  -> PAPER_TRADE_WATCH (recorded, zero capital)
-    #   ratio >= hurdle                      -> capital via quarter/half-Kelly tiers
+    #   ratio >= hurdle                      -> APPROVED_LONG with tiered fractional Kelly
     paper_trade = False
     if not is_liquid or is_blackout:
         cio_verdict_str = "PASSED_STRICT_DISCIPLINE"
@@ -425,14 +418,16 @@ Deliberate as CIO, cite `upside_anchor_source` accurately in the required `ancho
         cio_conviction = "PAPER TRADE 📋"
         kelly_size = 0.0
         paper_trade = True
-    elif ratio and ratio >= asymmetry_hurdle and cio_verdict_str in ("VALIDATION_WATCH", "PASSED_STRICT_DISCIPLINE", "PAPER_TRADE_WATCH"):
-        confidence = state.get("confidence")
-        if confidence is not None and confidence >= 0.70:
-            cio_verdict_str = "APPROVED_LONG_HIGH"
-            cio_conviction = "HIGH CONVICTION 🔥🔥🔥"
-        else:
-            cio_verdict_str = "APPROVED_LONG_MEDIUM"
-            cio_conviction = "MEDIUM CONVICTION 🔥🔥"
+    else:
+        # ratio >= asymmetry_hurdle
+        if cio_verdict_str in ("VALIDATION_WATCH", "PASSED_STRICT_DISCIPLINE", "PAPER_TRADE_WATCH", ""):
+            confidence = state.get("confidence")
+            if confidence is not None and confidence >= 0.70:
+                cio_verdict_str = "APPROVED_LONG_HIGH"
+                cio_conviction = "HIGH CONVICTION 🔥🔥🔥"
+            else:
+                cio_verdict_str = "APPROVED_LONG_MEDIUM"
+                cio_conviction = "MEDIUM CONVICTION 🔥🔥"
 
 
     verdict_obj = ICVerdict(
@@ -558,13 +553,10 @@ Return strictly valid JSON matching:
 }}
 """
         try:
+            from app.agent.contracts import parse_llm_json_block
             res = model.invoke([HumanMessage(content=macro_prompt)])
             text = getattr(res, "content", "")
-            if text.startswith("```"):
-                text = text.split("```")[1]
-                if text.startswith("json"):
-                    text = text[4:].strip()
-            parsed = json.loads(text)
+            parsed = parse_llm_json_block(text) if text else {}
             if parsed.get("favored_sectors"):
                 favored = list(parsed["favored_sectors"])
             if parsed.get("unfavored_sectors"):

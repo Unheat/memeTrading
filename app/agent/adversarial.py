@@ -127,30 +127,43 @@ Verified Evidence and Facts gathered:
 Identify the 4 structural flaws, 2 numeric kill triggers, and realistic, empirically grounded bear floor price.
 """
 
-    response = model.invoke([
-        SystemMessage(content=ADVERSARIAL_SYSTEM_PROMPT),
-        HumanMessage(content=human_prompt),
-    ])
-
     try:
-        # Field-level parsing (audit 2026-09-26, Fix 7): one malformed field degrades
-        # the report instead of discarding it wholesale.
-        data = parse_llm_json_block(getattr(response, "content", ""))
+        from app.agent.contracts import AdversarialAttackOutput
+        from app.agent.model_runtime import invoke_structured_model
 
-        def _extract_text(item: Any) -> str:
-            if isinstance(item, dict):
-                return str(item.get("mechanism") or item.get("objection") or item.get("thesis") or item.get("description") or item.get("criterion") or item.get("metric") or item).strip()
-            return str(item).strip()
+        output = invoke_structured_model(
+            model,
+            [
+                SystemMessage(content=ADVERSARIAL_SYSTEM_PROMPT),
+                HumanMessage(content=human_prompt),
+            ],
+            schema=AdversarialAttackOutput,
+        )
 
-        objections = tuple(_extract_text(x) for x in (data.get("falsifiable_objections") or []) if _extract_text(x))
-        kill_criteria = tuple(_extract_text(x) for x in (data.get("numeric_kill_criteria") or []) if _extract_text(x))
-        bear_floor = None
-        raw_floor = data.get("bear_floor_price")
+        objections = tuple(str(x).strip() for x in output.falsifiable_objections if str(x).strip())
+        kill_criteria = tuple(str(x).strip() for x in output.numeric_kill_criteria if str(x).strip())
+        raw_floor = output.bear_floor_price
         try:
             bear_floor = float(raw_floor) if raw_floor is not None else None
         except (ValueError, TypeError):
             bear_floor = None
-        summary = str(data.get("bear_thesis_summary") or "Adversarial short-seller attack completed.")
+
+        # Deterministic parameter bridge: derive bear floor if model provided driver penalties
+        curr_p = (market.get("quote") or {}).get("price")
+        low_dcf = (((state.get("quant_report") or {}).get("valuation") or {}).get("fair_value_range") or {}).get("low")
+        if bear_floor is None and curr_p and (output.revenue_cagr_delta_bps is not None or output.operating_margin_delta_bps is not None):
+            try:
+                r_pen = float(output.revenue_cagr_delta_bps or 0) / 10000.0
+                m_pen = float(output.operating_margin_delta_bps or 0) / 10000.0
+                calc_floor = round(float(curr_p) * max(0.20, 1.0 + r_pen * 1.5 + m_pen * 2.0), 2)
+                if calc_floor < float(curr_p):
+                    bear_floor = calc_floor
+            except (ValueError, TypeError):
+                pass
+        elif bear_floor is None and low_dcf and float(low_dcf) > 0:
+            bear_floor = float(low_dcf)
+
+        summary = output.bear_thesis_summary or "Adversarial short-seller attack completed."
 
         degradation_reasons = []
         if bear_floor is None:
@@ -173,14 +186,14 @@ Identify the 4 structural flaws, 2 numeric kill triggers, and realistic, empiric
             "adversarial_report": report,
         }
     except Exception as exc:
-        logger.warning("Adversarial red team parsing failed for %s: %s", ticker, exc)
+        logger.warning("Adversarial red-team structured model call failed: %s; falling back", exc)
         report = AdversarialReport(
             ticker=ticker,
             falsifiable_objections=(),
             numeric_kill_criteria=(),
             bear_floor_price=None,
-            bear_thesis_summary="Unavailable — adversarial analysis did not return valid JSON.",
+            bear_thesis_summary=f"Red team attack failed: {exc}",
             status="unavailable",
-            degradation_reasons=(f"model returned unparseable JSON: {exc}",),
+            degradation_reasons=("model_unparseable",),
         )
         return {"thesis_breakers": [], "adversarial_report": report}

@@ -415,14 +415,8 @@ def run_sec_investigation(
             messages = final_sub_state.get("messages", [])
             last_msg = messages[-1] if messages else None
             raw_text = str(getattr(last_msg, "content", "")).strip() if last_msg else ""
-            if raw_text.startswith("```json"):
-                raw_text = raw_text[7:]
-            elif raw_text.startswith("```"):
-                raw_text = raw_text[3:]
-            if raw_text.endswith("```"):
-                raw_text = raw_text[:-3]
-
-            parsed = json.loads(raw_text.strip()) if raw_text.strip() else {}
+            from app.agent.contracts import parse_llm_json_block
+            parsed = parse_llm_json_block(raw_text) if raw_text else {}
             collected_ev = list(final_sub_state.get("evidence") or [])
             if collected_ev and (parsed.get("findings") or parsed.get("synthesis")):
                 return {
@@ -522,13 +516,8 @@ Answer the task directly based on these filings in strictly valid JSON."""
                 HumanMessage(content=human_prompt),
             ])
             raw_text = str(getattr(resp, "content", "")).strip()
-            if raw_text.startswith("```json"):
-                raw_text = raw_text[7:]
-            elif raw_text.startswith("```"):
-                raw_text = raw_text[3:]
-            if raw_text.endswith("```"):
-                raw_text = raw_text[:-3]
-            parsed = json.loads(raw_text.strip())
+            from app.agent.contracts import parse_llm_json_block
+            parsed = parse_llm_json_block(raw_text) if raw_text else {}
 
             return {
                 "status": "ok",

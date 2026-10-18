@@ -256,16 +256,18 @@ Filing Evidence Citations:
 {json.dumps([item.get("quote") for item in state.get("evidence", []) if isinstance(item, Mapping) and item.get("quote")][:5], indent=2)}
 
 Audit Beneish M-Score risk, Sloan accruals, SBC dilution, and leverage in strict JSON."""
-            resp = model.invoke([
-                SystemMessage(content=FORENSIC_ACCOUNTING_PROMPT),
-                HumanMessage(content=human_prompt),
-            ])
-            raw_text = str(getattr(resp, "content", "")).strip()
-            if raw_text.startswith("```"):
-                raw_text = raw_text.strip("`")
-                if raw_text.startswith("json"):
-                    raw_text = raw_text[4:].strip()
-            parsed = json.loads(raw_text)
+            from app.agent.contracts import ForensicAuditOutput
+            from app.agent.model_runtime import invoke_structured_model
+
+            output = invoke_structured_model(
+                model,
+                [
+                    SystemMessage(content=FORENSIC_ACCOUNTING_PROMPT),
+                    HumanMessage(content=human_prompt),
+                ],
+                schema=ForensicAuditOutput,
+            )
+            parsed = output.model_dump()
             return {
                 "forensic_report": {
                     "status": "available",
@@ -308,16 +310,18 @@ Primary Evidence Quotes:
 Theme: {state.get("trigger", {}).get("theme") or "General Tech"}
 
 Return strict JSON evaluating gross margin durability, customer hold-up risk, and book-to-bill visibility."""
-            resp = model.invoke([
-                SystemMessage(content=SECTOR_SPECIALIST_PROMPT),
-                HumanMessage(content=human_prompt),
-            ])
-            raw_text = str(getattr(resp, "content", "")).strip()
-            if raw_text.startswith("```"):
-                raw_text = raw_text.strip("`")
-                if raw_text.startswith("json"):
-                    raw_text = raw_text[4:].strip()
-            parsed = json.loads(raw_text)
+            from app.agent.contracts import SectorAnalysisOutput
+            from app.agent.model_runtime import invoke_structured_model
+
+            output = invoke_structured_model(
+                model,
+                [
+                    SystemMessage(content=SECTOR_SPECIALIST_PROMPT),
+                    HumanMessage(content=human_prompt),
+                ],
+                schema=SectorAnalysisOutput,
+            )
+            parsed = output.model_dump()
             return {"sector_report": {"status": "available", "analysis": parsed, "evidence": evidence, "reason": None}}
         except Exception as exc:
             logger.warning("LLM sector analysis failed: %s", exc)
@@ -345,16 +349,18 @@ Primary Evidence Quotes:
 {json.dumps([e.get("quote") for e in evidence][:5], indent=2)}
 
 Return strict JSON scoring moat rating (WIDE/NARROW/NONE), durability score (1-10), and primary moat source."""
-            resp = model.invoke([
-                SystemMessage(content=MOAT_ANALYSIS_PROMPT),
-                HumanMessage(content=human_prompt),
-            ])
-            raw_text = str(getattr(resp, "content", "")).strip()
-            if raw_text.startswith("```"):
-                raw_text = raw_text.strip("`")
-                if raw_text.startswith("json"):
-                    raw_text = raw_text[4:].strip()
-            parsed = json.loads(raw_text)
+            from app.agent.contracts import MoatAnalysisOutput
+            from app.agent.model_runtime import invoke_structured_model
+
+            output = invoke_structured_model(
+                model,
+                [
+                    SystemMessage(content=MOAT_ANALYSIS_PROMPT),
+                    HumanMessage(content=human_prompt),
+                ],
+                schema=MoatAnalysisOutput,
+            )
+            parsed = output.model_dump()
             return {"moat_report": {"status": "available", "analysis": parsed, "evidence": evidence, "reason": None}}
         except Exception as exc:
             logger.warning("LLM moat analysis failed: %s", exc)
@@ -386,16 +392,18 @@ Verified Evidence Citations:
 {json.dumps([e.get("quote") for e in evidence][:5], indent=2)}
 
 Analyze secular capex wave phase, bottleneck monopoly score (1-10), and thematic tailwinds in strict JSON."""
-        response = model.invoke([
-            SystemMessage(content=MACRO_THEMATIC_PROMPT),
-            HumanMessage(content=human_prompt),
-        ])
-        raw_text = str(getattr(response, "content", "")).strip()
-        if raw_text.startswith("```"):
-            raw_text = raw_text.strip("`")
-            if raw_text.startswith("json"):
-                raw_text = raw_text[4:].strip()
-        parsed = json.loads(raw_text)
+        from app.agent.contracts import ThematicAnalysisOutput
+        from app.agent.model_runtime import invoke_structured_model
+
+        output = invoke_structured_model(
+            model,
+            [
+                SystemMessage(content=MACRO_THEMATIC_PROMPT),
+                HumanMessage(content=human_prompt),
+            ],
+            schema=ThematicAnalysisOutput,
+        )
+        parsed = output.model_dump()
 
         # Micro-to-Macro Economic Moat Gating:
         # A secular macro wave does not translate into shareholder value if the candidate
@@ -406,8 +414,8 @@ Analyze secular capex wave phase, bottleneck monopoly score (1-10), and thematic
 
         moat_rep = _mapping(state.get("moat_report"))
         moat_analysis = _mapping(moat_rep.get("analysis"))
-        moat_rating = str(moat_analysis.get("moat_rating") or moat_rep.get("rating") or "").lower()
-        has_strong_moat = any(m in moat_rating for m in ("wide", "strong", "high", "monopoly"))
+        moat_rating = str(moat_analysis.get("moat_rating") or moat_rep.get("rating") or "").strip().upper()
+        has_strong_moat = moat_rating in {"WIDE", "STRONG", "HIGH", "MONOPOLY"}
 
         if gross_margin is not None and gross_margin < 0.35 and not has_strong_moat:
             parsed["thematic_tailwinds"] = "COMMODITIZED_CAPEX_TRAP"
@@ -420,9 +428,9 @@ Analyze secular capex wave phase, bottleneck monopoly score (1-10), and thematic
                 f"capex absorption rather than monopoly pricing power."
             )
             parsed["micro_gating_warning"] = trap_note
-            thesis_text = f"[{trap_note}] {parsed.get('thematic_summary', raw_text[:300])}".strip()
+            thesis_text = f"[{trap_note}] {parsed.get('thematic_summary', '')}".strip()
         else:
-            thesis_text = parsed.get("thematic_summary", raw_text[:300])
+            thesis_text = parsed.get("thematic_summary", "")
 
         return {
             "thematic_report": {
@@ -442,8 +450,8 @@ Analyze secular capex wave phase, bottleneck monopoly score (1-10), and thematic
         gross_margin = _number(_mapping(sec.get("gross_margin_pct")).get(latest_p)) if latest_p else None
         moat_rep = _mapping(state.get("moat_report"))
         moat_analysis = _mapping(moat_rep.get("analysis"))
-        moat_rating = str(moat_analysis.get("moat_rating") or moat_rep.get("rating") or "").lower()
-        has_strong_moat = any(m in moat_rating for m in ("wide", "strong", "high", "monopoly"))
+        moat_rating = str(moat_analysis.get("moat_rating") or moat_rep.get("rating") or "").strip().upper()
+        has_strong_moat = moat_rating in {"WIDE", "STRONG", "HIGH", "MONOPOLY"}
 
         if gross_margin is not None and gross_margin < 0.35 and not has_strong_moat:
             fallback_analysis["thematic_tailwinds"] = "COMMODITIZED_CAPEX_TRAP"

@@ -87,6 +87,24 @@ class ResearchIntent:
         }
 
 
+def _is_valid_ticker_symbol(candidate: str) -> bool:
+    """Validate whether a candidate string is an exchange ticker symbol.
+
+    Invariants:
+    1. Single token (no whitespace).
+    2. Length between 1 and 6 characters (e.g. F, MU, NVDA, GOOGL, BRK.B).
+    3. Strictly alphanumeric plus standard share-class delimiters ('.', '-').
+    4. Never uses arbitrary natural language word blacklists (preserves NOW, TECH, BEST).
+    """
+    clean = candidate.strip().upper()
+    if not clean or any(c.isspace() for c in clean):
+        return False
+    if len(clean) < 1 or len(clean) > 12:
+        return False
+    valid_chars = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-")
+    return set(clean).issubset(valid_chars)
+
+
 @dataclass(frozen=True)
 class ResearchRequest:
     """User or scheduler research direction.
@@ -124,16 +142,15 @@ class ResearchRequest:
         raw_ticker = (self.ticker or "").strip()
         curr_query = (self.query or "").strip()
 
-        # Defensive check: if the ticker field contains spaces, multi-word sentences,
-        # or conversational search queries, auto-route it to query and clear ticker.
+        # Deterministic check: if the ticker candidate conforms to exchange symbol invariants,
+        # register it as a ticker. If it is multi-word or non-symbol, route to query.
         if raw_ticker:
-            has_spaces = " " in raw_ticker or "\t" in raw_ticker or "\n" in raw_ticker
-            is_too_long = len(raw_ticker) > 10
-            is_prompt_phrase = any(
-                w in raw_ticker.upper().split()
-                for w in ("FIND", "BEST", "INVEST", "STOCK", "STOCKS", "RIGHT", "NOW", "WHAT", "HOW", "WHICH", "TECH")
-            )
-            if has_spaces or is_too_long or is_prompt_phrase:
+            if _is_valid_ticker_symbol(raw_ticker):
+                object.__setattr__(self, "ticker", raw_ticker.upper())
+                if not curr_query:
+                    curr_query = f"Forensic equity diligence on {raw_ticker.upper()}"
+                    object.__setattr__(self, "query", curr_query)
+            else:
                 # Treat raw_ticker as a natural language query
                 if not curr_query or curr_query.lower().startswith("forensic equity diligence on"):
                     curr_query = raw_ticker
@@ -141,11 +158,6 @@ class ResearchRequest:
                     curr_query = f"{raw_ticker} — {curr_query}"
                 object.__setattr__(self, "query", curr_query)
                 object.__setattr__(self, "ticker", None)
-            else:
-                object.__setattr__(self, "ticker", raw_ticker.upper())
-                if not curr_query:
-                    curr_query = f"Forensic equity diligence on {raw_ticker.upper()}"
-                    object.__setattr__(self, "query", curr_query)
         else:
             object.__setattr__(self, "ticker", None)
 

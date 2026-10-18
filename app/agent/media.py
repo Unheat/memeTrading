@@ -923,12 +923,20 @@ Followed immediately by '# Headline' and the narrative body.
     response = model.invoke(conversation_messages)
     article_raw = getattr(response, "content", "")
 
+    def _strip_model_bibliography(markdown_text: str) -> str:
+        """Strip model-generated trailing bibliography sections using line-level heading inspection."""
+        lines = markdown_text.splitlines()
+        cutoff_index = len(lines)
+        target_headings = ("## primary sources", "## regulatory receipts", "## references", "## sources", "## bibliography")
+        for idx, line in enumerate(lines):
+            stripped = line.strip().lower()
+            if any(stripped.startswith(h) for h in target_headings):
+                cutoff_index = idx
+                break
+        return "\n".join(lines[:cutoff_index]).strip()
+
     # Strip any model-generated trailing bibliography to avoid duplicates or hallucinated links
-    clean_article = re.split(
-        r"\n##\s*(?:Primary Sources|Regulatory Receipts|References|Sources)",
-        article_raw,
-        flags=re.IGNORECASE,
-    )[0].strip()
+    clean_article = _strip_model_bibliography(article_raw)
 
     # Deterministically validate article body citations
     validation = validate_article_body_citations(clean_article, cards)
@@ -961,11 +969,7 @@ Followed immediately by '# Headline' and the narrative body.
             retry_resp = model.invoke(conversation_messages)
             retry_raw = getattr(retry_resp, "content", "")
             if retry_raw and retry_raw.strip():
-                clean_article = re.split(
-                    r"\n##\s*(?:Primary Sources|Regulatory Receipts|References|Sources)",
-                    retry_raw,
-                    flags=re.IGNORECASE,
-                )[0].strip()
+                clean_article = _strip_model_bibliography(retry_raw)
                 validation = validate_article_body_citations(clean_article, cards)
                 if validation["passed"]:
                     logger.info("Article citation correction succeeded on retry %d", retry_count)

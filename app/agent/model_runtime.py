@@ -8,7 +8,10 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence, TypeVar, Union
+from pydantic import BaseModel
+
+T = TypeVar("T", bound=BaseModel)
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
@@ -77,16 +80,8 @@ class UniversalChatModel(BaseChatModel):
             bound = self.bind(response_format={"type": "json_object"})
             res = bound.invoke(msgs, config=config) if config else bound.invoke(msgs)
             raw = getattr(res, "content", "")
-            if isinstance(raw, str):
-                cleaned = raw.strip()
-                if cleaned.startswith("```json"):
-                    cleaned = cleaned[7:]
-                elif cleaned.startswith("```"):
-                    cleaned = cleaned[3:]
-                if cleaned.endswith("```"):
-                    cleaned = cleaned[:-3]
-                raw = cleaned.strip()
-            data = json.loads(raw) if isinstance(raw, str) else dict(raw)
+            from app.agent.contracts import parse_llm_json_block
+            data = parse_llm_json_block(raw) if isinstance(raw, str) else dict(raw)
             if hasattr(schema, "model_validate"):
                 return schema.model_validate(data)
             if hasattr(schema, "parse_obj"):
@@ -256,6 +251,38 @@ class ModelRuntime:
     model: Any
     context_policy: ModelContextPolicy = ModelContextPolicy()
     token_counter: TokenCounter = conservative_token_counter
+
+
+def invoke_structured_model(
+    model: Any,
+    messages: Sequence[BaseMessage],
+    schema: type[T],
+) -> T:
+    """Invoke a model with schema-enforced structured output.
+
+    Supports native with_structured_output runnables, direct chat models, and test doubles.
+    """
+    if hasattr(model, "with_structured_output"):
+        try:
+            runnable = model.with_structured_output(schema)
+            res = runnable.invoke(list(messages))
+            if isinstance(res, schema):
+                return res
+            if isinstance(res, dict):
+                return schema.model_validate(res)
+        except Exception as exc:
+            logger.debug("with_structured_output failed; falling back to invoke: %s", exc)
+
+    resp = model.invoke(list(messages))
+    raw = getattr(resp, "content", "")
+    if isinstance(raw, schema):
+        return raw
+    if isinstance(raw, dict):
+        return schema.model_validate(raw)
+
+    from app.agent.contracts import parse_llm_json_block
+    data = parse_llm_json_block(raw)
+    return schema.model_validate(data)
 
 
 def resolve_token_counter(model: Any) -> TokenCounter:
