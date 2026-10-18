@@ -123,6 +123,10 @@ class ForensicReport(BaseModel):
     sloan_accruals: dict[str, Any] = Field(default_factory=dict)
     sbc_dilution: dict[str, Any] = Field(default_factory=dict)
     leverage: dict[str, Any] = Field(default_factory=dict)
+    altman_z_score: dict[str, Any] = Field(default_factory=dict)
+    dupont_analysis: dict[str, Any] = Field(default_factory=dict)
+    economic_value_spread: dict[str, Any] = Field(default_factory=dict)
+    working_capital: dict[str, Any] = Field(default_factory=dict)
     red_flags: list[str] = Field(default_factory=list)
     missing_inputs: list[str] = Field(default_factory=list)
     source: str = "sec_financials"

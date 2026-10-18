@@ -173,6 +173,158 @@ def compute_leverage_profile(
     }
 
 
+def compute_altman_z_score(
+    working_capital: float | None,
+    retained_earnings: float | None,
+    ebit: float | None,
+    market_cap: float | None,
+    total_liabilities: float | None,
+    sales: float | None,
+    total_assets: float | None,
+    is_manufacturing: bool = True,
+) -> dict[str, Any] | None:
+    """Calculate quantitative Altman Z-Score / Z''-Score for balance sheet distress risk.
+
+    Manufacturing formula (Altman 1968):
+      Z = 1.2*X1 + 1.4*X2 + 3.3*X3 + 0.6*X4 + 0.999*X5
+      Cutoffs: Z > 2.99 Safe, 1.81 <= Z <= 2.99 Grey, Z < 1.81 Distress.
+
+    Non-manufacturing / tech / service formula (Altman 1993, Z''-Score):
+      Z'' = 6.56*X1 + 3.26*X2 + 6.72*X3 + 1.05*X4
+      Cutoffs: Z'' > 2.60 Safe, 1.10 <= Z'' <= 2.60 Grey, Z'' < 1.10 Distress.
+    """
+    if total_assets is None or total_assets <= 0:
+        return None
+
+    x1 = (working_capital or 0.0) / total_assets
+    x2 = (retained_earnings or 0.0) / total_assets
+    x3 = (ebit or 0.0) / total_assets
+    tot_liab = total_liabilities if (total_liabilities and total_liabilities > 0) else (total_assets * 0.5)
+    x4 = (market_cap or (total_assets - tot_liab)) / tot_liab
+    x5 = (sales or 0.0) / total_assets
+
+    if is_manufacturing:
+        z_score = 1.2 * x1 + 1.4 * x2 + 3.3 * x3 + 0.6 * x4 + 0.999 * x5
+        if z_score > 2.99:
+            zone = "SAFE_ZONE"
+            distress_risk = "LOW"
+        elif z_score >= 1.81:
+            zone = "GREY_ZONE"
+            distress_risk = "MODERATE"
+        else:
+            zone = "DISTRESS_ZONE"
+            distress_risk = "HIGH"
+        threshold_safe = 2.99
+        threshold_distress = 1.81
+    else:
+        z_score = 6.56 * x1 + 3.26 * x2 + 6.72 * x3 + 1.05 * x4
+        if z_score > 2.60:
+            zone = "SAFE_ZONE"
+            distress_risk = "LOW"
+        elif z_score >= 1.10:
+            zone = "GREY_ZONE"
+            distress_risk = "MODERATE"
+        else:
+            zone = "DISTRESS_ZONE"
+            distress_risk = "HIGH"
+        threshold_safe = 2.60
+        threshold_distress = 1.10
+
+    return {
+        "z_score": _round(z_score, 2),
+        "zone": zone,
+        "distress_risk": distress_risk,
+        "model_variant": "manufacturing_5_factor" if is_manufacturing else "service_tech_4_factor",
+        "threshold_safe": threshold_safe,
+        "threshold_distress": threshold_distress,
+        "components": {
+            "x1_working_capital_to_assets": _round(x1, 4),
+            "x2_retained_earnings_to_assets": _round(x2, 4),
+            "x3_ebit_to_assets": _round(x3, 4),
+            "x4_market_equity_to_liabilities": _round(x4, 4),
+            "x5_sales_to_assets": _round(x5, 4) if is_manufacturing else None,
+        },
+    }
+
+
+def compute_dupont_analysis(
+    net_income: float | None,
+    operating_income: float | None,
+    revenue: float | None,
+    total_assets: float | None,
+    stockholders_equity: float | None,
+    income_tax_expense: float | None = None,
+) -> dict[str, Any] | None:
+    """Calculate 5-stage DuPont decomposition of Return on Equity (ROE).
+
+    ROE = Tax Burden * Interest Burden * Operating Margin * Asset Turnover * Financial Leverage
+    """
+    if not revenue or revenue <= 0 or not total_assets or total_assets <= 0 or not stockholders_equity or stockholders_equity <= 0:
+        return None
+
+    ni = net_income or 0.0
+    ebit = operating_income or 0.0
+    tax_exp = income_tax_expense or 0.0
+    ebt = ni + tax_exp if (ni and tax_exp) else ebit
+
+    tax_burden = (ni / ebt) if (ebt and ebt > 0) else 1.0
+    interest_burden = (ebt / ebit) if (ebit and ebit > 0) else 1.0
+    operating_margin = (ebit / revenue)
+    asset_turnover = (revenue / total_assets)
+    financial_leverage = (total_assets / stockholders_equity)
+
+    roe = (ni / stockholders_equity) if stockholders_equity else 0.0
+
+    return {
+        "roe": _round(roe, 4),
+        "roe_pct": f"{round(roe * 100, 2)}%",
+        "tax_burden": _round(tax_burden, 4),
+        "interest_burden": _round(interest_burden, 4),
+        "operating_margin": _round(operating_margin, 4),
+        "asset_turnover": _round(asset_turnover, 4),
+        "financial_leverage": _round(financial_leverage, 4),
+        "quality_assessment": "HIGH_QUALITY_OPERATING_DRIVEN" if (operating_margin > 0.15 and asset_turnover > 0.6) else ("LEVERAGE_DRIVEN" if financial_leverage > 3.0 else "BALANCED"),
+    }
+
+
+def compute_roic_economic_spread(
+    operating_income: float | None,
+    total_assets: float | None,
+    cash_and_equivalents: float | None,
+    current_liabilities: float | None,
+    effective_tax_rate: float = 0.21,
+    wacc: float = 0.09,
+) -> dict[str, Any] | None:
+    """Calculate Return on Invested Capital (ROIC) and EVA Economic Value Added Spread.
+
+    Invested Capital = Total Assets - Excess Cash - Non-Interest Bearing Current Liabilities
+    NOPAT = EBIT * (1 - t)
+    ROIC = NOPAT / Invested Capital
+    EVA Spread = ROIC - WACC
+    """
+    if operating_income is None or not total_assets or total_assets <= 0:
+        return None
+
+    nopat = operating_income * (1.0 - effective_tax_rate)
+    cash = cash_and_equivalents or 0.0
+    cl = current_liabilities or 0.0
+    invested_capital = max(total_assets - cash - cl, 1.0)
+    roic = nopat / invested_capital
+    spread = roic - wacc
+
+    return {
+        "nopat": _round(nopat, 2),
+        "invested_capital": _round(invested_capital, 2),
+        "roic": _round(roic, 4),
+        "roic_pct": f"{round(roic * 100, 2)}%",
+        "wacc": _round(wacc, 4),
+        "wacc_pct": f"{round(wacc * 100, 2)}%",
+        "economic_value_spread": _round(spread, 4),
+        "economic_spread_pct": f"{round(spread * 100, 2)}%",
+        "value_creation_status": "VALUE_CREATING" if spread > 0.02 else ("VALUE_NEUTRAL" if spread >= -0.02 else "VALUE_DESTROYING"),
+    }
+
+
 def evaluate_forensic_accounting(sec_financials: Mapping[str, Any] | None) -> dict[str, Any]:
     """Execute complete deterministic forensic audit from available SEC financials.
 
@@ -314,6 +466,40 @@ def evaluate_forensic_accounting(sec_financials: Mapping[str, Any] | None) -> di
         lvgi=lvgi,
     )
 
+    # 5. Altman Z-Score, DuPont 5-Stage ROE, and ROIC/EVA Spread
+    retained_earnings = _val("retained_earnings", curr_p)
+    stockholders_equity = _val("stockholders_equity", curr_p)
+    tax_exp = _val("income_tax_expense", curr_p)
+    working_capital = (ca_curr - cl_curr) if (ca_curr is not None and cl_curr is not None) else None
+    tot_liab = (total_assets - stockholders_equity) if (total_assets and stockholders_equity) else (cl_curr + (total_debt or 0.0))
+
+    altman = compute_altman_z_score(
+        working_capital=working_capital,
+        retained_earnings=retained_earnings,
+        ebit=op_inc,
+        market_cap=None,
+        total_liabilities=tot_liab,
+        sales=rev_curr,
+        total_assets=total_assets,
+        is_manufacturing=True,
+    )
+
+    dupont = compute_dupont_analysis(
+        net_income=net_income,
+        operating_income=op_inc,
+        revenue=rev_curr,
+        total_assets=total_assets,
+        stockholders_equity=stockholders_equity,
+        income_tax_expense=tax_exp,
+    )
+
+    economic_spread = compute_roic_economic_spread(
+        operating_income=op_inc,
+        total_assets=total_assets,
+        cash_and_equivalents=cash,
+        current_liabilities=cl_curr,
+    )
+
     # Missing inputs audit
     missing = []
     if total_assets is None:
@@ -333,6 +519,8 @@ def evaluate_forensic_accounting(sec_financials: Mapping[str, Any] | None) -> di
         red_flags.append(f"High SBC dilution burden: SBC accounts for {sbc_audit.get('sbc_as_pct_of_fcf')}% of Free Cash Flow")
     if leverage.get("leverage_risk") == "EXCESSIVE_LEVERAGE":
         red_flags.append(f"Excessive debt burden: Net Debt to Operating Income exceeds 4.0x ({leverage.get('net_debt_to_operating_income')}x)")
+    if altman and altman.get("distress_risk") == "HIGH":
+        red_flags.append(f"Altman Z-Score in distress zone ({altman.get('z_score')} < 1.81)")
 
     if beneish.get("is_manipulator_probability_high") and len(red_flags) >= 2:
         verdict = "UNACCEPTABLE_AGGRESSIVE_ACCOUNTING"
@@ -352,6 +540,15 @@ def evaluate_forensic_accounting(sec_financials: Mapping[str, Any] | None) -> di
         "sloan_accruals": sloan,
         "sbc_dilution": sbc_audit,
         "leverage": leverage,
+        "altman_z_score": altman,
+        "dupont_analysis": dupont,
+        "economic_value_spread": economic_spread,
+        "working_capital": {
+            "dio": _val("dio", curr_p),
+            "dso": _val("dso", curr_p),
+            "dpo": _val("dpo", curr_p),
+            "ccc": _val("ccc", curr_p),
+        },
         "red_flags": red_flags,
         "missing_inputs": missing,
     }

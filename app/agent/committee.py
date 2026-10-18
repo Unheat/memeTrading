@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -104,6 +104,8 @@ class ICVerdict:
     anchor_citation: str = ""
     paper_trade: bool = False
     bear_floor: float | None = None
+    clamp_events: list[dict[str, Any]] = field(default_factory=list)
+    risk_debate: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -121,7 +123,108 @@ class ICVerdict:
             "anchor_citation": self.anchor_citation,
             "paper_trade": self.paper_trade,
             "bear_floor": self.bear_floor,
+            "clamp_events": list(self.clamp_events),
+            "risk_debate": dict(self.risk_debate),
         }
+
+
+def apply_risk_limits(
+    proposed_allocation: float,
+    ticker: str,
+    conviction_tier: str,
+    downside_pct: float,
+    max_position_cap: float = 0.10,
+    max_high_conviction_cap: float = 0.15,
+    max_loss_budget: float = 0.05,
+) -> tuple[float, list[dict[str, Any]]]:
+    """Clamp proposed Kelly allocation against fund risk limits.
+
+    Adapted from reference/ai-hedge-fund/hedge_fund/risk/limits.py (apply_limits).
+    "Conviction requests, risk disposes": Exposure removed by a clamp is NEVER
+    redistributed; it stays in cash.
+    """
+    clamps: list[dict[str, Any]] = []
+    weight = float(proposed_allocation)
+    cap = max_high_conviction_cap if "HIGH CONVICTION" in conviction_tier else max_position_cap
+
+    if weight > cap:
+        clamps.append({
+            "limit": "max_position_pct",
+            "ticker": ticker,
+            "before": round(weight, 4),
+            "after": round(cap, 4),
+            "reason": f"Single-name weight {weight:.1%} clamped to fund limit {cap:.1%}",
+        })
+        weight = cap
+
+    if downside_pct > 0 and (weight * downside_pct) > max_loss_budget:
+        budget_cap = max_loss_budget / downside_pct
+        if weight > budget_cap:
+            clamps.append({
+                "limit": "max_loss_budget",
+                "ticker": ticker,
+                "before": round(weight, 4),
+                "after": round(budget_cap, 4),
+                "reason": f"Capital-at-risk {weight * downside_pct:.1%} exceeds fund loss budget {max_loss_budget:.1%}; clamped to {budget_cap:.1%}",
+            })
+            weight = budget_cap
+
+    return round(weight, 4), clamps
+
+
+def generate_risk_debate_context(
+    ticker: str,
+    current_price: float | None,
+    base_target: float | None,
+    bear_floor: float | None,
+    ratio: float | None,
+    bull_report: Any,
+    adversarial: Any,
+    ch_verdict: str,
+    forensic: Mapping[str, Any],
+) -> dict[str, str]:
+    """Synthesize 3-way risk debator perspectives (Conservative, Aggressive, Neutral).
+
+    Adapted from reference/tradingagents/tradingagents/agents/risk_mgmt/ (TauricResearch).
+    Presents distinct risk stances to challenge complacency before the CIO deliberates.
+    """
+    bear_pts = []
+    if bear_floor and current_price and current_price > 0:
+        down_pct = (current_price - bear_floor) / current_price
+        bear_pts.append(f"Downside risk to floor ${bear_floor:.2f} is -{down_pct:.1%}")
+    if adversarial and hasattr(adversarial, "falsifiable_objections") and adversarial.falsifiable_objections:
+        bear_pts.append(f"Vulnerabilities: {'; '.join(adversarial.falsifiable_objections[:2])}")
+    if forensic and forensic.get("red_flags"):
+        bear_pts.append(f"Forensic flags: {'; '.join(forensic.get('red_flags')[:2])}")
+    conservative_stance = (
+        f"Conservative Analyst: Urges defensive capital preservation on ${ticker}. " + " | ".join(bear_pts)
+        if bear_pts else f"Conservative Analyst: Mandates capital preservation and strict stop-loss below entry."
+    )
+
+    bull_pts = []
+    if base_target and current_price and current_price > 0:
+        up_pct = (base_target - current_price) / current_price
+        bull_pts.append(f"Target upside ${base_target:.2f} represents +{up_pct:.1%}")
+    if ch_verdict in ("CHANNEL_ACCELERATION", "UNPRICED_CHANNEL_ACCELERATION"):
+        bull_pts.append("Channel telemetry confirms product shortage & pricing power")
+    if bull_report and hasattr(bull_report, "catalysts") and bull_report.catalysts:
+        bull_pts.append(f"Catalysts: {'; '.join(bull_report.catalysts[:2])}")
+    aggressive_stance = (
+        f"Aggressive Analyst: Recommends high conviction participation in ${ticker}. " + " | ".join(bull_pts)
+        if bull_pts else f"Aggressive Analyst: Focuses on upside catalyst capture and operating leverage."
+    )
+
+    hurdle_status = f"{ratio}x ratio clears 3:1 hurdle" if (ratio and ratio >= 3.0) else f"{ratio}x ratio below 3:1 hurdle"
+    neutral_stance = (
+        f"Neutral Analyst: Reconciles risk/reward for ${ticker}: {hurdle_status}. "
+        f"Advocates Fractional Kelly sizing calibrated to empirical margin of safety."
+    )
+
+    return {
+        "conservative_analyst": conservative_stance,
+        "aggressive_analyst": aggressive_stance,
+        "neutral_analyst": neutral_stance,
+    }
 
 
 def _report_status(report: Any) -> str:
@@ -328,13 +431,21 @@ def run_investment_committee(state: InvestigationState, model: Any) -> dict[str,
             passing_checks["bear_floor_gate"] = f"FAIL (Bear floor ${bear_floor:.2f} >= current price ${current_price:.2f})"
         passing_checks["asymmetry_gate"] = f"FAIL (Reward-to-risk ratio does not clear 3:1 hurdle)"
 
-    # Build comprehensive payload for CIO LLM deliberation.
-    # Fix 10 (audit 2026-09-26): the upside anchor and the DCF fair value are reported
-    # separately with their sources so the CIO prose cannot relabel a consensus target
-    # as a DCF output.
+    # Build comprehensive payload for CIO LLM deliberation with 3-way risk debate.
     forensic = state.get("forensic_report") or {}
     thematic = state.get("thematic_report") or {}
     moat = state.get("moat_report") or {}
+    risk_debate = generate_risk_debate_context(
+        ticker=ticker,
+        current_price=current_price,
+        base_target=base_target,
+        bear_floor=bear_floor,
+        ratio=ratio,
+        bull_report=bull_report,
+        adversarial=adversarial,
+        ch_verdict=ch_verdict,
+        forensic=forensic,
+    )
     prompt_payload = json.dumps(
         {
             "ticker": ticker,
@@ -354,6 +465,7 @@ def run_investment_committee(state: InvestigationState, model: Any) -> dict[str,
             "channel_verdict": ch_verdict if ch_verdict else "INSUFFICIENT_CHANNEL_DATA",
             "arbitrage_verdict": arbitrage_verdict if arbitrage_verdict else None,
             "channel_check_summary": channel_rep.get("synthesis_summary") or "",
+            "risk_debate_perspectives": risk_debate,
             "bull_thesis": bull_report.bull_thesis_summary if bull_report else "No bull model.",
             "bull_catalysts": list(bull_report.catalysts) if bull_report else [],
             "bull_target_price": bull_report.bull_target_price if bull_report else None,
@@ -430,12 +542,20 @@ Deliberate as CIO, cite `upside_anchor_source` accurately in the required `ancho
                 cio_conviction = "MEDIUM CONVICTION 🔥🔥"
 
 
+    downside_pct = (current_price - bear_floor) / current_price if (current_price and bear_floor and current_price > bear_floor) else 0.15
+    clamped_kelly, clamp_events = apply_risk_limits(
+        proposed_allocation=kelly_size,
+        ticker=ticker,
+        conviction_tier=cio_conviction,
+        downside_pct=downside_pct,
+    )
+
     verdict_obj = ICVerdict(
         ticker=ticker,
         verdict=cio_verdict_str,
         conviction_tier=cio_conviction,
         reward_to_risk_ratio=ratio,
-        kelly_position_size_pct=kelly_size,
+        kelly_position_size_pct=clamped_kelly,
         passing_discipline_checks=passing_checks,
         cio_deliberation_summary=cio_summary,
         upside_anchor=base_target,
@@ -444,6 +564,8 @@ Deliberate as CIO, cite `upside_anchor_source` accurately in the required `ancho
         anchor_citation=anchor_citation,
         paper_trade=paper_trade,
         bear_floor=bear_floor,
+        clamp_events=clamp_events,
+        risk_debate=risk_debate,
     )
     asymmetry_gate_payload = {
         "passed": bool(ratio is not None and ratio >= asymmetry_hurdle),
