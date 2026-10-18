@@ -784,6 +784,7 @@ def serialize_investigation_json(
     now_utc = datetime.now(timezone.utc).isoformat()
     return {
         "case_id": state.get("case_id"),
+        "as_of_date": state.get("as_of_date"),
         "depth": state.get("depth", "deep"),
         "research_intent": state.get("research_intent", {}),
         "research_plan": state.get("research_plan", []),
