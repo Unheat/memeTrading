@@ -229,13 +229,17 @@ The SEC evidence layer routes each data type through exactly one of two tracks (
    - **Accounting Gate (G2)**: `evaluate_accounting_gate()` checks the Beneish M-Score ($M \le -1.78$).
    - **Valuation Gate (G3)**: `evaluate_valuation_gate()` verifies calculator reproducibility and reasonable growth hurdles.
    - **Asymmetry Gate (G4)**: `evaluate_asymmetry_gate()` enforces the reward-to-risk hurdle from the deterministic DCF risk/reward (the committee applies the configured `asymmetry_hurdle`, default $3.0\times$). Downside risk is bounded by `downsideFloor` ($\text{TBV} / \text{share}$ or contracted pullback floor in `CHANNEL_ACCELERATION`), decoupling the ratio from artificial trailing cash-flow lows.
-4. **Investment Committee Deliberation**: `run_investment_committee()` ([`committee.py:154`](../app/agent/committee.py:154)) runs a single formal CIO deliberation using `CIO_SYSTEM_PROMPT`. It:
+4. **Investment Committee Deliberation & 3-Way Risk Debate**: `run_investment_committee()` ([`committee.py:154`](../app/agent/committee.py:154)) runs a formal CIO deliberation using `CIO_SYSTEM_PROMPT`. It:
    - Synthesizes Bull upside catalysts versus Bear kill criteria with **enforced anchor provenance**: the payload separates `upside_anchor` (source: `consensus_mean` / `quant_fair_value` / `bull_target_price` / `quant_high_channel_acceleration`) from `dcf_base_fair_value`, records `bear_anchor_source` (`red_team_bear_floor` / `dcf_low_fallback` / `channel_acceleration_pullback_floor`), and the CIO must cite the anchor source accurately in `anchor_citation`.
+   - Incorporates the **3-Way Multi-Perspective Risk Debate** (`generate_risk_debate_context` adapted from `reference/tradingagents`): Conservative Analyst (capital preservation & downside floor), Aggressive Analyst (operating leverage & channel shortage), and Neutral Analyst (probability-weighted 3:1 hurdle).
    - Evaluates the **Scuttlebutt Inflection Exception**: When `channel_check_report` confirms `CHANNEL_ACCELERATION` (e.g. 100% capacity pre-commitments or severe wafer cannibalization), the CIO evaluates forward operating leverage and backlog durability rather than assuming an immediate cyclical collapse.
    - Enforces the strict "Passing Discipline" (rejecting commoditized unbacked capex traps or excessive debt).
-   - Applies **tiered sizing** from config-driven hurdles in `budget_state`: ratio $< 2.0\times$ → `VALIDATION_WATCH`; $[2.0\times, \text{hurdle})$ → `PAPER_TRADE_WATCH` (`paper_trade: true`, zero capital, kept for calibration); $\ge$ hurdle → quarter-Kelly (8% cap); $\ge 5.0\times$ with fully available debate reports → half-Kelly (10% cap).
-   - Outputs an `ICVerdict` schema with verdict, conviction tier, tiered Kelly position size, anchor fields, `paper_trade`, and `bear_floor`.
-5. **State Transition**: Connects directly to `END`.
+   - Applies **Deterministic Risk Limits** (`apply_risk_limits` adapted from `reference/ai-hedge-fund`): "Conviction requests, risk disposes" — Fractional Kelly sizing is clamped against a 10% standard single-name cap (15% high-conviction cap) and a 5% maximum portfolio loss budget. Exposure trimmed by clamps stays in cash and emits immutable `clamp_events`.
+   - Outputs an `ICVerdict` schema with verdict, conviction tier, clamped Kelly position size, anchor fields, `paper_trade`, `bear_floor`, and `clamp_events`.
+5. **State & Memo Synchronization**:
+   - `diligence_node` appends an authoritative `AIMessage` with the Boardroom decision to `state["messages"]`, ensuring `state["messages"][-1]` is the final committee verdict rather than stale pre-committee intermediate chat.
+   - `render_research_report` in `app/agent/memo.py` renders the Investment Committee deliberation table and CIO summary at the very top of `## Executive Allocation & Research Synthesis`, subordinating analyst text under field telemetry to eliminate dual-verdict contradictions.
+   - Connects directly to `END`.
 
 ---
 
@@ -273,16 +277,16 @@ The remaining modules in `app/agent/` provide the runtime, state, and serializat
 | `app/agent/tools.py` | `record_channel_check` | Stage 2 Tool | `executor_node` | Records structured Philip Fisher scuttlebutt receipts (`ChannelCheckReceipt`) with defensive alias coercion |
 | `app/agent/diligence.py` | `run_candidate_diligence` | Stage 2 (`tools`) | Tool `conduct_candidate_diligence` | `diligence_dossier` on candidate workspace |
 | `app/agent/expectations.py` | `run_expectations_analyst` | Stage 2 Sub-Agent | `run_candidate_diligence` | `expectation_gap` analysis |
-| `app/agent/specialists.py` | `run_forensic_analysis` | Stage 2 Sub-Agent | `run_candidate_diligence` | `forensic_report` (Beneish M-Score, Sloan) |
+| `app/agent/specialists.py` | `run_forensic_analysis` | Stage 2 Sub-Agent | `run_candidate_diligence` | `forensic_report` (Beneish M-Score, Sloan accruals, Altman Z-Score, DuPont 5-Stage ROE, EVA spread, Working Capital) |
 | `app/agent/specialists.py` | `run_moat_analysis` | Stage 2 Sub-Agent | `run_candidate_diligence` | `moat_report` (7 Powers assessment) |
-| `app/agent/specialists.py` | `run_channel_check_analysis` | Stage 2 Sub-Agent | `run_candidate_diligence` | `channel_check_report` (Concordance matrix) |
-| `app/agent/specialists.py` | `run_quant_analysis` | Stage 2 Sub-Agent / Tool | `run_candidate_diligence`, `evaluate_valuation` | `quant_report` (DCF, WACC, Triangulation) |
-| `app/valuation/calculator.mjs` | `compute` | Stage 2 Engine | `run_quant_analysis` via `engine.py` | Fair value range, Triangulation, Reverse DCF |
-| `app/agent/bull.py` | `run_bull_advocate` | Stage 2 Sub-Agent | `run_candidate_diligence` | `bull_report` (Catalysts, upside target) |
-| `app/agent/adversarial.py` | `run_adversarial_red_team` | Stage 2 Sub-Agent | `run_candidate_diligence` | `adversarial_report` (Kill criteria, floor) |
+| `app/agent/specialists.py` | `run_channel_check_analysis` | Stage 2 Sub-Agent | `run_candidate_diligence` | `channel_check_report` (Concordance matrix, Bullwhip phantom inventory check) |
+| `app/agent/specialists.py` | `run_quant_analysis` | Stage 2 Sub-Agent / Tool | `run_candidate_diligence`, `evaluate_valuation` | `quant_report` (Mid-year DCF, Unlevered FCFF, Operating Leases in EV bridge, Mauboussin Expectations, WACC, Triangulation) |
+| `app/valuation/calculator.mjs` | `compute` | Stage 2 Engine | `run_quant_analysis` via `engine.py` | Mid-year fair value range, Senior claims EV bridge, Mauboussin Expectations Reverse DCF, Triangulation |
+| `app/agent/bull.py` | `run_bull_advocate` | Stage 2 Sub-Agent | `run_candidate_diligence` | `bull_report` (Catalysts, operating leverage, numeric target price) |
+| `app/agent/adversarial.py` | `run_adversarial_red_team` | Stage 2 Sub-Agent | `run_candidate_diligence` | `adversarial_report` (Kill criteria, downside floor) |
 | `app/agent/screening.py` | `build_candidate_comparisons` | Stage 2 Tool | Tool `compare_candidates` | `comparisons` matrix across candidates |
 | `app/sec/agent.py` | `investigate_sec` / `run_sec_investigation` | Stage 2 Sub-Agent | Tool `investigate_sec` | Verified filing excerpts and claims |
-| `app/sec/financials.py` | `get_sec_financials` | Stage 2 Tool (Track A — deterministic) | Tool `get_sec_financials`, diligence engines | Official XBRL quarterly financials (TTM FCF, DIO/DSO); never touches RAG or an LLM |
+| `app/sec/financials.py` | `get_sec_financials` | Stage 2 Tool (Track A — deterministic) | Tool `get_sec_financials`, diligence engines | Official XBRL quarterly financials (Unlevered FCFF, Operating Leases ASC 842, Accounts Payable, DPO, CCC, TTM FCF, DIO/DSO); never touches RAG or an LLM |
 | `app/sec/insiders.py` | `get_ownership_and_insider_activity` | Stage 2 Tool (Track A — deterministic) | Tool `get_ownership_and_insider_activity` | Form 4 insider trade audit parsed from XML; never touches RAG |
 | `app/sec/corpus.py` | `prepare_sec_corpus`, `CorpusChunk` | Stage 2 Ingestion (Track B — section-aware RAG) | `pull_filing` auto-index, `verify_sec_claim` auto-heal | Section-tagged chunks with Markdown pipe tables in `sec/index/chunks.jsonl` |
 | `app/sec/retrieval.py` | `build_sec_index`, `search_sec_corpus` | Stage 2 Retrieval (Track B — section-aware RAG) | `search_corpus` / `verify_claim` / `search_sec_evidence` | Hybrid FAISS+BM25+RRF results with optional `section_filter` and citation receipts |
@@ -296,7 +300,7 @@ The remaining modules in `app/agent/` provide the runtime, state, and serializat
 | `app/agent/gate.py` | `evaluate_accounting_gate` | Stage 5 (`diligence`) | `diligence_node` | `accounting_gate` (G2) |
 | `app/agent/gate.py` | `evaluate_valuation_gate` | Stage 5 (`diligence`) | `diligence_node` | `valuation_gate` (G3) |
 | `app/agent/gate.py` | `evaluate_asymmetry_gate` | Stage 5 (`diligence`) | `diligence_node` | `asymmetry_gate` (G4) |
-| `app/agent/committee.py` | `run_investment_committee` | Stage 5 (`diligence`) | `diligence_node` | `ic_verdict`, `investment_committee` |
+| `app/agent/committee.py` | `run_investment_committee` | Stage 5 (`diligence`) | `diligence_node` | `ic_verdict` (with 3-Way Risk Debate & deterministic Kelly risk limits), `asymmetry_gate` |
 | `app/agent/committee.py` | `run_macro_investment_committee` | Stage 5 (`diligence`) | `diligence_node` (macro) | `macro_directive` (monetary & yield curve tilts) |
 | `app/agent/memo.py` | `render_research_report` | Output Generation | Runner after graph finishes | Comprehensive Markdown research memo |
 | `app/agent/runner.py` | `run_investigation` | Top-level Orchestrator | CLI / Web Studio / Automation | Executes graph from `START` to `END` |
