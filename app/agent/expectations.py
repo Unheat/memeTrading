@@ -31,8 +31,6 @@ EXPECTATION_GAP_PRICED_IN_MARGIN = 0.05
 # fabricated claim and the deterministic template replaces the narrative.
 IMPLIED_CLAIM_TOLERANCE = 0.01
 
-_PERCENT_FIGURE_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*%")
-
 EXPECTATIONS_SYSTEM_PROMPT = """# System Prompt: Quant & Deterministic Valuation Modeler (`valuation-modeler`)
 
 You are the Senior Quantitative Valuation Modeler at an institutional investment fund. Your sole job is to translate qualitative business reality into rigorous, deterministic financial valuation models.
@@ -169,16 +167,35 @@ def _run_preliminary_reverse_dcf(
     shares: float | None,
     fcf: float | None,
     net_cash: float | None,
+    revenue: float | None = None,
+    operating_income: float | None = None,
+    total_debt: float | None = None,
+    cash: float | None = None,
+    operating_leases: float | None = None,
 ) -> dict[str, Any] | None:
-    """Run a deterministic preliminary reverse DCF solver via calculator.mjs."""
-    if not price or price <= 0 or not shares or shares <= 0 or not fcf or fcf <= 0:
+    """Run a deterministic preliminary reverse DCF solver via calculator.mjs.
+
+    Supports both constant FCF growth inversion and Michael Mauboussin Expectations
+    Investing (sales growth & NOPAT margin inversion), seamlessly operating even when
+    trailing base FCF is negative or depressed by heavy CapEx.
+    """
+    if not price or price <= 0 or not shares or shares <= 0:
         return None
+    if (not fcf or fcf <= 0) and (not revenue or revenue <= 0):
+        return None
+
     model = {
         "inputs": {
             "current_price": price,
             "shares_diluted": shares,
-            "fcf_base": fcf,
+            "fcf_base": fcf if (fcf and fcf > 0) else 1.0,
             "net_cash": net_cash or 0.0,
+            "revenue": revenue,
+            "operating_income": operating_income,
+            "total_debt": total_debt,
+            "cash": cash,
+            "operating_leases": operating_leases or 0.0,
+            "discounting_convention": "mid_year",
         },
         "assumptions": {
             "terminal_growth_rate": 0.025,
@@ -202,7 +219,23 @@ def _run_preliminary_reverse_dcf(
     }
     calc_res = run_calculator(model)
     if calc_res.get("status") == "ok":
-        return calc_res.get("result", {}).get("reverse_dcf")
+        result_payload = calc_res.get("result", {})
+        rev_dcf = result_payload.get("reverse_dcf")
+        exp_inv = result_payload.get("expectations_investing")
+        if rev_dcf and rev_dcf.get("implied_fcf_growth_rate") is not None:
+            if exp_inv:
+                rev_dcf["mauboussin_expectations"] = exp_inv
+            return rev_dcf
+        if exp_inv and exp_inv.get("implied_revenue_growth_rate") is not None:
+            return {
+                "current_price": price,
+                "implied_fcf_growth_rate": exp_inv.get("implied_revenue_growth_rate"),
+                "implied_growth_pct": exp_inv.get("implied_growth_pct"),
+                "mode": exp_inv.get("mode"),
+                "mauboussin_expectations": exp_inv,
+                "interpretation": exp_inv.get("interpretation"),
+            }
+        return rev_dcf or exp_inv
     return None
 
 
@@ -354,24 +387,19 @@ def _model_interpretation_conflicts(
     text: str,
     implied: float | None,
     context_figures: Sequence[float | None] | None = None,
+    declared_growth: float | None = None,
 ) -> bool:
     """Validate model-authored interpretation against the deterministic implied growth.
 
-    This is numeric-claim verification (deterministic validation of a schema field),
-    not intent inference: when the model explicitly claims an implied growth figure,
-    that figure must match the calculator's implied growth within tolerance. Contextual
-    percentages (such as consensus growth estimates, terminal growth rates, discount rates,
-    or case growth rates) cited in comparative analysis do not trigger conflict.
-
-    Args:
-        text: Model-authored implied_growth_interpretation text.
-        implied: Deterministic implied FCF growth (fraction), or None.
-        context_figures: Legitimate contextual percentages present in the prompt (consensus, terminal, etc.).
-
-    Returns:
-        True when a conflicting numeric claim about implied growth is present.
+    Deterministic validation without regex: extracts percent tokens or checks declared numeric growth.
     """
-    if implied is None or not text:
+    if implied is None or not math.isfinite(implied):
+        return False
+
+    if declared_growth is not None and math.isfinite(declared_growth):
+        return abs(declared_growth - implied) > IMPLIED_CLAIM_TOLERANCE
+
+    if not text:
         return False
 
     allowed_context = [
@@ -382,22 +410,26 @@ def _model_interpretation_conflicts(
     allowed_context.append(round(float(implied), 4))
 
     found_claims: list[float] = []
-    for match in _PERCENT_FIGURE_PATTERN.finditer(text):
-        try:
-            claim = round(float(match.group(1)) / 100.0, 4)
-        except ValueError:
-            continue
-        found_claims.append(claim)
+    # Token-level percentage parsing without regex heuristics
+    for token in text.replace("(", " ").replace(")", " ").replace(",", " ").replace(";", " ").split():
+        if token.endswith("%") and len(token) > 1:
+            clean_num = token[:-1].strip()
+            try:
+                claim = round(float(clean_num) / 100.0, 4)
+                found_claims.append(claim)
+            except (ValueError, TypeError):
+                continue
 
     if not found_claims:
         return False
 
-    has_matching_implied = any(abs(c - implied) <= IMPLIED_CLAIM_TOLERANCE for c in found_claims)
+    # If the model explicitly cited the calculator's implied growth rate, accept the interpretation
+    if any(abs(c - implied) <= IMPLIED_CLAIM_TOLERANCE for c in found_claims):
+        return False
 
+    # If none of the claims match the implied growth rate, check if all claims are legitimate context figures
     for claim in found_claims:
-        if any(abs(claim - ctx) <= IMPLIED_CLAIM_TOLERANCE for ctx in allowed_context):
-            continue
-        if not has_matching_implied or abs(claim - implied) > IMPLIED_CLAIM_TOLERANCE:
+        if not any(abs(claim - ctx) <= IMPLIED_CLAIM_TOLERANCE for ctx in allowed_context):
             return True
 
     return False
@@ -433,13 +465,19 @@ def run_expectations_analyst(state: InvestigationState, model: Any) -> dict[str,
     cash = None
     debt = None
     rev = None
+    op_inc = None
+    leases = None
     if period and isinstance(sec, Mapping):
         cfo = (sec.get("cash_from_operations") or {}).get(period)
         capex = (sec.get("capex") or {}).get(period)
         cash = (sec.get("cash_and_equivalents") or {}).get(period)
         debt = (sec.get("total_debt") or {}).get(period)
         rev = (sec.get("revenue") or {}).get(period)
+        op_inc = (sec.get("operating_income") or {}).get(period)
+        leases = (sec.get("operating_lease_liabilities") or {}).get(period)
 
+    annual_rev = None
+    annual_op_inc = None
     try:
         fcf = float(cfo) - float(capex) if cfo is not None and capex is not None else None
         ttm_fcf = sec.get("ttm_fcf") if isinstance(sec, Mapping) else None
@@ -460,14 +498,30 @@ def run_expectations_analyst(state: InvestigationState, model: Any) -> dict[str,
         net_cash = float(cash) - float(debt) if cash is not None and debt is not None else 0.0
         price_f = price
         shares_f = shares
+        if rev is not None:
+            annual_rev = float(rev) * 4.0 if ("Q" in str(period) or not str(period).upper().startswith("FY")) else float(rev)
+        if op_inc is not None:
+            annual_op_inc = float(op_inc) * 4.0 if ("Q" in str(period) or not str(period).upper().startswith("FY")) else float(op_inc)
     except (TypeError, ValueError):
         fcf = None
         effective_fcf = None
         net_cash = 0.0
         price_f = None
         shares_f = None
+        annual_rev = None
+        annual_op_inc = None
 
-    prelim_reverse_dcf = _run_preliminary_reverse_dcf(price_f, shares_f, effective_fcf, net_cash)
+    prelim_reverse_dcf = _run_preliminary_reverse_dcf(
+        price=price_f,
+        shares=shares_f,
+        fcf=effective_fcf,
+        net_cash=net_cash,
+        revenue=annual_rev,
+        operating_income=annual_op_inc,
+        total_debt=float(debt) if debt is not None else None,
+        cash=float(cash) if cash is not None else None,
+        operating_leases=float(leases) if leases is not None else None,
+    )
 
     # Deterministic layer (audit 2026-09-26, Fix 3): implied growth, consensus growth,
     # the expectation edge, and the verdict come from code — never from model text.
@@ -571,7 +625,12 @@ Analyze what is priced in vs. consensus forecasts and formulate the 3-case DCF p
             float(high_case.get("discount_rate", 0.09)),
             channel_growth,
         ]
-        if _model_interpretation_conflicts(model_interpretation, implied_growth, context_figures=context_pcts):
+        declared_growth = parsed.get("acknowledged_implied_growth") or parsed.get("implied_fcf_growth_rate")
+        try:
+            declared_f = float(declared_growth) if declared_growth is not None else None
+        except (ValueError, TypeError):
+            declared_f = None
+        if _model_interpretation_conflicts(model_interpretation, implied_growth, context_figures=context_pcts, declared_growth=declared_f):
             degradation.append("model_implied_growth_claim_conflicted_with_calculator")
             commentary = ""
 

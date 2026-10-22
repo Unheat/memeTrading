@@ -123,6 +123,10 @@ class ForensicReport(BaseModel):
     sloan_accruals: dict[str, Any] = Field(default_factory=dict)
     sbc_dilution: dict[str, Any] = Field(default_factory=dict)
     leverage: dict[str, Any] = Field(default_factory=dict)
+    altman_z_score: dict[str, Any] = Field(default_factory=dict)
+    dupont_analysis: dict[str, Any] = Field(default_factory=dict)
+    economic_value_spread: dict[str, Any] = Field(default_factory=dict)
+    working_capital: dict[str, Any] = Field(default_factory=dict)
     red_flags: list[str] = Field(default_factory=list)
     missing_inputs: list[str] = Field(default_factory=list)
     source: str = "sec_financials"
@@ -383,11 +387,118 @@ class MacroDirective(BaseModel):
         }
 
 
-def parse_llm_json_block(content: Any) -> dict[str, Any]:
-    """Parse a model response into a JSON object, stripping markdown fences.
+# --- Specialist & Committee Structured Output Schemas ---
 
-    Deterministic validation utility: it performs no intent inference — it either
-    returns the parsed mapping or raises so callers can degrade honestly.
+ForensicVerdict = Literal[
+    "CLEAN_INVESTMENT_GRADE",
+    "QUALIFIED_NORMALIZED_ADJUSTMENT",
+    "SUSPICIOUS_EARNINGS_DISTORTION",
+    "FATAL_ACCOUNTING_RED_FLAG",
+]
+
+class ForensicAuditOutput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    forensic_verdict: ForensicVerdict = Field(
+        default="QUALIFIED_NORMALIZED_ADJUSTMENT",
+        description="Overall audit verdict on financial health and earnings credibility",
+    )
+    beneish_m_score_risk: Literal["CLEAN", "ELEVATED", "MANIPULATION_RISK"] = Field(
+        default="CLEAN",
+        description="Beneish M-Score manipulation risk assessment",
+    )
+    sloan_accrual_quality: Literal["HIGH_QUALITY_CASH", "NORMAL_BAND", "LOW_QUALITY_ACCRUALS"] = Field(
+        default="NORMAL_BAND",
+        description="Sloan accrual earnings quality assessment",
+    )
+    sbc_dilution_burden: Literal["LOW", "MODERATE", "SEVERE_DISTORTION"] = Field(
+        default="MODERATE",
+        description="Stock-based compensation dilution impact",
+    )
+    leverage_solvency_risk: Literal["LOW", "MODERATE", "EXCESSIVE_LEVERAGE"] = Field(
+        default="LOW",
+        description="Debt service and leverage risk",
+    )
+    audit_summary: str = Field(default="", description="Summary of forensic accounting audit findings")
+    key_accounting_flags: list[str] = Field(default_factory=list)
+
+
+MoatRating = Literal["WIDE", "NARROW", "NONE"]
+MoatSource = Literal[
+    "NETWORK_EFFECTS",
+    "SWITCHING_COSTS",
+    "COST_ADVANTAGE",
+    "INTANGIBLE_ASSETS",
+    "EFFICIENT_SCALE",
+    "NONE",
+]
+
+class MoatAnalysisOutput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    moat_rating: MoatRating = Field(default="NARROW", description="Economic moat rating: WIDE, NARROW, or NONE")
+    durability_score: float = Field(default=5.0, ge=1.0, le=10.0, description="Durability score from 1.0 to 10.0")
+    primary_moat_source: MoatSource = Field(default="NONE", description="Primary competitive barrier source")
+    moat_summary: str = Field(default="", description="Summary of competitive advantages and moats")
+    switching_costs_evidence: str = Field(default="")
+    pricing_power_evidence: str = Field(default="")
+
+
+class SectorAnalysisOutput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    sector_thesis: str = Field(default="", description="Sector positioning and competitive environment thesis")
+    gross_margin_durability: Literal["EXPANDING", "STABLE", "COMPRESSING", "VULNERABLE"] = Field(
+        default="STABLE", description="Gross margin durability assessment",
+    )
+    customer_concentration_risk: Literal["LOW", "MODERATE", "HIGH"] = Field(
+        default="LOW", description="Customer concentration risk assessment",
+    )
+    book_to_bill_visibility: Literal["ACCELERATING", "STEADY", "DECELERATING", "OPAQUE", "STRONG", "MODERATE", "WEAK"] = Field(
+        default="STEADY", description="Demand visibility assessment",
+    )
+    unit_cost_curve_advantage: str = Field(default="")
+    key_industry_drivers: list[str] = Field(default_factory=list)
+
+
+class ThematicAnalysisOutput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    thematic_tailwinds: Literal[
+        "STRONG_SECULAR",
+        "MODERATE_SECULAR",
+        "CYCLICAL_PEAK",
+        "COMMODITIZED_CAPEX_TRAP",
+        "SECULAR_HEADWIND",
+    ] = Field(default="MODERATE_SECULAR", description="Macro secular tailwind classification")
+    secular_capex_wave_phase: str = Field(default="", description="Phase in secular capex wave")
+    bottleneck_monopoly_score: int = Field(default=5, ge=1, le=10, description="Monopoly pricing power score (1-10)")
+    thematic_summary: str = Field(default="", description="Summary of macro value-chain positioning")
+    key_thematic_drivers: list[str] = Field(default_factory=list)
+
+
+class BullAdvocateOutput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    catalysts: list[str] = Field(default_factory=list, description="Top structural operating leverage catalysts")
+    operating_leverage_drivers: list[str] = Field(default_factory=list, description="Underappreciated unit-economic drivers")
+    revenue_cagr_delta_bps: float | None = Field(default=None, description="Revenue CAGR upside delta in basis points")
+    operating_margin_delta_bps: float | None = Field(default=None, description="Operating margin expansion delta in basis points")
+    bull_target_price: float | str | None = Field(default=None, description="Upside price target derived from fundamental driver deltas")
+    bull_thesis_summary: str = Field(default="", description="Institutional investment thesis")
+    invalidation_conditions: list[str] = Field(default_factory=list, description="Falsifiable invalidation conditions")
+
+
+class AdversarialAttackOutput(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    falsifiable_objections: list[str] = Field(default_factory=list, description="Structural flaws or accounting/operational vulnerabilities")
+    numeric_kill_criteria: list[str] = Field(default_factory=list, description="Numeric kill triggers with threshold metrics")
+    revenue_cagr_delta_bps: float | None = Field(default=None, description="Downside revenue growth penalty in basis points")
+    operating_margin_delta_bps: float | None = Field(default=None, description="Operating margin compression penalty in basis points")
+    bear_floor_price: float | str | None = Field(default=None, description="Realistic downcycle floor price")
+    bear_thesis_summary: str = Field(default="", description="Concise short-seller thesis summary")
+
+
+def parse_llm_json_block(content: Any) -> dict[str, Any]:
+    """Parse a model response into a JSON object without brittle string slicing.
+
+    Deterministic validation utility: handles raw JSON, markdown-wrapped JSON (```json ... ```),
+    or JSON embedded within conversational preamble.
 
     Args:
         content: Raw model response content (string expected).
@@ -403,13 +514,42 @@ def parse_llm_json_block(content: Any) -> dict[str, Any]:
     if not isinstance(content, str):
         raise ValueError("model content is not a string")
     clean = content.strip()
-    if "```json" in clean:
-        clean = clean.split("```json")[1].split("```")[0].strip()
-    elif clean.startswith("```"):
-        clean = clean.strip("`")
-        if clean.startswith("json"):
-            clean = clean[4:].strip()
-    parsed = json.loads(clean)
-    if not isinstance(parsed, dict):
-        raise ValueError("model JSON is not an object")
+    if not clean:
+        raise ValueError("model content is empty")
+
+    # 1. Try direct parse
+    try:
+        parsed = json.loads(clean)
+        if isinstance(parsed, dict):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    # 2. Extract within markdown code fences if present
+    if "```" in clean:
+        parts = clean.split("```")
+        for part in parts[1::2]:
+            sub = part.strip()
+            if sub.lower().startswith("json"):
+                sub = sub[4:].strip()
+            try:
+                parsed = json.loads(sub)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                continue
+
+    # 3. Outermost bracket search
+    first_brace = clean.find("{")
+    last_brace = clean.rfind("}")
+    if first_brace != -1 and last_brace > first_brace:
+        sub = clean[first_brace : last_brace + 1].strip()
+        try:
+            parsed = json.loads(sub)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+    raise ValueError("no valid JSON object found in model content")
     return parsed

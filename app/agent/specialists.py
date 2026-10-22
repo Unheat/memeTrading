@@ -229,6 +229,9 @@ def run_forensic_analysis(state: InvestigationState, model: Any | None = None) -
         "capex": _number(_mapping(sec.get("capex")).get(period)),
         "cash_and_equivalents": _number(_mapping(sec.get("cash_and_equivalents")).get(period)),
         "total_debt": _number(_mapping(sec.get("total_debt")).get(period)),
+        "dpo": _number(_mapping(sec.get("dpo")).get(period)),
+        "ccc": _number(_mapping(sec.get("ccc")).get(period)),
+        "unlevered_fcf": _number(_mapping(sec.get("unlevered_fcf")).get(period)),
     }
     available_fields = {name: value for name, value in fields.items() if value is not None}
     if not available_fields:
@@ -251,21 +254,27 @@ Deterministic Pre-Calculations:
 - Sloan Accruals: {json.dumps(det_audit.get("sloan_accruals", {}))}
 - SBC Dilution: {json.dumps(det_audit.get("sbc_dilution", {}))}
 - Leverage: {json.dumps(det_audit.get("leverage", {}))}
+- Altman Z-Score: {json.dumps(det_audit.get("altman_z_score", {}))}
+- DuPont 5-Stage ROE: {json.dumps(det_audit.get("dupont_analysis", {}))}
+- Economic Value (ROIC-WACC) Spread: {json.dumps(det_audit.get("economic_value_spread", {}))}
+- Working Capital (DIO/DSO/DPO/CCC): {json.dumps(det_audit.get("working_capital", {}))}
 
 Filing Evidence Citations:
 {json.dumps([item.get("quote") for item in state.get("evidence", []) if isinstance(item, Mapping) and item.get("quote")][:5], indent=2)}
 
 Audit Beneish M-Score risk, Sloan accruals, SBC dilution, and leverage in strict JSON."""
-            resp = model.invoke([
-                SystemMessage(content=FORENSIC_ACCOUNTING_PROMPT),
-                HumanMessage(content=human_prompt),
-            ])
-            raw_text = str(getattr(resp, "content", "")).strip()
-            if raw_text.startswith("```"):
-                raw_text = raw_text.strip("`")
-                if raw_text.startswith("json"):
-                    raw_text = raw_text[4:].strip()
-            parsed = json.loads(raw_text)
+            from app.agent.contracts import ForensicAuditOutput
+            from app.agent.model_runtime import invoke_structured_model
+
+            output = invoke_structured_model(
+                model,
+                [
+                    SystemMessage(content=FORENSIC_ACCOUNTING_PROMPT),
+                    HumanMessage(content=human_prompt),
+                ],
+                schema=ForensicAuditOutput,
+            )
+            parsed = output.model_dump()
             return {
                 "forensic_report": {
                     "status": "available",
@@ -308,16 +317,18 @@ Primary Evidence Quotes:
 Theme: {state.get("trigger", {}).get("theme") or "General Tech"}
 
 Return strict JSON evaluating gross margin durability, customer hold-up risk, and book-to-bill visibility."""
-            resp = model.invoke([
-                SystemMessage(content=SECTOR_SPECIALIST_PROMPT),
-                HumanMessage(content=human_prompt),
-            ])
-            raw_text = str(getattr(resp, "content", "")).strip()
-            if raw_text.startswith("```"):
-                raw_text = raw_text.strip("`")
-                if raw_text.startswith("json"):
-                    raw_text = raw_text[4:].strip()
-            parsed = json.loads(raw_text)
+            from app.agent.contracts import SectorAnalysisOutput
+            from app.agent.model_runtime import invoke_structured_model
+
+            output = invoke_structured_model(
+                model,
+                [
+                    SystemMessage(content=SECTOR_SPECIALIST_PROMPT),
+                    HumanMessage(content=human_prompt),
+                ],
+                schema=SectorAnalysisOutput,
+            )
+            parsed = output.model_dump()
             return {"sector_report": {"status": "available", "analysis": parsed, "evidence": evidence, "reason": None}}
         except Exception as exc:
             logger.warning("LLM sector analysis failed: %s", exc)
@@ -345,16 +356,18 @@ Primary Evidence Quotes:
 {json.dumps([e.get("quote") for e in evidence][:5], indent=2)}
 
 Return strict JSON scoring moat rating (WIDE/NARROW/NONE), durability score (1-10), and primary moat source."""
-            resp = model.invoke([
-                SystemMessage(content=MOAT_ANALYSIS_PROMPT),
-                HumanMessage(content=human_prompt),
-            ])
-            raw_text = str(getattr(resp, "content", "")).strip()
-            if raw_text.startswith("```"):
-                raw_text = raw_text.strip("`")
-                if raw_text.startswith("json"):
-                    raw_text = raw_text[4:].strip()
-            parsed = json.loads(raw_text)
+            from app.agent.contracts import MoatAnalysisOutput
+            from app.agent.model_runtime import invoke_structured_model
+
+            output = invoke_structured_model(
+                model,
+                [
+                    SystemMessage(content=MOAT_ANALYSIS_PROMPT),
+                    HumanMessage(content=human_prompt),
+                ],
+                schema=MoatAnalysisOutput,
+            )
+            parsed = output.model_dump()
             return {"moat_report": {"status": "available", "analysis": parsed, "evidence": evidence, "reason": None}}
         except Exception as exc:
             logger.warning("LLM moat analysis failed: %s", exc)
@@ -386,16 +399,18 @@ Verified Evidence Citations:
 {json.dumps([e.get("quote") for e in evidence][:5], indent=2)}
 
 Analyze secular capex wave phase, bottleneck monopoly score (1-10), and thematic tailwinds in strict JSON."""
-        response = model.invoke([
-            SystemMessage(content=MACRO_THEMATIC_PROMPT),
-            HumanMessage(content=human_prompt),
-        ])
-        raw_text = str(getattr(response, "content", "")).strip()
-        if raw_text.startswith("```"):
-            raw_text = raw_text.strip("`")
-            if raw_text.startswith("json"):
-                raw_text = raw_text[4:].strip()
-        parsed = json.loads(raw_text)
+        from app.agent.contracts import ThematicAnalysisOutput
+        from app.agent.model_runtime import invoke_structured_model
+
+        output = invoke_structured_model(
+            model,
+            [
+                SystemMessage(content=MACRO_THEMATIC_PROMPT),
+                HumanMessage(content=human_prompt),
+            ],
+            schema=ThematicAnalysisOutput,
+        )
+        parsed = output.model_dump()
 
         # Micro-to-Macro Economic Moat Gating:
         # A secular macro wave does not translate into shareholder value if the candidate
@@ -406,8 +421,8 @@ Analyze secular capex wave phase, bottleneck monopoly score (1-10), and thematic
 
         moat_rep = _mapping(state.get("moat_report"))
         moat_analysis = _mapping(moat_rep.get("analysis"))
-        moat_rating = str(moat_analysis.get("moat_rating") or moat_rep.get("rating") or "").lower()
-        has_strong_moat = any(m in moat_rating for m in ("wide", "strong", "high", "monopoly"))
+        moat_rating = str(moat_analysis.get("moat_rating") or moat_rep.get("rating") or "").strip().upper()
+        has_strong_moat = moat_rating in {"WIDE", "STRONG", "HIGH", "MONOPOLY"}
 
         if gross_margin is not None and gross_margin < 0.35 and not has_strong_moat:
             parsed["thematic_tailwinds"] = "COMMODITIZED_CAPEX_TRAP"
@@ -420,9 +435,9 @@ Analyze secular capex wave phase, bottleneck monopoly score (1-10), and thematic
                 f"capex absorption rather than monopoly pricing power."
             )
             parsed["micro_gating_warning"] = trap_note
-            thesis_text = f"[{trap_note}] {parsed.get('thematic_summary', raw_text[:300])}".strip()
+            thesis_text = f"[{trap_note}] {parsed.get('thematic_summary', '')}".strip()
         else:
-            thesis_text = parsed.get("thematic_summary", raw_text[:300])
+            thesis_text = parsed.get("thematic_summary", "")
 
         return {
             "thematic_report": {
@@ -442,8 +457,8 @@ Analyze secular capex wave phase, bottleneck monopoly score (1-10), and thematic
         gross_margin = _number(_mapping(sec.get("gross_margin_pct")).get(latest_p)) if latest_p else None
         moat_rep = _mapping(state.get("moat_report"))
         moat_analysis = _mapping(moat_rep.get("analysis"))
-        moat_rating = str(moat_analysis.get("moat_rating") or moat_rep.get("rating") or "").lower()
-        has_strong_moat = any(m in moat_rating for m in ("wide", "strong", "high", "monopoly"))
+        moat_rating = str(moat_analysis.get("moat_rating") or moat_rep.get("rating") or "").strip().upper()
+        has_strong_moat = moat_rating in {"WIDE", "STRONG", "HIGH", "MONOPOLY"}
 
         if gross_margin is not None and gross_margin < 0.35 and not has_strong_moat:
             fallback_analysis["thematic_tailwinds"] = "COMMODITIZED_CAPEX_TRAP"
@@ -928,13 +943,34 @@ def run_quant_analysis(state: InvestigationState) -> dict[str, Any]:
                 case_dict["fcf_trajectory"] = traj
         dcf_cases.append(case_dict)
 
+    # Extract senior claims and revenue/margin for institutional valuation
+    op_leases = _number(_mapping(sec.get("operating_lease_liabilities")).get(bs_period))
+    pref_stock = _number(_mapping(sec.get("preferred_stock")).get(bs_period))
+    min_interest = _number(_mapping(sec.get("minority_interest")).get(bs_period))
+    rev_period = _number(_mapping(sec.get("revenue")).get(period))
+    op_inc_period = _number(_mapping(sec.get("operating_income")).get(period))
+    annual_rev = rev_period * 4.0 if (rev_period and ("Q" in str(period) or not str(period).upper().startswith("FY"))) else rev_period
+    annual_op_inc = op_inc_period * 4.0 if (op_inc_period and ("Q" in str(period) or not str(period).upper().startswith("FY"))) else op_inc_period
+
+    model_inputs = {
+        "current_price": price,
+        "fcf_base": fcf_base,
+        "shares_diluted": shares,
+        "net_cash": net_cash,
+    }
+    if op_leases:
+        model_inputs["operating_leases"] = op_leases
+    if pref_stock:
+        model_inputs["preferred_stock"] = pref_stock
+    if min_interest:
+        model_inputs["minority_interest"] = min_interest
+    if annual_rev:
+        model_inputs["revenue"] = annual_rev
+    if annual_op_inc:
+        model_inputs["operating_income"] = annual_op_inc
+
     model = {
-        "inputs": {
-            "current_price": price,
-            "fcf_base": fcf_base,
-            "shares_diluted": shares,
-            "net_cash": net_cash,
-        },
+        "inputs": model_inputs,
         "assumptions": assumptions,
         "dcf": {
             "terminal_growth_rate": terminal_growth,

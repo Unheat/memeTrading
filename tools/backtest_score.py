@@ -85,6 +85,14 @@ def load_case_records(cases_root: Path | str) -> list[dict[str, Any]]:
         market = data.get("market_context") or {}
         price = (market.get("quote") or {}).get("price")
         as_of_str = data.get("as_of_date") or (data.get("trigger") or {}).get("as_of_date")
+        if not as_of_str:
+            manifest_file = case_dir / "run-manifest.json"
+            if manifest_file.exists():
+                try:
+                    m_data = json.loads(manifest_file.read_text(encoding="utf-8"))
+                    as_of_str = m_data.get("as_of_date")
+                except Exception:
+                    pass
         decision_date = _parse_decision_date(as_of_str) if as_of_str else _parse_decision_date(data.get("created_at"))
         if not price or not decision_date:
             logger.warning("Skipping case %s: missing price or decision date", case_dir.name)

@@ -41,8 +41,12 @@ export function dcf({
   years = 5,
   shares,
   netCash = 0,
+  operatingLeases = 0,
+  preferredStock = 0,
+  minorityInterest = 0,
   trajectory = null,
   cashFlowMode = "fcff",
+  discountingConvention = "mid_year",
 }) {
   if (discount <= terminalGrowth) {
     throw new Error(`discount_rate (${discount}) must exceed terminal_growth_rate (${terminalGrowth})`);
@@ -60,12 +64,13 @@ export function dcf({
     }
   }
 
+  const isMidYear = discountingConvention !== "year_end";
   const flows = [];
   for (let y = 1; y <= years; y++) {
     const fcf = normalizedTrajectory?.length
       ? (normalizedTrajectory[y - 1] ?? normalizedTrajectory[normalizedTrajectory.length - 1])
       : fcfBase * (1 + growth) ** y;
-    flows.push({ year: y, fcf, pv: fcf / (1 + discount) ** y });
+    flows.push({ year: y, fcf, pv: fcf / (1 + discount) ** (isMidYear ? y - 0.5 : y) });
   }
 
   const finalFcf = flows[flows.length - 1].fcf;
@@ -83,14 +88,17 @@ export function dcf({
     enterpriseValue = equityValue - netCash;
   } else {
     // Unlevered FCFF belongs to all capital providers.
-    // Discounted at WACC to get Enterprise Value, plus Net Cash to get Equity Value.
+    // Discounted at WACC to get Enterprise Value, plus Net Cash to get Equity Value,
+    // subtracting operating lease liabilities, preferred stock, and minority interest.
     enterpriseValue = pvFlows + pvTerminal;
-    equityValue = enterpriseValue + netCash;
+    const seniorClaims = (Number(operatingLeases) || 0) + (Number(preferredStock) || 0) + (Number(minorityInterest) || 0);
+    equityValue = enterpriseValue + netCash - seniorClaims;
   }
   const fairValuePerShare = equityValue > 0 ? equityValue / shares : 0.0;
 
   return {
     cash_flow_mode: cashFlowMode,
+    discounting_convention: isMidYear ? "mid_year" : "year_end",
     pv_explicit_flows: round(pvFlows),
     pv_terminal: round(pvTerminal),
     terminal_share_of_value: round(pvTerminal / (pvFlows + pvTerminal), 3),
@@ -222,6 +230,165 @@ export function solveReverseDCF({
         : impliedG < 0.05
         ? "Modest expectations priced in (<5% CAGR); strong asymmetric margin of safety."
         : "Balanced consensus expectations priced in (5-25% CAGR).",
+  };
+}
+
+/**
+ * Michael Mauboussin Expectations Investing Inversion Solver.
+ * Inverts the market price into:
+ *   1. Implied Sales Growth Rate (holding ROIC and NOPAT margin constant)
+ *   2. Implied Duration / Competitive Advantage Period (CAP)
+ *   3. Implied NOPAT / Operating Margin
+ *
+ * Donor provenance: adapted from reference/implied-expectations/src/implied_expectations/
+ * model.py:88-150 and solver.py:70-135 (Michael Mauboussin & Alfred Rappaport methodology).
+ */
+export function solveExpectationsReverseDCF({
+  currentPrice,
+  shares,
+  revenue,
+  operatingIncome,
+  operatingMargin = null,
+  totalDebt = 0,
+  cash = 0,
+  operatingLeases = 0,
+  discountRate = 0.095,
+  taxRate = 0.21,
+  roic = 0.20,
+  terminalGrowthRate = 0.025,
+  terminalRonic = null,
+  years = 10,
+  growthFloor = -0.90,
+  growthCap = 0.60,
+  discountingConvention = "mid_year",
+}) {
+  if (!currentPrice || currentPrice <= 0 || !shares || shares <= 0) {
+    return null;
+  }
+  if (!revenue || revenue <= 0) {
+    return null;
+  }
+
+  let m = operatingMargin;
+  if (m === null || m === undefined) {
+    m = (operatingIncome !== undefined && operatingIncome !== null && revenue > 0)
+      ? operatingIncome / revenue
+      : 0.15;
+  }
+
+  const effectiveMargin = m > 0 ? m : 0.10;
+  const netDebtClaims = (Number(totalDebt) || 0) - (Number(cash) || 0) + (Number(operatingLeases) || 0);
+  const targetEquity = currentPrice * shares;
+  const targetEV = targetEquity + netDebtClaims;
+
+  if (targetEV <= 0) {
+    return {
+      current_price: currentPrice,
+      target_equity_value: round(targetEquity),
+      target_enterprise_value: round(targetEV),
+      implied_revenue_growth_rate: null,
+      implied_growth_pct: "N/A (Negative Target EV)",
+      mode: "below_floor",
+      interpretation: "Net cash exceeds equity value; business enterprise value is non-positive.",
+    };
+  }
+
+  if (discountRate <= terminalGrowthRate) {
+    return null;
+  }
+
+  const isMidYear = discountingConvention !== "year_end";
+  const resolvedRonic = terminalRonic ?? discountRate;
+
+  function valueEV(g, testMargin) {
+    const afterTax = 1.0 - taxRate;
+    const reinvestRate = Math.max(0.0, g / roic);
+    let pvExplicit = 0.0;
+    let revT = revenue;
+    for (let t = 1; t <= years; t++) {
+      revT = revenue * (1.0 + g) ** t;
+      const nopat = revT * testMargin * afterTax;
+      const fcff = nopat * (1.0 - reinvestRate);
+      pvExplicit += fcff / (1.0 + discountRate) ** (isMidYear ? t - 0.5 : t);
+    }
+    const terminalReinvest = Math.max(0.0, terminalGrowthRate / resolvedRonic);
+    const nopatNext = revT * (1.0 + terminalGrowthRate) * testMargin * afterTax;
+    const fcffNext = nopatNext * (1.0 - terminalReinvest);
+    const tv = fcffNext / (discountRate - terminalGrowthRate);
+    const pvTv = tv / (1.0 + discountRate) ** years;
+    return pvExplicit + pvTv;
+  }
+
+  function gap(g) {
+    return valueEV(g, effectiveMargin) - targetEV;
+  }
+
+  const gapFloor = gap(growthFloor);
+  if (gapFloor >= 0) {
+    return {
+      current_price: currentPrice,
+      implied_revenue_growth_rate: growthFloor,
+      implied_growth_pct: `${round(growthFloor * 100, 1)}% (Floor)`,
+      mode: "below_floor",
+      margin_used: round(effectiveMargin, 4),
+      horizon_years: years,
+      interpretation: "Market price is deeply discounted; company values above price even under a -90%/year collapse scenario.",
+    };
+  }
+
+  const gapCap = gap(growthCap);
+  if (gapCap < 0) {
+    let durYears = years;
+    for (let extraY = years + 1; extraY <= 50; extraY++) {
+      const evExtended = valueEV(growthCap, effectiveMargin) * (1.0 + growthCap) ** (extraY - years);
+      if (evExtended >= targetEV) {
+        durYears = extraY;
+        break;
+      }
+    }
+    return {
+      current_price: currentPrice,
+      implied_revenue_growth_rate: growthCap,
+      implied_growth_pct: `>${round(growthCap * 100, 1)}% (Hypergrowth)`,
+      mode: "duration_at_cap",
+      duration_years: durYears,
+      margin_used: round(effectiveMargin, 4),
+      interpretation: `Price discounts hypergrowth (>60%/yr) requiring approximately ${durYears} years of Competitive Advantage Period (CAP).`,
+    };
+  }
+
+  // Bisection search on [growthFloor, growthCap]
+  let lo = growthFloor;
+  let hi = growthCap;
+  let solvedG = 0.05;
+  for (let iter = 0; iter < 100; iter++) {
+    const mid = (lo + hi) / 2.0;
+    const gVal = gap(mid);
+    if (Math.abs(gVal) < 1e-4 || (hi - lo) / 2.0 < 1e-6) {
+      solvedG = mid;
+      break;
+    }
+    if (gVal * gapFloor <= 0) {
+      hi = mid;
+    } else {
+      lo = mid;
+    }
+    solvedG = mid;
+  }
+
+  const evAtUnitMargin = valueEV(0.05, 1.0);
+  const impliedMarginAt5Pct = evAtUnitMargin > 0 ? targetEV / evAtUnitMargin : null;
+
+  return {
+    current_price: currentPrice,
+    implied_revenue_growth_rate: round(solvedG, 4),
+    implied_growth_pct: `${round(solvedG * 100, 2)}%`,
+    mode: "growth",
+    horizon_years: years,
+    margin_used: round(effectiveMargin, 4),
+    implied_margin_at_baseline_growth: impliedMarginAt5Pct ? round(impliedMarginAt5Pct, 4) : null,
+    target_enterprise_value: round(targetEV),
+    interpretation: `At an operating margin of ${round(effectiveMargin * 100, 1)}% and ROIC of ${round(roic * 100, 1)}%, the current price implies a ${round(solvedG * 100, 1)}% annual revenue growth rate sustained for ${years} years.`,
   };
 }
 
@@ -612,6 +779,10 @@ export function compute(model) {
   const { inputs, dcf: dcfSpec, sotp: sotpSpec, forensic: forensicData } = model;
   const years = dcfSpec.projection_years ?? 5;
   const cashFlowMode = inputs.cash_flow_mode || "fcff";
+  const discountingConvention = inputs.discounting_convention || "mid_year";
+  const operatingLeases = inputs.operating_leases || inputs.operating_lease_liabilities || 0;
+  const preferredStock = inputs.preferred_stock || 0;
+  const minorityInterest = inputs.minority_interest || 0;
 
   const results = {};
   for (const c of dcfSpec.cases) {
@@ -623,15 +794,19 @@ export function compute(model) {
       years,
       shares: inputs.shares_diluted,
       netCash: inputs.net_cash ?? 0,
+      operatingLeases,
+      preferredStock,
+      minorityInterest,
       trajectory: c.fcf_trajectory,
       cashFlowMode,
+      discountingConvention,
     });
   }
 
   const dcfRange = {
-    low: results.low.fair_value_per_share,
-    base: results.base.fair_value_per_share,
-    high: results.high.fair_value_per_share,
+    low: results.low?.fair_value_per_share ?? results.base?.fair_value_per_share ?? 0,
+    base: results.base?.fair_value_per_share ?? 0,
+    high: results.high?.fair_value_per_share ?? results.base?.fair_value_per_share ?? 0,
   };
 
   const graham = grahamNumber(inputs.eps_used, inputs.book_value_per_share);
@@ -728,7 +903,7 @@ export function compute(model) {
     blended_base: effectiveBase,
   };
 
-  // Reverse DCF calculation
+  // Reverse DCF calculation (Constant-growth FCF solver)
   const reverseDcf = solveReverseDCF({
     currentPrice: inputs.current_price,
     shares: inputs.shares_diluted,
@@ -738,6 +913,24 @@ export function compute(model) {
     years,
     netCash: inputs.net_cash ?? 0,
     cashFlowMode,
+  });
+
+  // Mauboussin Expectations Reverse DCF calculation (Revenue & NOPAT margin inversion)
+  const expectationsInvesting = solveExpectationsReverseDCF({
+    currentPrice: inputs.current_price,
+    shares: inputs.shares_diluted,
+    revenue: inputs.revenue,
+    operatingIncome: inputs.operating_income,
+    operatingMargin: inputs.operating_margin,
+    totalDebt: inputs.total_debt ?? (inputs.net_cash < 0 ? -inputs.net_cash : 0),
+    cash: inputs.cash ?? (inputs.net_cash > 0 ? inputs.net_cash : 0),
+    operatingLeases,
+    discountRate: results.base ? dcfSpec.cases.find((c) => c.case === "base")?.discount_rate ?? 0.095 : 0.095,
+    taxRate: inputs.tax_rate ?? 0.21,
+    roic: inputs.roic ?? 0.20,
+    terminalGrowthRate: dcfSpec.terminal_growth_rate ?? 0.025,
+    years: dcfSpec.projection_years ?? 10,
+    discountingConvention,
   });
 
   // SOTP calculation if available
@@ -863,6 +1056,7 @@ export function compute(model) {
         ? round(((range.base / inputs.current_price) - 1) * 100, 1) + "%"
         : "N/A",
     reverse_dcf: reverseDcf,
+    expectations_investing: expectationsInvesting,
     sotp: sotpResult,
     sensitivity_matrix: sensitivityMatrix,
     asymmetric_risk_reward: riskReward,

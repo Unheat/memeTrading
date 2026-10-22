@@ -109,11 +109,14 @@ The system organizes institutional equity research into a **5-Stage Model-Direct
                │       - Asymmetry Gate (G4: >= configured hurdle,      │
                │         default 3.0x; supported by Tangible Book Value │
                │         or technical pullback floor)                   │
-               │  • 4. Investment Committee (CIO Deliberation):         │
-               │       - Single LLM deliberation on Bull vs Bear evidence│
+               │  • 4. 3-Way Risk Debate: Conservative vs Aggressive vs │
+               │       Neutral perspectives challenge complacency       │
+               │  • 5. Investment Committee (CIO Deliberation):         │
+               │       - CIO deliberation on Bull vs Bear evidence      │
                │       - Passing Discipline + Scuttlebutt Exception     │
                │       - Tiered Kelly Sizing (paper-trade queue)        │
-               │       - Sizes portfolio weight via Fractional Kelly    │
+               │       - Deterministic Risk Limits (apply_risk_limits:  │
+               │         10-15% single-name cap, 5% max loss budget)    │
                │  • Renders Final Institutional Memo & Audit JSON       │
                └───────────────────────────┬────────────────────────────┘
                                            │
@@ -150,10 +153,12 @@ The 5 core stages operate as follows:
 4. **Diligence Lenses & Investment Committee (`diligence_node`)**:
    - Evaluates the four formal institutional gates:
      - **G1 Research Completeness Gate**: Verifies required primary SEC and market context evidence exist for all non-vetoed candidates.
-     - **G2 Forensic Accounting Gate**: Evaluates Beneish M-Score manipulation risk, Sloan accruals quality, and SBC dilution burden.
-     - **G3 Valuation Gate**: Validates that Reverse DCF and Fair Value ranges are mathematically reproducible via the deterministic `calculator.mjs` engine.
+     - **G2 Forensic Accounting Gate**: Evaluates Beneish M-Score manipulation risk, Sloan accruals quality, SBC dilution burden, and Altman Z-score.
+     - **G3 Valuation Gate**: Validates that Reverse DCF and Fair Value ranges are mathematically reproducible via the deterministic `calculator.mjs` engine with mid-year discounting and senior capital claims deductions.
      - **G4 Asymmetry Gate**: Mathematically enforces that the upside to Base Fair Value outweighs downside to Bear Floor by at least 3.0 to 1.
-   - Runs the Chief Investment Officer deliberation and calculates Fractional Kelly position sizing in deterministic code.
+   - Synthesizes the **3-Way Multi-Perspective Risk Debate** (Conservative, Aggressive, Neutral) adapted from `reference/tradingagents`.
+   - Runs the Chief Investment Officer deliberation and calculates Fractional Kelly position sizing, clamped against hard fund limits via `apply_risk_limits` adapted from `reference/ai-hedge-fund` ("Conviction requests, risk disposes").
+   - Synchronizes report hierarchy: memo leads with the formal Investment Committee deliberation table and CIO summary at the top of `## Executive Allocation & Research Synthesis`, with intermediate analyst chat subordinated under field telemetry.
    - Renders the finalized publication-grade `memo.md` and machine-readable `investigation.json`.
 
 ### Outer-agent behavior
@@ -302,7 +307,7 @@ Compiles a normalized cross-company comparison matrix across registered candidat
 evaluate_valuation(ticker: str, candidate_id: str | None = None) -> ValuationResult
 ```
 
-Executes deterministic quantitative valuation modeling via `app/valuation/calculator.mjs`. Solves for the Michael Mauboussin Reverse DCF implied growth rate ($g_{\text{implied}}$) baked into the current market price, computes intrinsic Fair Value ranges (Low / Base / High), and tests the configured asymmetric reward-to-risk hurdle (default 3:1) against verified SEC cash flows, net cash, and diluted shares.
+Executes deterministic quantitative valuation modeling via `app/valuation/calculator.mjs`. Solves for the Michael Mauboussin Reverse DCF implied growth rate ($g_{\text{implied}}$) baked into the current market price using the growth-funding identity ($I = g / \text{ROIC}$), computes intrinsic Fair Value ranges (Low / Base / High) with mid-year discounting ($(1+r)^{y-0.5}$), bridges Enterprise Value to Equity Value by subtracting operating lease liabilities (ASC 842), preferred stock, and minority interest, and tests the configured asymmetric reward-to-risk hurdle (default 3:1) against verified SEC cash flows, net cash, and diluted shares.
 
 ### `conduct_candidate_diligence`
 
@@ -312,12 +317,13 @@ conduct_candidate_diligence(ticker: str, candidate_id: str | None = None,
 ```
 
 Spawns an isolated candidate deep diligence sub-agent with its own private context window. Evaluates:
-1. Michael Mauboussin Reverse Expectations & quantitative assumptions.
-2. Forensic accounting audit (Beneish M-Score manipulation risk, Sloan accruals, SBC dilution).
+1. Michael Mauboussin Reverse Expectations & quantitative assumptions (solves implied sales growth and implied NOPAT margin; resilient to negative trailing FCF).
+2. Forensic accounting audit (Beneish M-Score manipulation risk, Sloan accruals quality, SBC dilution burden, quantitative Altman Z-Score & Z''-Score distress zones, 5-stage DuPont ROE decomposition, and ROIC vs WACC EVA economic value spread).
 3. Competitive moat durability & Hamilton Helmer 7 Powers rating.
-4. Deterministic DCF fair value range and implied growth rate via `calculator.mjs`.
-5. Air-gapped Bull Advocate (operating leverage catalysts).
+4. Deterministic DCF fair value range and implied growth rate via `calculator.mjs` with mid-year discounting and senior capital claims deductions.
+5. Air-gapped Bull Advocate (operating leverage catalysts and numeric target price).
 6. Hostile Bear Red Team stress-testing with minimum 4 falsifiable objections, 2 numeric kill triggers, and bear floor price.
+7. Scuttlebutt Channel Checks (Philip Fisher ground truth receipts, Point72 concordance matrix, and bullwhip phantom inventory check).
 Returns a structured `diligence_dossier` that auto-promotes into the candidate workspace.
 
 ### `investigate_sec` (Option C: High-Leverage SEC Specialist Sub-Agent)

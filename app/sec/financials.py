@@ -51,6 +51,18 @@ class SecFinancialsResult:
     dso: dict[str, float | None] = field(default_factory=dict)
     cik: str | None = None
     customer_concentration: dict[str, Any] = field(default_factory=dict)
+    operating_lease_liabilities: dict[str, float | None] = field(default_factory=dict)
+    preferred_stock: dict[str, float | None] = field(default_factory=dict)
+    minority_interest: dict[str, float | None] = field(default_factory=dict)
+    accounts_payable: dict[str, float | None] = field(default_factory=dict)
+    dpo: dict[str, float | None] = field(default_factory=dict)
+    ccc: dict[str, float | None] = field(default_factory=dict)
+    interest_expense: dict[str, float | None] = field(default_factory=dict)
+    income_tax_expense: dict[str, float | None] = field(default_factory=dict)
+    unlevered_fcf: dict[str, float | None] = field(default_factory=dict)
+    ttm_unlevered_fcf: float | None = None
+    retained_earnings: dict[str, float | None] = field(default_factory=dict)
+    stockholders_equity: dict[str, float | None] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to JSON-serializable dictionary."""
@@ -88,6 +100,18 @@ class SecFinancialsResult:
             "dio": dict(self.dio),
             "dso": dict(self.dso),
             "customer_concentration": dict(self.customer_concentration),
+            "operating_lease_liabilities": dict(self.operating_lease_liabilities),
+            "preferred_stock": dict(self.preferred_stock),
+            "minority_interest": dict(self.minority_interest),
+            "accounts_payable": dict(self.accounts_payable),
+            "dpo": dict(self.dpo),
+            "ccc": dict(self.ccc),
+            "interest_expense": dict(self.interest_expense),
+            "income_tax_expense": dict(self.income_tax_expense),
+            "unlevered_fcf": dict(self.unlevered_fcf),
+            "ttm_unlevered_fcf": self.ttm_unlevered_fcf,
+            "retained_earnings": dict(self.retained_earnings),
+            "stockholders_equity": dict(self.stockholders_equity),
         }
 
     @classmethod
@@ -127,6 +151,18 @@ class SecFinancialsResult:
             dso=dict(data.get("dso", {})),
             cik=str(data["cik"]) if data.get("cik") else None,
             customer_concentration=dict(data.get("customer_concentration", {})),
+            operating_lease_liabilities=dict(data.get("operating_lease_liabilities", {})),
+            preferred_stock=dict(data.get("preferred_stock", {})),
+            minority_interest=dict(data.get("minority_interest", {})),
+            accounts_payable=dict(data.get("accounts_payable", {})),
+            dpo=dict(data.get("dpo", {})),
+            ccc=dict(data.get("ccc", {})),
+            interest_expense=dict(data.get("interest_expense", {})),
+            income_tax_expense=dict(data.get("income_tax_expense", {})),
+            unlevered_fcf=dict(data.get("unlevered_fcf", {})),
+            ttm_unlevered_fcf=float(data["ttm_unlevered_fcf"]) if data.get("ttm_unlevered_fcf") is not None else None,
+            retained_earnings=dict(data.get("retained_earnings", {})),
+            stockholders_equity=dict(data.get("stockholders_equity", {})),
         )
 
 
@@ -527,6 +563,54 @@ def _extract_fact_quarterly_cfo(company: Any, periods: list[str]) -> dict[str, f
     return cfo_by_period
 
 
+def _extract_fact_accounts_payable(company: Any, periods: list[str]) -> dict[str, float | None]:
+    """Fallback extraction of balance sheet accounts payable directly from company facts."""
+    ap_by_period: dict[str, float | None] = {}
+    try:
+        facts = getattr(company, "facts", None)
+        if not facts:
+            return ap_by_period
+
+        import re
+        concepts = [
+            "accountspayabletradecurrent",
+            "accountspayablecurrent",
+            "accountspayableandaccruedliabilitiescurrent",
+            "tradeandotherpayablescurrent",
+        ]
+
+        for p in periods:
+            m = re.match(r"(?:(\d{4})[-_])?Q([1-4])(?:\s+(\d{4}))?", str(p), re.I)
+            m_fy = re.match(r"FY\s*(\d{4})", str(p), re.I)
+            if m:
+                fy = int(m.group(1) or m.group(3))
+                fq = int(m.group(2))
+            elif m_fy:
+                fy = int(m_fy.group(1))
+                fq = 4
+            else:
+                continue
+
+            extracted_val = None
+            for concept in concepts:
+                candidates = []
+                for f in facts:
+                    if f.period_type == "instant" and f.fiscal_year == fy and concept in str(f.concept).lower():
+                        if f.fiscal_period in (f"Q{fq}", "FY" if fq == 4 else f"Q{fq}") and f.value is not None:
+                            candidates.append((getattr(f, "filing_date", None) or f.period_end, float(f.value)))
+                if candidates:
+                    candidates.sort(key=lambda x: x[0], reverse=True)
+                    extracted_val = candidates[0][1]
+                    break
+
+            if extracted_val is not None:
+                ap_by_period[p] = extracted_val
+    except Exception as exc:
+        logger.debug("Failed fact-level accounts payable fallback: %s", exc)
+
+    return ap_by_period
+
+
 def _extract_customer_concentration(company: Any, as_of_date: str | None = None) -> dict[str, Any]:
     """Extract ASC 280-10-50-42 customer concentration footnotes from XBRL facts.
 
@@ -655,6 +739,14 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4, as_of_date: str | None
         "sg_and_a": {},
         "stock_based_compensation": {},
         "current_liabilities": {},
+        "operating_lease_liabilities": {},
+        "preferred_stock": {},
+        "minority_interest": {},
+        "accounts_payable": {},
+        "interest_expense": {},
+        "income_tax_expense": {},
+        "retained_earnings": {},
+        "stockholders_equity": {},
     }
 
     # 1. Income Statement
@@ -674,6 +766,16 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4, as_of_date: str | None
                 result["operating_income"][col] = _find_row_val(inc_stmt, ["OperatingIncomeLoss", "OperatingIncome"], col)
                 result["net_income"][col] = _find_row_val(inc_stmt, ["NetIncomeLoss", "NetIncome"], col)
                 result["sg_and_a"][col] = _find_row_val(inc_stmt, ["SellingGeneralAndAdministrativeExpense", "GeneralAndAdministrativeExpense", "SellingAndMarketingExpense", "SellingExpense", "AdministrativeExpense"], col)
+                result["interest_expense"][col] = _find_row_val(
+                    inc_stmt,
+                    ["InterestExpense", "InterestAndDebtExpense", "InterestExpenseDebt", "InterestIncomeExpenseNet", "InterestExpenseNonoperating"],
+                    col,
+                )
+                result["income_tax_expense"][col] = _find_row_val(
+                    inc_stmt,
+                    ["IncomeTaxExpenseBenefit", "IncomeTaxesPaid", "IncomeTaxExpense", "ProvisionForIncomeTaxes"],
+                    col,
+                )
     except Exception as exc:
         logger.debug("Failed income statement extraction via dataframe: %s", exc)
 
@@ -743,6 +845,40 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4, as_of_date: str | None
         result["current_assets"][col] = _find_bs_metric(["AssetsCurrent"], col, bs_q, bs_a, fallback_cols=period_cols_available)
         result["ppe"][col] = _find_bs_metric(["PropertyPlantAndEquipmentNet", "PropertyPlantAndEquipmentGross"], col, bs_q, bs_a, fallback_cols=period_cols_available)
         result["current_liabilities"][col] = _find_bs_metric(["LiabilitiesCurrent"], col, bs_q, bs_a, fallback_cols=period_cols_available)
+        result["accounts_payable"][col] = _find_bs_metric(
+            ["AccountsPayableCurrent", "AccountsPayable", "TradeAndOtherPayablesCurrent", "AccountsPayableTradeCurrent"],
+            col, bs_q, bs_a, fallback_cols=period_cols_available,
+        )
+
+        st_lease = _find_bs_metric(
+            ["OperatingLeaseLiabilityCurrent", "OperatingLeaseObligationsCurrent"],
+            col, bs_q, bs_a, fallback_cols=period_cols_available,
+        )
+        lt_lease = _find_bs_metric(
+            ["OperatingLeaseLiabilityNoncurrent", "OperatingLeaseObligationsNoncurrent", "OperatingLeaseLiability"],
+            col, bs_q, bs_a, fallback_cols=period_cols_available,
+        )
+        if st_lease is not None or lt_lease is not None:
+            result["operating_lease_liabilities"][col] = (st_lease or 0.0) + (lt_lease or 0.0)
+        else:
+            result["operating_lease_liabilities"][col] = None
+
+        result["preferred_stock"][col] = _find_bs_metric(
+            ["PreferredStockValue", "PreferredStockCarryingReportedAmount", "PreferredStockValueOutstanding"],
+            col, bs_q, bs_a, fallback_cols=period_cols_available,
+        )
+        result["minority_interest"][col] = _find_bs_metric(
+            ["MinorityInterest", "NoncontrollingInterestInSubsidiaries", "MinorityInterestInConsolidatedSubsidiaries"],
+            col, bs_q, bs_a, fallback_cols=period_cols_available,
+        )
+        result["retained_earnings"][col] = _find_bs_metric(
+            ["RetainedEarningsAccumulatedDeficit", "RetainedEarnings", "RetainedEarningsOrAccumulatedDeficit"],
+            col, bs_q, bs_a, fallback_cols=period_cols_available,
+        )
+        result["stockholders_equity"][col] = _find_bs_metric(
+            ["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest", "CommonStockholdersEquity"],
+            col, bs_q, bs_a, fallback_cols=period_cols_available,
+        )
 
     # 3. Cash Flow Statement (CFO, CapEx, Depreciation, SBC)
     try:
@@ -794,6 +930,14 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4, as_of_date: str | None
         for p, val in fact_cfo.items():
             if val is not None:
                 result["cash_from_operations"][p] = val
+
+    # Check for missing Accounts Payable (e.g. condensed 10-Q balance sheet) and fall back to company facts
+    missing_ap_periods = [p for p in result["periods"] if result["accounts_payable"].get(p) is None]
+    if missing_ap_periods:
+        fact_ap = _extract_fact_accounts_payable(company, missing_ap_periods)
+        for p, val in fact_ap.items():
+            if val is not None:
+                result["accounts_payable"][p] = val
 
     # Enforce positive CapEx convention across all extracted periods
     for p in result["periods"]:
@@ -903,12 +1047,21 @@ def get_sec_financials(ticker: str, periods: int = 4, as_of_date: str | None = N
     sga = raw.get("sg_and_a", {})
     sbc = raw.get("stock_based_compensation", {})
     cl = raw.get("current_liabilities", {})
+    leases = raw.get("operating_lease_liabilities", {})
+    pref = raw.get("preferred_stock", {})
+    mi = raw.get("minority_interest", {})
+    ap = raw.get("accounts_payable", {})
+    int_exp = raw.get("interest_expense", {})
+    tax_exp = raw.get("income_tax_expense", {})
+    retained_earn = raw.get("retained_earnings", {})
+    equity = raw.get("stockholders_equity", {})
 
     gm_pct: dict[str, float | None] = {}
     opm_pct: dict[str, float | None] = {}
     net_cash: dict[str, float | None] = {}
     inv_qoq: dict[str, float | None] = {}
     fcf: dict[str, float | None] = {}
+    unlevered_fcf: dict[str, float | None] = {}
 
     for i, p in enumerate(period_list):
         # Gross Margin % (bounded to legitimate economic range [-1.0, 1.0])
@@ -940,8 +1093,19 @@ def get_sec_financials(ticker: str, periods: int = 4, as_of_date: str | None = N
         cx_val = capex.get(p)
         if cf_val is not None and cx_val is not None:
             fcf[p] = round(cf_val - cx_val, 2)
+            # Unlevered Free Cash Flow (FCFF) = CFO + Interest*(1-t) - CapEx
+            i_val = int_exp.get(p)
+            t_val = tax_exp.get(p)
+            eff_rate = 0.21
+            if op_val and op_val > 0 and t_val is not None:
+                cand_rate = t_val / op_val
+                if 0.0 <= cand_rate <= 0.40:
+                    eff_rate = cand_rate
+            after_tax_int = (i_val or 0.0) * (1.0 - eff_rate)
+            unlevered_fcf[p] = round((cf_val - cx_val) + after_tax_int, 2)
         else:
             fcf[p] = None
+            unlevered_fcf[p] = None
 
         # Inventory QoQ change %
         # period_list is newest-first e.g. [Q2, Q1, Q4, Q3], so prior quarter is i+1
@@ -956,20 +1120,22 @@ def get_sec_financials(ticker: str, periods: int = 4, as_of_date: str | None = N
         else:
             inv_qoq[p] = None
 
-    # TTM FCF from the 4 most recent discrete quarters; None when the window is partial
-    # (see _compute_ttm_fcf for the stability rationale).
+    # TTM FCF and TTM Unlevered FCF
     ttm_fcf = _compute_ttm_fcf(fcf, period_list)
+    ttm_unlevered_fcf = _compute_ttm_fcf(unlevered_fcf, period_list)
 
-    # Calculate deterministic DIO (Days Inventory Outstanding) and DSO (Days Sales Outstanding)
-    # Bounded to [0.0, 1000.0] days to prevent division-by-near-zero distortion
+    # Calculate deterministic DIO, DSO, DPO, and Cash Conversion Cycle (CCC)
     dio: dict[str, float | None] = {}
     dso: dict[str, float | None] = {}
+    dpo: dict[str, float | None] = {}
+    ccc: dict[str, float | None] = {}
     for p in period_list:
         days = 365.0 if "FY" in str(p) else 91.25
         r_val = rev.get(p)
         gp_val = gp.get(p)
         inv_val = inv.get(p)
         ar_val = ar.get(p)
+        ap_val = ap.get(p)
 
         if r_val is not None and gp_val is not None:
             cogs = r_val - gp_val
@@ -978,14 +1144,26 @@ def get_sec_financials(ticker: str, periods: int = 4, as_of_date: str | None = N
                 dio[p] = calc_dio if 0.0 <= calc_dio <= 1000.0 else None
             else:
                 dio[p] = None
+
+            if cogs > 0 and ap_val is not None:
+                calc_dpo = round((ap_val / cogs) * days, 1)
+                dpo[p] = calc_dpo if 0.0 <= calc_dpo <= 1000.0 else None
+            else:
+                dpo[p] = None
         else:
             dio[p] = None
+            dpo[p] = None
 
         if r_val is not None and r_val > 0 and ar_val is not None:
             calc_dso = round((ar_val / r_val) * days, 1)
             dso[p] = calc_dso if 0.0 <= calc_dso <= 1000.0 else None
         else:
             dso[p] = None
+
+        if dio.get(p) is not None and dso.get(p) is not None and dpo.get(p) is not None:
+            ccc[p] = round(dio[p] + dso[p] - dpo[p], 1)
+        else:
+            ccc[p] = None
 
     return SecFinancialsResult(
         ticker=clean_ticker,
@@ -1019,6 +1197,18 @@ def get_sec_financials(ticker: str, periods: int = 4, as_of_date: str | None = N
         ttm_fcf=ttm_fcf,
         dio=dio,
         dso=dso,
+        operating_lease_liabilities=leases,
+        preferred_stock=pref,
+        minority_interest=mi,
+        accounts_payable=ap,
+        dpo=dpo,
+        ccc=ccc,
+        interest_expense=int_exp,
+        income_tax_expense=tax_exp,
+        unlevered_fcf=unlevered_fcf,
+        ttm_unlevered_fcf=ttm_unlevered_fcf,
+        retained_earnings=retained_earn,
+        stockholders_equity=equity,
         cik=str(raw.get("cik") or "") or None,
         customer_concentration=raw.get("customer_concentration", {}),
     )

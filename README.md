@@ -10,7 +10,7 @@
 [![LangGraph DAG](https://img.shields.io/badge/Orchestration-LangGraph%20Gated%20DAG-FF6F00.svg?style=flat-square&logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
 [![SEC EDGAR Audited](https://img.shields.io/badge/Compliance-SEC%20EDGAR%20Audited-008080.svg?style=flat-square&logo=safari&logoColor=white)](app/sec/)
 [![Reverse DCF](https://img.shields.io/badge/Valuation-Reverse%20DCF%20(Mauboussin)-7C3AED.svg?style=flat-square)](app/valuation/)
-[![Deterministic Gates](https://img.shields.io/badge/Quality-511%2B%20Unit%20Tests%20Passing-10B981.svg?style=flat-square&logo=pytest&logoColor=white)](tests/)
+[![Deterministic Gates](https://img.shields.io/badge/Quality-538%2B%20Unit%20Tests%20Passing-10B981.svg?style=flat-square&logo=pytest&logoColor=white)](tests/)
 
 <br/>
 
@@ -216,11 +216,12 @@ flowchart TD
     subgraph S5["Stage 5: Boardroom Committee (Deterministic Math & CIO)"]
         direction TB
         G1["Evidence Gate (G1): Primary Citations Verified"]
-        G2["Accounting Gate (G2): Beneish M-Score & Sloan Accruals"]
-        G3["Valuation Gate (G3): Reverse DCF Hurdle Check"]
+        G2["Accounting Gate (G2): Beneish M-Score, Altman Z-Score & Sloan Accruals"]
+        G3["Valuation Gate (G3): Mid-Year DCF & Mauboussin Expectations Reverse DCF"]
         G4["Asymmetry Gate (G4): Reward-to-Risk ≥ configured hurdle (default 3.0x)"]
-        CIO["CIO Deliberation: anchor-provenance discipline & tiered Kelly sizing (paper-trade queue below hurdle)"]
-        G1 --> G2 --> G3 --> G4 --> CIO
+        DEBATE["3-Way Risk Debate: Conservative vs Aggressive vs Neutral"]
+        CIO["CIO Deliberation: Deterministic Risk Limits (apply_risk_limits, 10-15% cap, 5% loss budget)"]
+        G1 --> G2 --> G3 --> G4 --> DEBATE --> CIO
     end
 
     S5 --> END([Dual Deliverables: Memo + Viral Reel])
@@ -338,14 +339,10 @@ python main.py --publish-case NVDA-2026-09-28-002 --deploy
 └──────────────────────────┴──────────────────────────┴───────────────────────────┘
 ```
 
-1. **Scuttlebutt Grassroots Discovery (Philip Fisher & Peter Lynch):** Monitors developer communities, subreddits, and industry reports to identify physical supply-demand imbalances before they appear in quarterly reports.
-2. **Deterministic Forensic Accounting (Messod Beneish & Richard Sloan):** Evaluates earnings quality by inspecting Days Sales in Receivables Index (DSRI), Gross Margin Index (GMI), Asset Quality Index (AQI), and Sales Growth Index (SGI) directly from SEC filings.
-3. **Expectations Investing & Reverse DCF (Michael Mauboussin):** Solves the classic discounted cash flow equation backwards:
-   $$\text{Stock Price} = f(\text{Implied Growth Rate}, \text{Forecast Horizon}, \text{ROIC}, \text{WACC})$$
-   Determines whether the market has already fully discounted the catalyst or left an asymmetric margin of safety.
-4. **Fractional Kelly Capital Allocation (John Kelly & Ed Thorp):** Sizes recommended position weights based on calculated win probabilities and payoff asymmetries:
-   $$f^* = \frac{b \cdot p - q}{b}$$
-   Where $b$ is reward-to-risk asymmetry, $p$ is probability of catalyst fruition, and $q = 1 - p$.
+1. **Scuttlebutt Grassroots Discovery (Philip Fisher & Peter Lynch):** Monitors developer communities, subreddits, and industry reports to identify physical supply-demand imbalances before they appear in quarterly reports. Enforces the **Bullwhip Phantom Inventory Circuit Breaker** against Days Inventory Outstanding (DIO > 135d).
+2. **Deterministic Forensic Accounting (Messod Beneish, Richard Sloan, Edward Altman):** Evaluates earnings quality via the **Beneish 8-Factor M-Score** (manipulation risk), **Sloan Accrual Ratio** (cash conversion quality), **Altman Z-Score & Z''-Score** (distance-to-default distress zones), and **5-Stage DuPont ROE Decomposition**.
+3. **Institutional Valuation & Reverse DCF (Michael Mauboussin & Alfred Rappaport):** Employs true Unlevered Free Cash Flow (FCFF = $\text{CFO} + \text{Interest} \times (1-t) - \text{CapEx}$), mid-year discounting convention ($(1+r)^{y-0.5}$), senior capital claims deductions in EV bridge (operating lease liabilities ASC 842, preferred, minority), and inverts the market price into implied revenue growth and Competitive Advantage Period (CAP) using the growth-funding identity ($I = g / \text{ROIC}$).
+4. **Deterministic Risk Governance & Fractional Kelly (John Kelly & Ed Thorp):** Sizes recommended position weights based on calculated win probabilities and payoff asymmetries, clamped against hard fund mandates (10-15% single-name cap, 5% max loss budget) where trimmed exposure stays in cash ("Conviction requests, risk disposes").
 
 ---
 
@@ -381,15 +378,17 @@ pytest --ignore=tests/smoke
 ```
 
 ```
-======================= 511 passed, 4 warnings in 19.87s =======================
+======================= 538 passed, 4 warnings in 23.99s =======================
 ```
 
 ---
 
 ## 📖 Extended Documentation
 
+- 🏛️ **[Architecture Decision Records (ADRs)](doc/decisions/)** — Formal records of technical choices, trade-offs, and design rationales (ADR-001 through ADR-005).
 - 💻 **[CLI Guide & Reference Manual](doc/cli.md)** — Exhaustive parameter tables, recipes, backtesting sweep instructions, and standalone calculator guide.
 - 📐 **[Pipeline Architecture Specification](PIPELINE_ARCHITECTURE.md)** — Full specification of The Analyst Workbench vs The Committee Boardroom.
+- 🗺️ **[Code Flow & Pipeline Mapping](doc/code_flow_and_pipeline_mapping.md)** — Comprehensive code-level guide mapping every file and function to graph stages.
 - 🌐 **[Interactive Architecture Diagram](doc/planned-architecture.html)** — Standalone, responsive HTML visualization with theme toggling.
 - 📋 **[Full Architecture Plan](doc/fullplan.md)** — In-depth architectural principles, Scuttlebutt framework, and state schemas.
 

@@ -78,6 +78,28 @@ class ToolCallGuard:
             return False
 
 
+def _extract_canonical_date(url: str, metadata_date: str | None = None) -> str | None:
+    """Extract canonical ISO date string (YYYY-MM-DD) from structured metadata or URL date segments."""
+    if metadata_date:
+        clean = str(metadata_date).strip()
+        if len(clean) >= 10:
+            candidate = clean[:10].replace("/", "-")
+            parts = candidate.split("-")
+            if len(parts) == 3 and len(parts[0]) == 4 and parts[0].isdigit() and parts[1].isdigit() and parts[2].isdigit():
+                return candidate
+    if not url:
+        return None
+    # Check for URL path date patterns like /2025/11/06/ or /2025-11-06/ or 20251106
+    import re
+    url_date_m = re.search(r"/(20\d{2})[-/](0[1-9]|1[0-2])[-/](0[1-9]|[12]\d|3[01])(?:/|$|[._-])", url)
+    if url_date_m:
+        return f"{url_date_m.group(1)}-{url_date_m.group(2)}-{url_date_m.group(3)}"
+    url_compact_m = re.search(r"[/-](20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])[/-]", url)
+    if url_compact_m:
+        return f"{url_compact_m.group(1)}-{url_compact_m.group(2)}-{url_compact_m.group(3)}"
+    return None
+
+
 def create_agent_tools(
     cases_root: Path | str | None = None,
     guard: ToolCallGuard | None = None,
@@ -189,12 +211,9 @@ def create_agent_tools(
                     res["candidate_id"] = candidate_id
                 if run_as_of and res.get("status") == "ok":
                     cutoff = run_as_of[:10]
-                    import re
-                    date_regex = re.compile(r"\b(20\d{2}[-/]\d{2}[-/]\d{2})\b")
-                    doc_text = str(res.get("text") or "")[:2000]
-                    m = date_regex.search(doc_text) or date_regex.search(url)
-                    if m:
-                        doc_date = m.group(1).replace("/", "-")
+                    meta_dt = res.get("published_utc") or res.get("published_date") or res.get("date")
+                    doc_date = _extract_canonical_date(url, meta_dt)
+                    if doc_date:
                         if doc_date[:10] > cutoff:
                             return json.dumps({
                                 "status": "unavailable",
@@ -224,20 +243,13 @@ def create_agent_tools(
             d = res.to_dict()
             if run_as_of and "records" in d and isinstance(d["records"], list):
                 cutoff = run_as_of[:10]
-                import re
-                date_regex = re.compile(r"\b(20\d{2}[-/]\d{2}[-/]\d{2})\b")
                 filtered_records = []
                 for r in d["records"]:
-                    snippet = str(r.get("snippet") or "")
                     url = str(r.get("url") or "")
-                    m = date_regex.search(snippet) or date_regex.search(url)
-                    if m:
-                        record_date = m.group(1).replace("/", "-")
-                        if record_date[:10] <= cutoff:
-                            filtered_records.append(r)
-                    else:
-                        # In backtest mode, undated web items are blocked
-                        continue
+                    meta_dt = r.get("published_date") or r.get("date")
+                    record_date = _extract_canonical_date(url, meta_dt)
+                    if record_date and record_date[:10] <= cutoff:
+                        filtered_records.append(r)
                 d["records"] = filtered_records
             # In normal flow (run_as_of is None): never block data, even if undated
             return json.dumps(sanitize_payload(d))

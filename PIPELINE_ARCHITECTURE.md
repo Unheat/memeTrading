@@ -75,7 +75,7 @@ flowchart TD
 
         subgraph T_SEC["2. Unified SEC Specialist Sub-Agent (LangGraph)"]
             direction TB
-            t_sec_fin["<b>Track A — Deterministic Parsing (no RAG, no LLM)</b><br/>get_sec_financials: Official SEC XBRL accounting<br/>• Form 10-Q YTD Cash Flow De-cumulation<br/>• True TTM Free Cash Flow Base<br/>• 8 Forensic Concepts (Assets, Receivables, PP&E, SG&A)<br/>• Deterministic Working Capital Ratios (DIO & DSO)"]
+            t_sec_fin["<b>Track A — Deterministic Parsing (no RAG, no LLM)</b><br/>get_sec_financials: Official SEC XBRL accounting<br/>• Form 10-Q YTD Cash Flow De-cumulation<br/>• True Unlevered FCFF Base (CFO + Int*(1-t) - CapEx)<br/>• Operating Leases (ASC 842), Preferred & Minority Claims<br/>• Full Cash Conversion Cycle (DIO + DSO - DPO)"]
 
             subgraph SEC_SUBAGENT["investigate_sec(ticker, task) Sub-Agent"]
                 direction TB
@@ -111,11 +111,11 @@ flowchart TD
             
             subgraph SUBAGENT["conduct_candidate_diligence(ticker) Sub-Agent — 3-Stage Concurrent Pipeline"]
                 direction TB
-                ENG_EXP["Expectations Analyst<br/>Deterministic reverse DCF & expectation-edge verdict"]
-                ENG_FOR["Forensic Accounting<br/>Full 8-Factor Beneish M-Score & Sloan Accruals"]
+                ENG_EXP["Expectations Analyst (Mauboussin & DCF)<br/>• Michael Mauboussin Expectations Reverse DCF<br/>(Sales Growth & NOPAT Margin Inversion via I=g/ROIC)<br/>• Deterministic reverse DCF & expectation-edge verdict"]
+                ENG_FOR["Forensic Accounting & Balance Sheet Health<br/>• Beneish 8-Factor M-Score & Sloan Accruals<br/>• Altman Z-Score & Z''-Score Distress Models<br/>• 5-Stage DuPont ROE & ROIC/WACC EVA Spread"]
                 ENG_MOAT["Moat Analyst (7 Powers)<br/>rating + durability → dossier & CIO payload"]
                 ENG_CHAN["Channel Checks Specialist<br/>Point72 Concordance Matrix (Scuttlebutt receipts)"]
-                ENG_QNT["Stage 2: Deterministic Quant DCF & Triangulation<br/>calculator.mjs — consumes Stage-1 expectation_gap<br/>• Dynamic FRED DGS10 WACC & Blume Beta<br/>• CapEx Normalization & Hyper-Growth Regime<br/>• Multi-Method Triangulation (DCF + Multiples + P/TBV)<br/>• Unit-Scale Normalization (Raw vs Millions)"]
+                ENG_QNT["Stage 2: Deterministic Quant DCF & Triangulation<br/>calculator.mjs — consumes Stage-1 expectation_gap<br/>• Mid-Year Discounting Convention ((1+r)^(y-0.5))<br/>• Senior Claims EV Bridge (-Leases, -Preferred, -Minority)<br/>• Dynamic FRED DGS10 WACC & Blume Beta<br/>• Multi-Method Triangulation (DCF + Multiples + P/TBV)"]
                 ENG_BULL["Bull Advocate<br/>catalysts + numeric bull_target_price (1 structured retry)"]
                 ENG_BEAR["Hostile Bear Red Team<br/>kill criteria + numeric bear_floor_price"]
 
@@ -177,7 +177,7 @@ flowchart TD
             G_ACC --> G_VAL --> G_ASYM
         end
 
-        COMM["<b>4. Unified 3-Mandate Investment Committee (CIO Deliberation)</b><br/>• Single-Stock: Evaluates Bull vs Bear evidence, 3:1 asymmetry, Scuttlebutt Inflection Exception, & tiered Kelly sizing<br/>• Screening Winner Audit: Audits Candidate #1 for standalone risk/reward & limit price<br/>• Macro Strategy: Classifies FRED monetary & yield curve regimes; issues MacroDirective sector tilts"]:::gate
+        COMM["<b>4. Unified Investment Committee (CIO Deliberation)</b><br/>• 3-Way Risk Debate: Conservative vs Aggressive vs Neutral<br/>• Deterministic Risk Limits: 'Conviction requests, risk disposes'<br/>• Tiered Kelly Sizing with Single-Name & Loss Budget Clamps<br/>• Immutable ClampEvent logs & Synchronized Memo Hierarchy"]:::gate
 
         G_EV --> PROMO --> GATES --> COMM
     end
@@ -200,12 +200,12 @@ flowchart TD
 
 | Analysis Component | Stage 2 (The Analyst Workbench) | Stage 5 (The Boardroom Committee) |
 |---|---|---|
-| **Heavy Modeling & Sub-Agents** | Runs per-candidate on demand via `conduct_candidate_diligence(ticker)`: Quant DCF (with dynamic FRED WACC, CapEx normalization, and Multi-Method Triangulation), Forensics, Moat, Channel Checks (Scuttlebutt), Bull Advocate, and Bear Red Team. Or commands the `investigate_sec` analyst sub-agent for deep filing retrieval. | **Zero engine execution.** It never spins up sub-agents or re-runs models. |
+| **Heavy Modeling & Sub-Agents** | Runs per-candidate on demand via `conduct_candidate_diligence(ticker)`: Quant DCF (with mid-year discounting, operating lease EV bridge, dynamic FRED WACC, CapEx normalization, and Multi-Method Triangulation), Forensics (Altman Z-Score, DuPont 5-Stage ROE, ROIC/WACC EVA spread), Moat (7 Powers), Channel Checks (Scuttlebutt receipts & Cash Conversion Cycle), Bull Advocate, and Bear Red Team. Or commands the `investigate_sec` analyst sub-agent for deep filing retrieval. | **Zero engine execution.** It never spins up sub-agents or re-runs models. |
 | **Candidate Selection & Screening** | Dynamically screens candidates quantitatively (`screen_stocks`), registers workspaces (`register_candidate`), declares early vetoes (`status='vetoed'`), and builds cross-candidate comparison matrices (`compare_candidates`). | Promotes the **winning candidate's dossier (#1)** into state, auditing its standalone risk/reward and calculating actionable limit order prices (`top_candidate_ticker`). |
 | **Evidence & Compliance** | Commands `investigate_sec` to auto-discover, pull, chunk, and cite 10-K/10-Qs; verifies rumors via `verify_sec_claim`. Clamps historical queries to `until=run_as_of` in backtest mode. | Evaluates the **Evidence Gate (G1)**: ensures primary SEC citations and market context exist before voting. |
 | **Scuttlebutt Channel Checks** | Ingests primary channel receipts via `record_channel_check` with defensive alias coercion; extracts ground-truth telemetry (developer velocity, distributor lead times, spot-vs-contract spreads, operator chatter); builds Point72 concordance matrix. | Refreshes channel telemetry dynamically; synthesizes **3-Way Expectation Arbitrage**: compares channel momentum ($g_{\text{channel}}$) against reverse DCF implied growth ($g_{\text{implied}}$) and consensus ($g_{\text{consensus}}$). Applies **Scuttlebutt Inflection Exception** when channel acceleration confirms pricing power. |
 | **Audit Gates** | Collects raw metrics (deterministic Reverse DCF implied growth, Beneish M-Score, Bear floor, Tangible Book Value per share, Multi-method divergence flag). | Runs **instant mathematical checks**: Accounting Gate (G2), Valuation Gate (G3), and Asymmetry Gate (G4 $\ge$ configured hurdle, with downside floor bounded by Tangible Book Value or contracted support). |
-| **Capital Allocation & Sizing** | Formulates thesis, numeric bull target price, and downside floor prices (both debate anchors are validated; missing anchors degrade the report and fall back to labeled Street/DCF anchors). | The **Chief Investment Officer (CIO)** conducts a single formal deliberation with enforced anchor provenance, recognizes Scuttlebutt Inflections, assigns conviction tier, and sizes via **tiered Fractional Kelly**: near-miss ratios land in a zero-capital `PAPER_TRADE_WATCH` queue for calibration. |
+| **Capital Allocation & Sizing** | Formulates thesis, numeric bull target price, and downside floor prices (both debate anchors are validated; missing anchors degrade the report and fall back to labeled Street/DCF anchors). | The **Chief Investment Officer (CIO)** conducts a formal deliberation with enforced anchor provenance, reviews the **3-Way Risk Debate** (Conservative, Aggressive, Neutral), and sizes via **tiered Fractional Kelly** with deterministic risk limits (`apply_risk_limits`, 10-15% single-name cap, 5% max loss budget). Exposure trimmed by clamps stays in cash and emits immutable `clamp_events`. |
 | **Macro / Thematic Regimes** | Collects macroeconomic time-series from FRED (`FEDFUNDS`, `DGS10`, `T10Y2Y`, `CPIAUCSL`, `UNRATE`) via `get_macro_context` (clamped to historical `as_of_date`). | In pure top-down investigations, CIO issues a **`MacroDirective`**: classifies policy stance, yield curve slopes, and sector overweight/underweight tilts. |
 
 ---
@@ -338,13 +338,59 @@ When evaluating growth inflection regimes (e.g. semiconductor fab capacity ramps
    - In `app/valuation/calculator.mjs::computeAsymmetricRiskReward`, downside risk is bounded by:
      $$\text{Effective Downside} = \max(\text{Low Fair Value}, \text{Downside Floor})$$
    - `downsideFloor` is passed as Tangible Book Value per share ($\text{TBV} / \text{share}$) or contracted support, preventing trough quarters from artificially depressing the reward-to-risk ratio.
-4. **Scuttlebutt Inflection Exception in CIO Deliberation (`app/agent/committee.py`)**:
-   - When `channel_check_report` confirms `CHANNEL_ACCELERATION` (e.g. 100% capacity pre-commitments, wafer area cannibalization), the CIO promotes the upside anchor to the operating leverage target (`quant_high_channel_acceleration`) and bounds downside to contracted pullback support (18% below spot).
-   - Unlocks asymmetric capital allocation for structural inflections while enforcing strict quantitative kill triggers.
-
----
-
-## 4. SEC Evidence Architecture: Deterministic Parsing vs Section-Aware RAG
+341	4. **Scuttlebutt Inflection Exception in CIO Deliberation (`app/agent/committee.py`)**:
+342	   - When `channel_check_report` confirms `CHANNEL_ACCELERATION` (e.g. 100% capacity pre-commitments, wafer area cannibalization), the CIO promotes the upside anchor to the operating leverage target (`quant_high_channel_acceleration`) and bounds downside to contracted pullback support (18% below spot).
+343	   - Unlocks asymmetric capital allocation for structural inflections while enforcing strict quantitative kill triggers.
+344	
+345	### 3.12 Institutional Valuation & Capital Claims Bridge (`calculator.mjs` & `financials.py`)
+346	To eliminate debt double-counting and lease understatements:
+347	1. **True Unlevered Free Cash Flow (FCFF)**:
+348	   Extracts `InterestExpense` and tax provisions from SEC XBRL to compute true FCFF:
+349	   $$\text{FCFF} = \text{CFO} + \text{Interest Expense} \times (1 - \text{Effective Tax Rate}) - \text{CapEx}$$
+350	   This is passed as `fcf_base` when discounting at WACC, resolving the historical flaw where debt interest was subtracted on the income statement and principal debt was deducted again in the EV-to-Equity bridge.
+351	2. **Senior Capital Claims in Enterprise Value Bridge**:
+352	   Extracts operating lease liabilities under ASC 842 / IFRS 16 (`OperatingLeaseLiabilityCurrent` and `Noncurrent`), preferred stock, and minority interest. The bridge enforces:
+353	   $$\text{Equity Value} = \text{Enterprise Value} + \text{Net Cash} - \text{Operating Leases} - \text{Preferred Stock} - \text{Minority Interest}$$
+354	3. **Mid-Year Discounting Convention**:
+355	   Switches explicit projection discounting in `calculator.mjs` from year-end compounding to institutional mid-year discounting:
+356	   $$\text{PV}_y = \frac{\text{FCF}_y}{(1 + r)^{y - 0.5}}$$
+357	   accurately modeling continuous operational cash generation throughout the fiscal year.
+358	
+359	### 3.13 Michael Mauboussin Expectations Reverse DCF Inversion
+360	Adapted from `reference/implied-expectations` (`model.py` and `solver.py`):
+361	1. **Economic Driver Inversion**:
+362	   Instead of compounding trailing historical FCF (which breaks when FCF $\le 0$), inverts the stock price into **Implied Revenue Growth**, **Competitive Advantage Period (CAP duration)**, and **Implied NOPAT Margin** using the growth-funding identity:
+363	   $$\text{Reinvestment Rate} = \frac{g}{\text{ROIC}}, \quad \text{FCFF}_t = \text{NOPAT}_t \times \left(1 - \frac{g}{\text{ROIC}}\right)$$
+364	2. **Value-Neutral Terminal Value**:
+365	   Terminal return on incremental capital equals the discount rate ($\text{RONIC}_{\text{terminal}} = \text{WACC}$), preventing the model from smuggling in unearned terminal growth assumptions.
+366	3. **Cyclical Trough Resilience**:
+367	   Operates seamlessly during peak CapEx expansion phases or cyclical memory downturns when trailing FCF is negative.
+368	
+369	### 3.14 Full Working Capital Cycle & Balance Sheet Distress Ratios
+370	1. **Cash Conversion Cycle (CCC = DIO + DSO - DPO)**:
+371	   Extracts Accounts Payable (`AccountsPayableTradeCurrent` / `AccountsPayableCurrent`) with automated fact-level fallback and calculates Days Payable Outstanding:
+372	   $$\text{DPO} = \frac{\text{Accounts Payable}}{\text{COGS}} \times 91.25$$
+373	   $$\text{CCC} = \text{DIO} + \text{DSO} - \text{DPO}$$
+374	2. **Altman Z-Score & Z''-Score Models (`app/market/forensics.py`)**:
+375	   - 5-factor manufacturing model ($Z > 2.99$ Safe, $1.81 \le Z \le 2.99$ Grey, $Z < 1.81$ Distress).
+376	   - 4-factor service/tech model ($Z'' > 2.60$ Safe, $1.10 \le Z'' \le 2.60$ Grey, $Z'' < 1.10$ Distress).
+377	3. **5-Stage DuPont ROE Decomposition**:
+378	   $$\text{ROE} = \underbrace{\frac{\text{Net Income}}{\text{EBT}}}_{\text{Tax Burden}} \times \underbrace{\frac{\text{EBT}}{\text{EBIT}}}_{\text{Interest Burden}} \times \underbrace{\frac{\text{EBIT}}{\text{Sales}}}_{\text{Operating Margin}} \times \underbrace{\frac{\text{Sales}}{\text{Assets}}}_{\text{Asset Turnover}} \times \underbrace{\frac{\text{Assets}}{\text{Equity}}}_{\text{Financial Leverage}}$$
+379	4. **Economic Value Added Spread (EVA)**:
+380	   $$\text{EVA Spread} = \text{ROIC} - \text{WACC} \quad \text{where} \quad \text{ROIC} = \frac{\text{NOPAT}}{\text{Invested Capital}}$$
+381	
+382	### 3.15 Deterministic Risk Governance & 3-Way Adversarial Debate
+383	1. **"Conviction Requests, Risk Disposes" (`apply_risk_limits`)**:
+384	   - Adapted from `reference/ai-hedge-fund/hedge_fund/risk/limits.py`.
+385	   - Deterministic arithmetic clamps proposed Kelly allocation: 10% maximum single-name position (15% for high-conviction catalysts) and a 5% maximum portfolio loss budget ($\text{Weight} \times \text{Downside \%} \le 0.05$).
+386	   - Exposure trimmed by clamps stays in cash and is never redistributed. All clamps emit immutable `ClampEvent` logs on `ICVerdict`.
+387	2. **3-Way Multi-Perspective Risk Debate Context**:
+388	   - Adapted from `reference/tradingagents/tradingagents/agents/risk_mgmt/`.
+389	   - Synthesizes explicit Conservative (capital preservation & drawdown), Aggressive (operating leverage upside & channel shortages), and Neutral (probability-weighted hurdle) perspectives before the CIO deliberates.
+390	
+391	---
+392	
+393	## 4. SEC Evidence Architecture: Deterministic Parsing vs Section-Aware RAG
 
 The SEC evidence layer is deliberately split into **two non-interchangeable tracks**. The routing rule is fixed in code, never decided by a model: **structured financial facts never touch vector retrieval, and qualitative narrative text never feeds the deterministic engines.**
 
@@ -406,3 +452,16 @@ When a filing is pulled (`pull_filing`, `verify_sec_claim` auto-heal, or diligen
 ### 4.4 Why Numbers Never Go Through RAG
 
 Before the section-aware upgrade, ingestion stripped all HTML tags and flattened tables into single-line text — footnoted financial tables (segment revenue, debt maturities) lost column alignment and could only be recovered by the model guessing column semantics. The deterministic Track A already covered headline financials, so the residual risk was confined to qualitative retrieval — which is exactly what Track B now fixes at the ingestion layer: tables keep their pipe alignment, and sections let retrieval scope to MD&A or the notes instead of the whole 400-page filing. The split keeps the invariant auditors care about: **every number in a memo can be re-derived from SEC XBRL without an embedding model in the loop, and every narrative claim carries a verbatim, section-labeled citation receipt.**
+
+---
+
+## 5. Architecture Decision Records (ADRs)
+
+Key architectural decisions, trade-offs, and historical rationale are captured under `doc/decisions/`:
+
+- [ADR-001: Zero-Regex Structured Output Boundary](doc/decisions/ADR-001-zero-regex-structured-output-boundary.md) — Elimination of regex/substring heuristics across natural language and model outputs; schema-constrained Pydantic decoding and lexical ticker invariants.
+- [ADR-002: Dual-Mode Point-in-Time (PIT) Air-Gapping](doc/decisions/ADR-002-dual-mode-point-in-time-air-gapping.md) — Unconstrained live web intelligence vs strict temporal filtering and undated document dropping in historical backtests.
+- [ADR-003: Institutional Valuation & Capital Claims Bridge](doc/decisions/ADR-003-institutional-valuation-and-ev-bridge.md) — True Unlevered FCFF (fixing debt double-counting), senior operating leases (ASC 842), mid-year discounting, and Mauboussin Expectations Reverse DCF.
+- [ADR-004: Scuttlebutt Channel Checks & Bullwhip Circuit Breaker](doc/decisions/ADR-004-scuttlebutt-channel-checks-and-bullwhip-circuit-breaker.md) — Typed `ChannelCheckReceipt` mosaic ledger, tier/grade weighting, and DIO/inventory balance sheet circuit breaker against phantom hoarding.
+- [ADR-005: Deterministic Risk Governance & 3-Way Debate](doc/decisions/ADR-005-deterministic-risk-governance-and-three-way-debate.md) — "Conviction requests, risk disposes" deterministic Kelly limits, 3-way adversarial debators (Conservative vs Aggressive vs Neutral), and synchronized report hierarchy.
+

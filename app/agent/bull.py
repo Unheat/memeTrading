@@ -125,8 +125,11 @@ Construct the institutional Bull Case. Identify the core upside mispricing, at l
         if attempt > 0:
             messages.append(HumanMessage(content=validation_feedback))
         try:
-            response = model.invoke(messages)
-            data = parse_llm_json_block(getattr(response, "content", ""))
+            from app.agent.contracts import BullAdvocateOutput
+            from app.agent.model_runtime import invoke_structured_model
+
+            output = invoke_structured_model(model, messages, schema=BullAdvocateOutput)
+            data = output.model_dump()
         except Exception as exc:
             logger.warning("Bull Advocate invocation failed for %s (attempt %s): %s", ticker, attempt + 1, exc)
             data = None
