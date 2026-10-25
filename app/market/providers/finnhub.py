@@ -110,3 +110,15 @@ class FinnhubClient:
                 }
             )
         return rows
+
+    def get_company_peers(self, ticker: str, grouping: str = "subIndustry") -> list[str]:
+        """Fetch company peers from Finnhub /stock/peers (free tier)."""
+        if not self.is_configured:
+            return []
+        try:
+            raw = self._get("/stock/peers", {"symbol": ticker, "grouping": grouping})
+        except MarketDataError:
+            raise
+        except Exception as exc:
+            raise MarketDataError("finnhub", f"peers fetch failed: {exc}") from exc
+        return [str(s).upper() for s in raw if isinstance(s, str)] if isinstance(raw, list) else []

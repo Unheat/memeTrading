@@ -213,3 +213,147 @@ class MarketDataError(Exception):
         self.provider = provider
         self.message = message
         self.recoverable = recoverable
+
+
+@dataclass(frozen=True)
+class CompanyMultipleSnapshot:
+    """One company's valuation multiples snapshot."""
+
+    ticker: str
+    company_name: str | None
+    market_cap: float | None
+    trailing_pe: float | None
+    forward_pe: float | None
+    ev_to_ebitda: float | None
+    ev_to_sales: float | None
+    price_to_book: float | None
+    fcf_yield: float | None
+    operating_margin: float | None
+    revenue_growth: float | None
+    as_of: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ticker": self.ticker,
+            "company_name": self.company_name,
+            "market_cap": self.market_cap,
+            "trailing_pe": self.trailing_pe,
+            "forward_pe": self.forward_pe,
+            "ev_to_ebitda": self.ev_to_ebitda,
+            "ev_to_sales": self.ev_to_sales,
+            "price_to_book": self.price_to_book,
+            "fcf_yield": self.fcf_yield,
+            "operating_margin": self.operating_margin,
+            "revenue_growth": self.revenue_growth,
+            "as_of": self.as_of,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> CompanyMultipleSnapshot:
+        return cls(
+            ticker=str(data["ticker"]).upper(),
+            company_name=str(data["company_name"]) if data.get("company_name") else None,
+            market_cap=float(data["market_cap"]) if data.get("market_cap") is not None else None,
+            trailing_pe=float(data["trailing_pe"]) if data.get("trailing_pe") is not None else None,
+            forward_pe=float(data["forward_pe"]) if data.get("forward_pe") is not None else None,
+            ev_to_ebitda=float(data["ev_to_ebitda"]) if data.get("ev_to_ebitda") is not None else None,
+            ev_to_sales=float(data["ev_to_sales"]) if data.get("ev_to_sales") is not None else None,
+            price_to_book=float(data["price_to_book"]) if data.get("price_to_book") is not None else None,
+            fcf_yield=float(data["fcf_yield"]) if data.get("fcf_yield") is not None else None,
+            operating_margin=float(data["operating_margin"]) if data.get("operating_margin") is not None else None,
+            revenue_growth=float(data["revenue_growth"]) if data.get("revenue_growth") is not None else None,
+            as_of=str(data.get("as_of", "")),
+        )
+
+
+@dataclass(frozen=True)
+class MultiplePercentileStat:
+    """Historical distribution and percentile ranking for one valuation multiple."""
+
+    metric_name: str
+    current_value: float | None
+    min_value: float | None
+    max_value: float | None
+    median_value: float | None
+    percentile: float | None
+    z_score: float | None
+    lookback_periods: int
+    regime: str  # 'discount', 'fair', 'premium', 'insufficient_history'
+    status: str  # 'ok', 'unavailable'
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "metric_name": self.metric_name,
+            "current_value": self.current_value,
+            "min_value": self.min_value,
+            "max_value": self.max_value,
+            "median_value": self.median_value,
+            "percentile": self.percentile,
+            "z_score": self.z_score,
+            "lookback_periods": self.lookback_periods,
+            "regime": self.regime,
+            "status": self.status,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> MultiplePercentileStat:
+        return cls(
+            metric_name=str(data["metric_name"]),
+            current_value=float(data["current_value"]) if data.get("current_value") is not None else None,
+            min_value=float(data["min_value"]) if data.get("min_value") is not None else None,
+            max_value=float(data["max_value"]) if data.get("max_value") is not None else None,
+            median_value=float(data["median_value"]) if data.get("median_value") is not None else None,
+            percentile=float(data["percentile"]) if data.get("percentile") is not None else None,
+            z_score=float(data["z_score"]) if data.get("z_score") is not None else None,
+            lookback_periods=int(data.get("lookback_periods", 0)),
+            regime=str(data.get("regime", "insufficient_history")),
+            status=str(data.get("status", "unavailable")),
+        )
+
+
+@dataclass(frozen=True)
+class PeerCompsResult:
+    """Peer comparison matrix, rankings, and historical multiple distribution."""
+
+    target_ticker: str
+    peer_tickers: tuple[str, ...]
+    target_multiples: CompanyMultipleSnapshot
+    peer_multiples: tuple[CompanyMultipleSnapshot, ...]
+    peer_medians: dict[str, float | None]
+    target_peer_ranks: dict[str, int | None]
+    target_peer_percentiles: dict[str, float | None]
+    target_median_spreads: dict[str, float | None]
+    historical_percentiles: dict[str, MultiplePercentileStat]
+    provider: str
+    as_of: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "target_ticker": self.target_ticker,
+            "peer_tickers": list(self.peer_tickers),
+            "target_multiples": self.target_multiples.to_dict(),
+            "peer_multiples": [m.to_dict() for m in self.peer_multiples],
+            "peer_medians": dict(self.peer_medians),
+            "target_peer_ranks": dict(self.target_peer_ranks),
+            "target_peer_percentiles": dict(self.target_peer_percentiles),
+            "target_median_spreads": dict(self.target_median_spreads),
+            "historical_percentiles": {k: v.to_dict() for k, v in self.historical_percentiles.items()},
+            "provider": self.provider,
+            "as_of": self.as_of,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> PeerCompsResult:
+        return cls(
+            target_ticker=str(data["target_ticker"]).upper(),
+            peer_tickers=tuple(str(t).upper() for t in data.get("peer_tickers", ())),
+            target_multiples=CompanyMultipleSnapshot.from_dict(data["target_multiples"]),
+            peer_multiples=tuple(CompanyMultipleSnapshot.from_dict(m) for m in data.get("peer_multiples", ())),
+            peer_medians=dict(data.get("peer_medians", {})),
+            target_peer_ranks=dict(data.get("target_peer_ranks", {})),
+            target_peer_percentiles=dict(data.get("target_peer_percentiles", {})),
+            target_median_spreads=dict(data.get("target_median_spreads", {})),
+            historical_percentiles={k: MultiplePercentileStat.from_dict(v) for k, v in data.get("historical_percentiles", {}).items()},
+            provider=str(data.get("provider", "hybrid")),
+            as_of=str(data.get("as_of", "")),
+        )

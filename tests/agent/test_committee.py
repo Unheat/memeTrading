@@ -214,3 +214,80 @@ def test_macro_investment_committee_derives_regimes_and_tilts():
     assert len(directive["favored_sectors"]) > 0
     assert len(directive["unfavored_sectors"]) > 0
     assert "policy stance" in directive["cio_macro_summary"].lower()
+
+
+class RejectingCIOModel:
+    """Mock CIO model invoking strict qualitative passing discipline."""
+
+    def invoke(self, messages):
+        return AIMessage(
+            content="""```json
+{
+  "committee_verdict": "PASSED_STRICT_DISCIPLINE",
+  "conviction_tier": "PASSED 🚫",
+  "cio_deliberation_summary": "While paper math exhibits 3.3x ratio, we invoke passing discipline: commodity margin peak, customer delay risks, and management turnover.",
+  "passing_rationale": "Commodity margin peak and customer delay risks.",
+  "anchor_citation": "consensus_mean"
+}
+```"""
+        )
+
+
+def test_investment_committee_preserves_passed_strict_discipline_veto():
+    """CIO qualitative passing discipline veto is preserved even when ratio >= 3.0x."""
+    req = ResearchRequest(query="Investigate PEAK", ticker="PEAK", company="Peak Corp")
+    state = create_initial_state(req, case_id="case_peak_pass")
+    state["market_context"] = {
+        "quote": {"price": 100.0},
+        "addv_20d": {"value": 50_000_000.0},
+        "cap_tier": "large",
+    }
+    state["consensus_snapshot"] = {
+        "price_targets": {"mean": {"value": 150.0}},  # +50% upside
+        "earnings_proximity_flag": "SAFE",
+    }
+    state["adversarial_report"] = AdversarialReport(
+        ticker="PEAK",
+        falsifiable_objections=("Objection 1",),
+        numeric_kill_criteria=("Kill 1",),
+        bear_floor_price=85.0,  # 15% downside -> 50/15 = 3.33x ratio
+        bear_thesis_summary="Capex risk.",
+    )
+    state["confidence"] = 0.85
+
+    model = RejectingCIOModel()
+    updates = run_investment_committee(state, model=model)
+
+    verdict = updates["ic_verdict"]
+    assert verdict.verdict == "PASSED_STRICT_DISCIPLINE"
+    assert verdict.conviction_tier == "PASSED 🚫"
+    assert verdict.kelly_position_size_pct == 0.0
+
+
+def test_investment_committee_uses_lbo_floor_when_bear_report_missing():
+    """LBO take-private floor is used as downside anchor when red team bear report is missing."""
+    req = ResearchRequest(query="Investigate LBOCO", ticker="LBOCO")
+    state = create_initial_state(req, case_id="case_lboco")
+    state["market_context"] = {
+        "quote": {"price": 100.0},
+        "addv_20d": {"value": 50_000_000.0},
+        "cap_tier": "large",
+    }
+    state["consensus_snapshot"] = {
+        "price_targets": {"mean": {"value": 160.0}},
+        "earnings_proximity_flag": "SAFE",
+    }
+    state["quant_report"] = {
+        "valuation": {
+            "fair_value_range": {"base": 150.0, "low": 70.0},
+            "lbo_model": {"lbo_floor_price_per_share": 80.0},
+        }
+    }
+
+    model = FakeCIOModel()
+    updates = run_investment_committee(state, model=model)
+
+    verdict = updates["ic_verdict"]
+    assert verdict.bear_anchor_source == "lbo_take_private_floor"
+    assert verdict.reward_to_risk_ratio == pytest.approx(3.0)  # (160 - 100) / (100 - 80) = 60 / 20 = 3.0
+

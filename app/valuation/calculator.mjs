@@ -122,6 +122,10 @@ export function solveReverseDCF({
   years = 5,
   netCash = 0,
   cashFlowMode = "fcff",
+  operatingLeases = 0,
+  preferredStock = 0,
+  minorityInterest = 0,
+  discountingConvention = "mid_year",
 }) {
   if (!currentPrice || currentPrice <= 0 || !shares || shares <= 0) {
     return null;
@@ -138,7 +142,8 @@ export function solveReverseDCF({
   }
 
   const targetEquityValue = currentPrice * shares;
-  const targetEV = cashFlowMode === "fcfe" ? targetEquityValue : targetEquityValue - netCash;
+  const seniorClaims = Number(operatingLeases || 0) + Number(preferredStock || 0) + Number(minorityInterest || 0);
+  const targetEV = cashFlowMode === "fcfe" ? targetEquityValue : targetEquityValue - netCash + seniorClaims;
 
   if (targetEV <= 0) {
     return {
@@ -169,12 +174,14 @@ export function solveReverseDCF({
   let highG = 5.00;
   let impliedG = null;
 
+  const isMidYear = discountingConvention === "mid_year" || discountingConvention === "mid-year";
   const calcEV = (g) => {
     let pvExplicit = 0;
     let finalFcf = fcfBase;
     for (let y = 1; y <= years; y++) {
       const fcf = fcfBase * (1 + g) ** y;
-      pvExplicit += fcf / (1 + discountRate) ** y;
+      const discountExp = isMidYear ? y - 0.5 : y;
+      pvExplicit += fcf / (1 + discountRate) ** discountExp;
       if (y === years) finalFcf = fcf;
     }
     const tv = (finalFcf * (1 + terminalGrowthRate)) / (discountRate - terminalGrowthRate);
@@ -727,24 +734,31 @@ export function computeMonteCarloDCF({
 }
 
 /**
- * Basic LBO Model (Leveraged Buyout) 
+ * Standalone LBO Model (Leveraged Buyout Floor Price)
+ * Solves for the maximum purchase price / equity value a financial sponsor
+ * can pay while achieving a target hurdle IRR (default 20%).
  */
 export function computeLBO({
-  ebitda, ebitdaMultiple = 10, leverageMultiple = 5,
-  interestRate = 0.08, taxRate = 0.25,
-  capexPctEbitda = 0.1, nwcPctEbitda = 0.05, holdYears = 5
+  ebitda,
+  totalDebt = 0,
+  cash = 0,
+  taxRate = 0.25,
+  shares = null,
+  ebitdaMultiple = 8.0,
+  leverageMultiple = 4.5,
+  interestRate = 0.08,
+  capexPctEbitda = 0.10,
+  nwcPctEbitda = 0.05,
+  holdYears = 5,
+  targetIrr = 0.20,
 }) {
   if (!ebitda || ebitda <= 0) return null;
-  const purchasePrice = ebitda * ebitdaMultiple;
-  const debtAmount = ebitda * leverageMultiple;
-  let equityContribution = purchasePrice - debtAmount;
-  if (equityContribution <= 0) equityContribution = 0.01;
-  
-  let currentDebt = debtAmount;
+  const sponsorDebtCapacity = ebitda * leverageMultiple;
+  let currentDebt = sponsorDebtCapacity;
   let currentEbitda = ebitda;
-  
+
   for (let y = 1; y <= holdYears; y++) {
-    currentEbitda = currentEbitda * 1.05; 
+    currentEbitda = currentEbitda * 1.05;
     const interest = currentDebt * interestRate;
     const ebt = currentEbitda - interest;
     const taxes = ebt > 0 ? ebt * taxRate : 0;
@@ -753,19 +767,30 @@ export function computeLBO({
     const freeCashFlow = currentEbitda - interest - taxes - capex - nwc;
     currentDebt = Math.max(0, currentDebt - freeCashFlow);
   }
-  
+
   const exitEnterpriseValue = currentEbitda * ebitdaMultiple;
   const exitEquityValue = exitEnterpriseValue - currentDebt;
-  const irr = (Math.pow(exitEquityValue / equityContribution, 1 / holdYears) - 1) * 100;
-  
+  // Maximum sponsor equity at entry discounted at target IRR
+  const maxSponsorEquity = exitEquityValue / Math.pow(1 + targetIrr, holdYears);
+  const maxEntryEV = sponsorDebtCapacity + maxSponsorEquity;
+
+  // Deduct existing net debt claims to arrive at equity payable to public shareholders
+  const netDebtClaims = Number(totalDebt || 0) - Number(cash || 0);
+  const impliedEquityValue = maxEntryEV - netDebtClaims;
+  const lboFloorPerShare = shares && shares > 0 ? round(Math.max(0, impliedEquityValue) / shares) : null;
+  const legacyIrr = ((Math.pow(Math.max(1, exitEquityValue) / Math.max(1, exitEnterpriseValue - sponsorDebtCapacity), 1 / holdYears) - 1) * 100);
+
   return {
-    entry_enterprise_value: Math.round(purchasePrice),
-    debt_amount: Math.round(debtAmount),
-    equity_contribution: Math.round(equityContribution),
+    entry_enterprise_value: Math.round(maxEntryEV),
+    sponsor_debt_capacity: Math.round(sponsorDebtCapacity),
+    sponsor_equity_check: Math.round(maxSponsorEquity),
     exit_enterprise_value: Math.round(exitEnterpriseValue),
     exit_equity_value: Math.round(exitEquityValue),
     remaining_debt: Math.round(currentDebt),
-    implied_irr_pct: Math.round(irr * 10) / 10 + "%"
+    target_irr_pct: round(targetIrr * 100, 1) + "%",
+    implied_irr_pct: Math.round(legacyIrr * 10) / 10 + "%",
+    lbo_floor_equity_value: Math.round(Math.max(0, impliedEquityValue)),
+    lbo_floor_price_per_share: lboFloorPerShare,
   };
 }
 
@@ -913,6 +938,10 @@ export function compute(model) {
     years,
     netCash: inputs.net_cash ?? 0,
     cashFlowMode,
+    operatingLeases,
+    preferredStock,
+    minorityInterest,
+    discountingConvention,
   });
 
   // Mauboussin Expectations Reverse DCF calculation (Revenue & NOPAT margin inversion)
@@ -1005,11 +1034,20 @@ export function compute(model) {
       years
     });
   }
-  if (model.sotp && model.sotp.segments && model.sotp.segments.length > 0) {
-    const ebitdaSegment = model.sotp.segments.find(s => s.metric_type === 'ebitda');
-    if (ebitdaSegment) {
-       lboResult = computeLBO({ ebitda: ebitdaSegment.metric_value });
-    }
+
+  const resolvedEbitda = inputs.ebitda
+    ?? (inputs.operating_income && inputs.operating_income > 0 ? inputs.operating_income * 1.15 : null)
+    ?? (model.sotp?.segments?.find(s => s.metric_type === 'ebitda')?.metric_value);
+
+  if (resolvedEbitda && resolvedEbitda > 0) {
+    lboResult = computeLBO({
+      ebitda: resolvedEbitda,
+      totalDebt: inputs.total_debt ?? (inputs.net_cash < 0 ? -inputs.net_cash : 0),
+      cash: inputs.cash ?? (inputs.net_cash > 0 ? inputs.net_cash : 0),
+      taxRate: inputs.tax_rate ?? 0.25,
+      shares: inputs.shares_diluted,
+      targetIrr: 0.20,
+    });
   }
 
   const warnings = [];

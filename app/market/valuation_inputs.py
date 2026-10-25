@@ -109,6 +109,11 @@ def extract_valuation_summary(quant_report: Mapping[str, Any] | None) -> dict[st
     ratio = val.get("reward_to_risk_ratio") or arr.get("reward_to_risk_ratio")
     repro_verdict = val.get("reproducibility") or repro.get("verdict", "unverified")
 
+    lbo = val.get("lbo_model") if isinstance(val.get("lbo_model"), Mapping) else {}
+    lbo_floor = lbo.get("lbo_floor_price_per_share")
+    sotp = val.get("sotp") if isinstance(val.get("sotp"), Mapping) else {}
+    sotp_per_share = sotp.get("sotp_equity_value_per_share")
+
     return {
         "fair_value": float(fair_val) if fair_val is not None else None,
         "fair_value_range": {
@@ -121,4 +126,6 @@ def extract_valuation_summary(quant_report: Mapping[str, Any] | None) -> dict[st
         "implied_growth_rate": float(implied_g) if implied_g is not None else None,
         "reward_to_risk_ratio": float(ratio) if ratio is not None else None,
         "reproducibility": str(repro_verdict) if repro_verdict is not None else "unverified",
+        "lbo_floor_price_per_share": float(lbo_floor) if lbo_floor is not None else None,
+        "sotp_value_per_share": float(sotp_per_share) if sotp_per_share is not None else None,
     }

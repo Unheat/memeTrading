@@ -656,16 +656,32 @@ def create_agent_tools(
             return json.dumps({"status": "error", "message": f"screen_stocks error: {exc}"})
 
     @tool
-    def compare_candidates(candidate_ids: list[str], metrics: list[str] | None = None) -> str:
+    def compare_candidates(
+        candidate_ids: list[str],
+        metrics: list[str] | None = None,
+        injected_state: Annotated[dict[str, Any] | None, InjectedState] = None,
+    ) -> str:
         """Compare multiple registered candidates side-by-side across audited financial and valuation metrics."""
-        requested_metrics = metrics or [
-            "revenue", "gross_margin", "operating_margin", "fcf", "capex", "inventory_qoq", "pe_ratio", "pricing_power"
-        ]
-        return json.dumps({
-            "status": "ok",
-            "candidate_ids": candidate_ids,
-            "metrics": requested_metrics,
-        })
+        suppressed = _guard_check("compare_candidates", {"candidate_ids": str(candidate_ids), "metrics": str(metrics)})
+        if suppressed:
+            return suppressed
+        try:
+            from app.agent.screening import build_candidate_comparisons
+
+            state = injected_state if isinstance(injected_state, dict) else {}
+            candidates = state.get("candidates") or {}
+            requested_metrics = metrics or [
+                "price", "market_cap", "pe_ratio", "gross_margin", "operating_margin", "revenue", "revenue_growth", "net_cash", "capex", "expectation_edge", "fcf"
+            ]
+            cards = build_candidate_comparisons(candidates, candidate_ids, requested_metrics)
+            return json.dumps({
+                "status": "ok",
+                "candidate_ids": candidate_ids,
+                "metrics": requested_metrics,
+                "comparisons": cards,
+            })
+        except Exception as exc:
+            return json.dumps({"status": "error", "message": f"compare_candidates error: {exc}"})
 
     @tool
     def record_channel_check(

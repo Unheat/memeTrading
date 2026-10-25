@@ -60,6 +60,6 @@ def test_expectations_prelim_uses_quant_fcf_base_even_with_positive_ttm():
 
     result = run_expectations_analyst(state, model=_Garbage())
     gap = result["expectation_gap"]
-    # fcf base = (39.069B - min(44.924B, 15% x 119.796B)) * 4 = 84.3984B -> implied 8.86%
-    assert gap["implied_fcf_growth_rate"] == pytest.approx(0.0886, abs=5e-4)
+    # fcf base = (39.069B - min(44.924B, 15% x 119.796B)) * 4 = 84.3984B -> implied 8.61% (mid-year convention)
+    assert gap["implied_fcf_growth_rate"] == pytest.approx(0.0861, abs=5e-4)
     assert gap["status"] == "degraded"  # model failed; deterministic fields still honest

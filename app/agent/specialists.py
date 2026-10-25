@@ -238,7 +238,7 @@ def run_forensic_analysis(state: InvestigationState, model: Any | None = None) -
         return {"forensic_report": {"status": "unavailable", "forensic": None, "reason": "SEC financial forensic fields are unavailable"}}
 
     from app.market.forensics import evaluate_forensic_accounting
-    det_audit = evaluate_forensic_accounting(sec)
+    det_audit = evaluate_forensic_accounting(sec, market_context=state.get("market_context"))
 
     # If model is provided, run full LLM forensic accounting audit
     if model is not None and hasattr(model, "invoke"):
@@ -958,6 +958,10 @@ def run_quant_analysis(state: InvestigationState) -> dict[str, Any]:
         "shares_diluted": shares,
         "net_cash": net_cash,
     }
+    if debt is not None:
+        model_inputs["total_debt"] = debt
+    if cash is not None:
+        model_inputs["cash"] = cash
     if op_leases:
         model_inputs["operating_leases"] = op_leases
     if pref_stock:
@@ -978,13 +982,52 @@ def run_quant_analysis(state: InvestigationState) -> dict[str, Any]:
             "cases": dcf_cases,
         },
     }
+    sotp_spec = state.get("sotp") or assumptions.get("sotp")
+    if not sotp_spec and sec.get("segments") and isinstance(sec["segments"], list) and len(sec["segments"]) >= 2:
+        sotp_segments = []
+        for s in sec["segments"]:
+            name = s.get("name") or "Segment"
+            rev = s.get("revenue")
+            op_inc = s.get("operating_income")
+            if op_inc is not None and op_inc > 0:
+                sotp_segments.append({
+                    "name": name,
+                    "metric_type": "operating_income",
+                    "metric_value": op_inc,
+                    "multiple": 15.0,
+                    "benchmark_peer": f"{name} Peer Group",
+                })
+            elif rev is not None and rev > 0:
+                sotp_segments.append({
+                    "name": name,
+                    "metric_type": "revenue",
+                    "metric_value": rev,
+                    "multiple": 2.5,
+                    "benchmark_peer": f"{name} Peer Group",
+                })
+        if len(sotp_segments) >= 2:
+            sotp_spec = {"segments": sotp_segments}
+
+    if sotp_spec and isinstance(sotp_spec, dict) and sotp_spec.get("segments"):
+        model["sotp"] = sotp_spec
     if tbv_per_share is not None:
         model["inputs"]["tangible_book_value_per_share"] = tbv_per_share
+
+    pe_mult = 10.0
+    rel_val = state.get("relative_valuation")
+    if isinstance(rel_val, dict):
+        hist_pe = (rel_val.get("historical_percentiles") or {}).get("trailing_pe") or {}
+        med_pe = hist_pe.get("median_value")
+        peer_pe = (rel_val.get("peer_medians") or {}).get("trailing_pe")
+        if med_pe and float(med_pe) > 0:
+            pe_mult = round(float(med_pe), 1)
+        elif peer_pe and float(peer_pe) > 0:
+            pe_mult = round(float(peer_pe), 1)
 
     if fwd_eps or consensus_mean or book_val:
         model["triangulation"] = {
             "forward_eps": fwd_eps,
-            "pe_multiple": 10.0,
+            "pe_multiple": pe_mult,
             "consensus_mean_target": consensus_mean,
             "book_value_per_share": book_val,
             "ptbv_multiple": 1.8,

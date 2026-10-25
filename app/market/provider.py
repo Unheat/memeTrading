@@ -136,3 +136,77 @@ def fetch_info(ticker: str) -> dict:
         "currency": raw.get("currency"),
         "exchange": raw.get("exchange"),
     }
+
+
+def _yf_valuation_measures(ticker: str, freq: str = "quarterly", periods: int = 20) -> "object":
+    """Seam over yfinance Ticker.get_valuation_measures so tests can patch it."""
+    import yfinance as yf
+
+    return yf.Ticker(ticker).get_valuation_measures(freq=freq, periods=periods)
+
+
+def fetch_historical_valuation_measures(ticker: str, freq: str = "quarterly", periods: int = 20) -> dict[str, dict[str, float]]:
+    """Fetch historical quarterly valuation measures timeseries.
+
+    Returns dict mapping metric name -> {date_or_col: float_value}.
+    """
+    try:
+        df = _yf_valuation_measures(ticker, freq=freq, periods=periods)
+    except Exception as exc:
+        raise MarketDataError(PROVIDER_NAME, f"valuation measures failed for {ticker}: {exc}") from exc
+
+    if df is None:
+        return {}
+    try:
+        import numpy as np
+        res: dict[str, dict[str, float]] = {}
+        # df typically has rows as metrics ('PeRatio', 'EnterprisesValueEBITDARatio', etc.)
+        for idx, row in df.iterrows():
+            metric_str = str(idx)
+            metric_data: dict[str, float] = {}
+            for col, val in row.items():
+                if val is not None and not (isinstance(val, float) and (np.isnan(val) or np.isinf(val))):
+                    try:
+                        metric_data[str(col)] = float(val)
+                    except (ValueError, TypeError):
+                        continue
+            if metric_data:
+                res[metric_str] = metric_data
+        return res
+    except Exception as exc:
+        raise MarketDataError(PROVIDER_NAME, f"valuation measures parse failed for {ticker}: {exc}") from exc
+
+
+def fetch_multiples_snapshot(ticker: str) -> dict[str, Any]:
+    """Fetch valuation multiples snapshot from company fundamentals."""
+    try:
+        raw = _yf_info(ticker)
+    except Exception as exc:
+        raise MarketDataError(PROVIDER_NAME, f"multiples info failed for {ticker}: {exc}") from exc
+
+    def _num(key: str) -> float | None:
+        value = raw.get(key)
+        try:
+            return float(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    mc = _num("marketCap")
+    fcf = _num("freeCashflow")
+    fcf_yield = (fcf / mc) if (fcf is not None and mc is not None and mc > 0) else None
+
+    return {
+        "ticker": ticker.upper(),
+        "company_name": raw.get("shortName") or raw.get("longName"),
+        "market_cap": mc,
+        "trailing_pe": _num("trailingPE"),
+        "forward_pe": _num("forwardPE"),
+        "ev_to_ebitda": _num("enterpriseToEbitda"),
+        "ev_to_sales": _num("enterpriseToRevenue"),
+        "price_to_book": _num("priceToBook"),
+        "fcf_yield": fcf_yield,
+        "operating_margin": _num("operatingMargins"),
+        "revenue_growth": _num("revenueGrowth"),
+        "sector": raw.get("sector"),
+        "industry": raw.get("industry"),
+    }

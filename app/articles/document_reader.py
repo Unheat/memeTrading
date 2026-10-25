@@ -23,7 +23,13 @@ MAX_RETURN_CHARACTERS = 15000
 
 def _fetch_bytes(url: str, timeout: int = DEFAULT_TIMEOUT_SECONDS) -> tuple[bytes, str]:
     """Fetch raw document bytes and detected Content-Type header."""
-    req = Request(url, headers={"User-Agent": DEFAULT_USER_AGENT, "Accept": "*/*"})
+    import os
+
+    ua = DEFAULT_USER_AGENT
+    if "sec.gov" in url.lower():
+        ua = os.getenv("EDGAR_IDENTITY") or "MemeTradingResearchAgent research@memetrading.internal"
+
+    req = Request(url, headers={"User-Agent": ua, "Accept": "*/*"})
     with urlopen(req, timeout=timeout) as response:
         content_type = str(response.headers.get("Content-Type", "")).lower()
         raw_body = response.read(MAX_DOCUMENT_BYTES + 1)

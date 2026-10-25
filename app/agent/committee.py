@@ -303,19 +303,15 @@ def run_investment_committee(state: InvestigationState, model: Any) -> dict[str,
 
     quant_val = (state.get("quant_report") or {}).get("valuation") or {}
     quant_fair_val = quant_val.get("fair_value") or (quant_val.get("fair_value_range") or {}).get("base")
-    if quant_fair_val and float(quant_fair_val) > 0:
+    if quant_fair_val and float(quant_fair_val) > (current_price or 0.0):
         if base_target is None or float(quant_fair_val) > base_target:
-            base_target = max(base_target or 0.0, float(quant_fair_val))
+            base_target = float(quant_fair_val)
             upside_anchor_source = "quant_fair_value"
-        else:
-            base_target = max(base_target or 0.0, float(quant_fair_val))
 
     if bull_report and bull_report.bull_target_price and current_price and bull_report.bull_target_price > current_price:
         if base_target is None or bull_report.bull_target_price > base_target:
-            base_target = max(base_target or 0.0, bull_report.bull_target_price)
+            base_target = bull_report.bull_target_price
             upside_anchor_source = "bull_target_price"
-        else:
-            base_target = max(base_target or 0.0, bull_report.bull_target_price)
 
     # Symmetric numeric anchor fallback (audit 2026-09-26, Fix 6): when no anchor sits
     # above the price (e.g. a degraded bull report), escalate to the Street-high target
@@ -327,14 +323,25 @@ def run_investment_committee(state: InvestigationState, model: Any) -> dict[str,
             base_target = float(high_val)
             upside_anchor_source = "consensus_high_fallback"
 
+    # Check SOTP value per share
+    sotp_val = (quant_val.get("sotp") or {}).get("sotp_equity_value_per_share")
+    if sotp_val and float(sotp_val) > (current_price or 0.0) and float(sotp_val) > (base_target or 0.0):
+        base_target = float(sotp_val)
+        upside_anchor_source = "sotp_sum_of_the_parts"
+
     raw_floor = adversarial.bear_floor_price if adversarial else None
     bear_floor = float(raw_floor) if raw_floor and float(raw_floor) > 0 else None
     bear_anchor_source = "red_team_bear_floor" if bear_floor else "missing"
     if not bear_floor:
-        low_fv = (quant_val.get("fair_value_range") or {}).get("low")
-        if low_fv and float(low_fv) > 0:
-            bear_floor = float(low_fv)
-            bear_anchor_source = "dcf_low_fallback"
+        lbo_floor = (quant_val.get("lbo_model") or {}).get("lbo_floor_price_per_share")
+        if lbo_floor and float(lbo_floor) > 0 and (current_price is None or float(lbo_floor) < current_price):
+            bear_floor = float(lbo_floor)
+            bear_anchor_source = "lbo_take_private_floor"
+        else:
+            low_fv = (quant_val.get("fair_value_range") or {}).get("low")
+            if low_fv and float(low_fv) > 0:
+                bear_floor = float(low_fv)
+                bear_anchor_source = "dcf_low_fallback"
 
     # Calculate 3:1 Reward-to-Risk Ratio
     channel_rep = state.get("channel_check_report") or {}
@@ -532,7 +539,11 @@ Deliberate as CIO, cite `upside_anchor_source` accurately in the required `ancho
         paper_trade = True
     else:
         # ratio >= asymmetry_hurdle
-        if cio_verdict_str in ("VALIDATION_WATCH", "PASSED_STRICT_DISCIPLINE", "PAPER_TRADE_WATCH", ""):
+        if cio_verdict_str == "PASSED_STRICT_DISCIPLINE":
+            # Preserve CIO qualitative passing discipline; do not force approval
+            cio_conviction = "PASSED 🚫"
+            kelly_size = 0.0
+        elif cio_verdict_str in ("VALIDATION_WATCH", "PAPER_TRADE_WATCH", ""):
             confidence = state.get("confidence")
             if confidence is not None and confidence >= 0.70:
                 cio_verdict_str = "APPROVED_LONG_HIGH"

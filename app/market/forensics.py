@@ -325,7 +325,11 @@ def compute_roic_economic_spread(
     }
 
 
-def evaluate_forensic_accounting(sec_financials: Mapping[str, Any] | None) -> dict[str, Any]:
+def evaluate_forensic_accounting(
+    sec_financials: Mapping[str, Any] | None,
+    market_cap: float | None = None,
+    market_context: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """Execute complete deterministic forensic audit from available SEC financials.
 
     Returns:
@@ -339,6 +343,24 @@ def evaluate_forensic_accounting(sec_financials: Mapping[str, Any] | None) -> di
             "missing_inputs": ["sec_financials"],
             "reason": "SEC financials mapping is missing or empty.",
         }
+
+    resolved_market_cap = market_cap
+    if resolved_market_cap is None and isinstance(market_context, Mapping):
+        fund = market_context.get("fundamentals") or {}
+        raw_mc = fund.get("market_cap")
+        mc_val = raw_mc.get("value") if isinstance(raw_mc, dict) else raw_mc
+        if mc_val is not None:
+            try:
+                resolved_market_cap = float(mc_val)
+            except (ValueError, TypeError):
+                resolved_market_cap = None
+        if resolved_market_cap is None:
+            quote = market_context.get("quote") or {}
+            p = float(quote.get("price") or quote.get("value") or 0.0)
+            sh_raw = fund.get("shares_outstanding")
+            sh = float((sh_raw.get("value") if isinstance(sh_raw, dict) else sh_raw) or 0.0)
+            if p > 0 and sh > 0:
+                resolved_market_cap = p * sh
 
     periods = sec_financials.get("periods") or []
     if not periods:
@@ -477,7 +499,7 @@ def evaluate_forensic_accounting(sec_financials: Mapping[str, Any] | None) -> di
         working_capital=working_capital,
         retained_earnings=retained_earnings,
         ebit=op_inc,
-        market_cap=None,
+        market_cap=resolved_market_cap,
         total_liabilities=tot_liab,
         sales=rev_curr,
         total_assets=total_assets,

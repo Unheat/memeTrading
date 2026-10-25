@@ -63,6 +63,8 @@ class SecFinancialsResult:
     ttm_unlevered_fcf: float | None = None
     retained_earnings: dict[str, float | None] = field(default_factory=dict)
     stockholders_equity: dict[str, float | None] = field(default_factory=dict)
+    segments: list[dict[str, Any]] = field(default_factory=list)
+    saas_metrics: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to JSON-serializable dictionary."""
@@ -112,6 +114,8 @@ class SecFinancialsResult:
             "ttm_unlevered_fcf": self.ttm_unlevered_fcf,
             "retained_earnings": dict(self.retained_earnings),
             "stockholders_equity": dict(self.stockholders_equity),
+            "segments": [dict(s) for s in self.segments],
+            "saas_metrics": dict(self.saas_metrics),
         }
 
     @classmethod
@@ -163,6 +167,8 @@ class SecFinancialsResult:
             ttm_unlevered_fcf=float(data["ttm_unlevered_fcf"]) if data.get("ttm_unlevered_fcf") is not None else None,
             retained_earnings=dict(data.get("retained_earnings", {})),
             stockholders_equity=dict(data.get("stockholders_equity", {})),
+            segments=list(data.get("segments", [])),
+            saas_metrics=dict(data.get("saas_metrics", {})),
         )
 
 
@@ -705,6 +711,206 @@ def _extract_customer_concentration(company: Any, as_of_date: str | None = None)
     return concentration_result
 
 
+def _extract_segment_reporting(
+    company: Any,
+    periods: Sequence[str],
+    as_of_date: str | None = None,
+) -> list[dict[str, Any]]:
+    """Extract business segment reporting (revenue and operating income) for SOTP valuation.
+
+    Queries company.facts for dimensional breakdown across StatementBusinessSegmentsAxis.
+    Isolates dimensional rows from face financial statements to prevent concept-name collisions.
+    """
+    segments: list[dict[str, Any]] = []
+    try:
+        facts = getattr(company, "facts", None)
+        if not facts:
+            return segments
+
+        import re
+        seg_axis_pattern = re.compile(r"(?:statementbusinesssegmentsaxis|businesssegmentsaxis|segmentreportingaxis)", re.I)
+        rev_concepts = [
+            "revenuefromcontractwithcustomerexcludingassessedtax",
+            "revenues",
+            "salesrevenuenet",
+            "segmentreportingsegmentrevenue",
+        ]
+        opinc_concepts = [
+            "operatingincomeloss",
+            "segmentreportingsegmentoperatingexpense",
+            "incomelossfromcontinuingoperationsbeforeincometaxesminorityinterestandincomelossfromequitymethodinvestments",
+        ]
+
+        # Group by member label -> {revenue: val, operating_income: val, period: str}
+        member_data: dict[str, dict[str, Any]] = {}
+
+        for f in facts:
+            if as_of_date:
+                f_date = getattr(f, "filing_date", None)
+                if f_date and str(f_date) > as_of_date:
+                    continue
+                if f.period_end and str(f.period_end) > as_of_date:
+                    continue
+
+            dims = getattr(f, "dimensions", None) or {}
+            has_seg_axis = any(seg_axis_pattern.search(str(k)) for k in dims.keys())
+            if not has_seg_axis and not seg_axis_pattern.search(str(getattr(f, "axis", ""))):
+                continue
+
+            member = str(getattr(f, "member", "") or dims.get("StatementBusinessSegmentsAxis") or "").strip()
+            if not member:
+                continue
+
+            # Clean member name
+            clean_member = re.sub(r"^(?:us-gaap:|srt:)?", "", member)
+            clean_member = re.sub(r"(?:SegmentMember|Member|Domain)$", "", clean_member)
+            clean_member = re.sub(r"([a-z])([A-Z])", r"\1 \2", clean_member).strip()
+
+            if not clean_member or clean_member.lower() in ("operating segments", "consolidated", "total", "all segments"):
+                continue
+
+            concept_lower = str(getattr(f, "concept", "")).lower()
+            val = getattr(f, "value", None)
+            if val is None:
+                continue
+
+            try:
+                num_val = float(val)
+            except (ValueError, TypeError):
+                continue
+
+            fiscal_p = f"{getattr(f, 'fiscal_year', '')}-{getattr(f, 'fiscal_period', '')}".strip("-") or str(getattr(f, "period_end", ""))
+            if clean_member not in member_data:
+                member_data[clean_member] = {"name": clean_member, "revenue": None, "operating_income": None, "period": fiscal_p}
+
+            if any(rc in concept_lower for rc in rev_concepts) and member_data[clean_member]["revenue"] is None:
+                member_data[clean_member]["revenue"] = num_val
+                member_data[clean_member]["period"] = fiscal_p
+            elif any(oc in concept_lower for oc in opinc_concepts) and member_data[clean_member]["operating_income"] is None:
+                member_data[clean_member]["operating_income"] = num_val
+
+        for item in member_data.values():
+            if item.get("revenue") is not None or item.get("operating_income") is not None:
+                rev = item.get("revenue")
+                op_inc = item.get("operating_income")
+                margin = round((op_inc / rev) * 100.0, 1) if (rev and op_inc is not None and rev > 0) else None
+                segments.append({
+                    "name": item["name"],
+                    "revenue": rev,
+                    "operating_income": op_inc,
+                    "operating_margin_pct": margin,
+                    "period": item.get("period"),
+                })
+    except Exception as exc:
+        logger.debug("Failed segment extraction: %s", exc)
+
+    return segments
+
+
+def _extract_saas_metrics(
+    company: Any,
+    periods: Sequence[str],
+    as_of_date: str | None = None,
+    revenue_series: dict[str, float | None] | None = None,
+    fcf_series: dict[str, float | None] | None = None,
+    op_margin_series: dict[str, float | None] | None = None,
+) -> dict[str, Any]:
+    """Extract subscription / SaaS unit economics: RPO, cRPO, ARR, NRR, and Rule of 40."""
+    saas_data: dict[str, Any] = {
+        "is_subscription_model": False,
+        "remaining_performance_obligation": None,
+        "current_remaining_performance_obligation": None,
+        "crpo_pct_of_total_rpo": None,
+        "annual_recurring_revenue": None,
+        "net_retention_rate_pct": None,
+        "rule_of_40_fcf_pct": None,
+        "rule_of_40_op_pct": None,
+        "rule_of_40_status": "UNAVAILABLE",
+    }
+    try:
+        facts = getattr(company, "facts", None)
+        if facts:
+            rpo_concepts = ["revenueremainingperformanceobligation"]
+            crpo_concepts = ["currentremainingperformanceobligation", "remainingperformanceobligationscurrent"]
+            arr_concepts = ["annualrecurringrevenue", "endingarr", "annualizedrecurringrevenue", "subscriptionarr"]
+            nrr_concepts = ["dollarbasednetretention", "netretentionrate", "netexpansionrate"]
+
+            for f in facts:
+                if as_of_date:
+                    f_date = getattr(f, "filing_date", None)
+                    if f_date and str(f_date) > as_of_date:
+                        continue
+                    if f.period_end and str(f.period_end) > as_of_date:
+                        continue
+
+                concept_lower = str(getattr(f, "concept", "")).lower()
+                val = getattr(f, "value", None)
+                if val is None:
+                    continue
+                try:
+                    num_val = float(val)
+                except (ValueError, TypeError):
+                    continue
+
+                if any(rc in concept_lower for rc in rpo_concepts) and saas_data["remaining_performance_obligation"] is None:
+                    saas_data["remaining_performance_obligation"] = num_val
+                    saas_data["is_subscription_model"] = True
+                elif any(cc in concept_lower for cc in crpo_concepts) and saas_data["current_remaining_performance_obligation"] is None:
+                    saas_data["current_remaining_performance_obligation"] = num_val
+                    saas_data["is_subscription_model"] = True
+                elif any(ac in concept_lower for ac in arr_concepts) and saas_data["annual_recurring_revenue"] is None:
+                    saas_data["annual_recurring_revenue"] = num_val
+                    saas_data["is_subscription_model"] = True
+                elif any(nc in concept_lower for nc in nrr_concepts) and saas_data["net_retention_rate_pct"] is None:
+                    if 0.50 <= num_val <= 2.50:
+                        saas_data["net_retention_rate_pct"] = round(num_val * 100.0, 1)
+                    elif 50.0 <= num_val <= 250.0:
+                        saas_data["net_retention_rate_pct"] = round(num_val, 1)
+                    saas_data["is_subscription_model"] = True
+
+            rpo = saas_data["remaining_performance_obligation"]
+            crpo = saas_data["current_remaining_performance_obligation"]
+            if rpo and crpo and rpo > 0:
+                saas_data["crpo_pct_of_total_rpo"] = round((crpo / rpo) * 100.0, 1)
+
+        # Compute Rule of 40 deterministically from extracted series
+        if revenue_series and periods and len(periods) >= 2:
+            p_curr = periods[0]
+            rev_curr = revenue_series.get(p_curr)
+
+            # Look for year-ago quarter (e.g. 4 quarters back) or previous period
+            p_prior = periods[4] if len(periods) >= 5 else periods[1]
+            rev_prior = revenue_series.get(p_prior)
+
+            yoy_growth_pct: float | None = None
+            if rev_curr and rev_prior and rev_prior > 0:
+                yoy_growth_pct = round(((rev_curr - rev_prior) / rev_prior) * 100.0, 1)
+
+            fcf_curr = fcf_series.get(p_curr) if fcf_series else None
+            fcf_margin_pct: float | None = None
+            if rev_curr and fcf_curr is not None and rev_curr > 0:
+                fcf_margin_pct = round((fcf_curr / rev_curr) * 100.0, 1)
+
+            opm_curr = op_margin_series.get(p_curr) if op_margin_series else None
+
+            if yoy_growth_pct is not None and fcf_margin_pct is not None:
+                r40_fcf = round(yoy_growth_pct + fcf_margin_pct, 1)
+                saas_data["rule_of_40_fcf_pct"] = r40_fcf
+                if r40_fcf >= 40.0:
+                    saas_data["rule_of_40_status"] = "OUTPERFORM"
+                elif r40_fcf >= 30.0:
+                    saas_data["rule_of_40_status"] = "WATCH"
+                else:
+                    saas_data["rule_of_40_status"] = "UNDERPERFORM"
+
+            if yoy_growth_pct is not None and opm_curr is not None:
+                saas_data["rule_of_40_op_pct"] = round(yoy_growth_pct + opm_curr, 1)
+    except Exception as exc:
+        logger.debug("Failed SaaS metrics extraction: %s", exc)
+
+    return saas_data
+
+
 def _get_company(ticker: str) -> Any:
     """Instantiate edgartools Company object."""
     from edgar import Company
@@ -946,6 +1152,19 @@ def _fetch_xbrl_statements(ticker: str, periods: int = 4, as_of_date: str | None
 
     # Extract ASC 280-10-50-42 customer concentration footnotes
     result["customer_concentration"] = _extract_customer_concentration(company, as_of_date=as_of_date)
+
+    # Extract business segment reporting for SOTP valuation
+    result["segments"] = _extract_segment_reporting(company, result["periods"], as_of_date=as_of_date)
+
+    # Extract SaaS / subscription unit economics (RPO, cRPO, ARR, NRR, Rule of 40)
+    result["saas_metrics"] = _extract_saas_metrics(
+        company,
+        result["periods"],
+        as_of_date=as_of_date,
+        revenue_series=result["revenue"],
+        fcf_series=result.get("fcf"),
+        op_margin_series=result.get("operating_margin_pct"),
+    )
 
     if not result["periods"]:
         raise ValueError(f"No XBRL reporting periods found for ticker {ticker}")
@@ -1211,4 +1430,6 @@ def get_sec_financials(ticker: str, periods: int = 4, as_of_date: str | None = N
         stockholders_equity=equity,
         cik=str(raw.get("cik") or "") or None,
         customer_concentration=raw.get("customer_concentration", {}),
+        segments=raw.get("segments", []),
+        saas_metrics=raw.get("saas_metrics", {}),
     )
